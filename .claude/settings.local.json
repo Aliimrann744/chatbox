@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(npm --version)",
+      "Bash(npx create-expo-app@latest . --template blank --yes)",
+      "Bash(npm install:*)",
+      "Bash(npx expo:*)",
+      "Bash(npx tsc:*)",
+      "Bash(dir:*)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(npx prisma migrate:*)",
+      "Bash(find:*)",
+      "Bash(npm install:*)",
+      "Bash(npx prisma db push)",
+      "Bash(npx tsc:*)",
+      "Bash(npm ls:*)",
+      "Bash(node -e:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(npx prisma generate:*)",
+      "Bash(npx prisma db push:*)",
+      "Bash(npm run build:*)"
+    ]
+  }
+}
