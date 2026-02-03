@@ -19,7 +19,10 @@
       "Bash(npx ts-node:*)",
       "Bash(npx prisma generate:*)",
       "Bash(npx prisma db push:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(tree:*)",
+      "Bash(timeout 10 npm run:*)",
+      "Bash(ls:*)"
     ]
   }
 }
