@@ -1,117 +1,53 @@
-import { Injectable } from '@nestjs/common';
-import { v2 as cloudinary } from 'cloudinary';
-import * as streamifier from 'streamifier';
+import { Injectable, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class UploadService {
-  async uploadImage(file: Express.Multer.File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: 'ai-assistant', resource_type: 'auto' },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve(result.secure_url);
-        },
-      );
+  private uploadDir: string;
 
-      streamifier.createReadStream(file.buffer).pipe(uploadStream);
-    });
+  constructor(private configService: ConfigService) {
+    this.uploadDir = path.join(process.cwd(), 'uploads');
+    this.ensureUploadDir();
   }
 
-  async uploadAudio(file: Express.Multer.File, patientId: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const timestamp = Date.now();
-      const publicId = `audio-recordings/${patientId}/${timestamp}`;
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: 'ai-assistant/audio',
-          resource_type: 'video',
-          public_id: publicId,
-          format: 'webm',
-        },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve(result.secure_url);
-        },
-      );
-
-      streamifier.createReadStream(file.buffer).pipe(uploadStream);
-    });
+  private ensureUploadDir() {
+    if (!fs.existsSync(this.uploadDir)) {
+      fs.mkdirSync(this.uploadDir, { recursive: true });
+    }
   }
 
-  async deleteImage(publicId: string): Promise<void> {
-    await cloudinary.uploader.destroy(publicId);
+  async uploadFile(
+    file: Express.Multer.File,
+    folder: string = 'general',
+  ): Promise<{ url: string; filename: string }> {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+
+    const folderPath = path.join(this.uploadDir, folder);
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath, { recursive: true });
+    }
+
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    const filename = `${uniqueSuffix}${ext}`;
+    const filepath = path.join(folderPath, filename);
+
+    fs.writeFileSync(filepath, file.buffer);
+
+    const baseUrl = this.configService.get<string>('BASE_URL') || 'http://localhost:3000';
+    const url = `${baseUrl}/uploads/${folder}/${filename}`;
+
+    return { url, filename };
   }
 
-  async uploadPdf(buffer: Buffer, patientId: string, filename: string): Promise<{ url: string; publicId: string }> {
-    return new Promise((resolve, reject) => {
-      const timestamp = Date.now();
-      const publicId = `${patientId}/${timestamp}-${filename.replace(/\.pdf$/i, '')}`;
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: 'ai-assistant/patient-reports',
-          resource_type: 'raw',
-          type: 'upload',
-          access_mode: 'public',
-          public_id: publicId,
-          format: 'pdf',
-        },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve({
-            url: result.secure_url,
-            publicId: result.public_id,
-          });
-        },
-      );
-
-      streamifier.createReadStream(buffer).pipe(uploadStream);
-    });
-  }
-
-  async uploadPdfFromFile(file: Express.Multer.File, patientId: string): Promise<{ url: string; publicId: string }> {
-    return this.uploadPdf(file.buffer, patientId, file.originalname);
-  }
-
-  async uploadReportImage(buffer: Buffer, patientId: string, filename: string): Promise<{ url: string; publicId: string }> {
-    return new Promise((resolve, reject) => {
-      const timestamp = Date.now();
-      const publicId = `${patientId}/${timestamp}-${filename.replace(/\.(png|jpg|jpeg)$/i, '')}`;
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: 'ai-assistant/patient-reports',
-          resource_type: 'image',
-          type: 'upload',
-          access_mode: 'public',
-          public_id: publicId,
-          format: 'png',
-        },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve({
-            url: result.secure_url,
-            publicId: result.public_id,
-          });
-        },
-      );
-      streamifier.createReadStream(buffer).pipe(uploadStream);
-    });
-  }
-
-  async uploadAnyFile(file: Express.Multer.File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: 'ai-assistant/documents',
-          resource_type: 'auto',
-          public_id: `${Date.now()}-${file?.originalname}`,
-        },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve(result.secure_url);
-        },
-      );
-      streamifier.createReadStream(file.buffer).pipe(uploadStream);
-    });
+  async deleteFile(filepath: string): Promise<void> {
+    const fullPath = path.join(this.uploadDir, filepath);
+    if (fs.existsSync(fullPath)) {
+      fs.unlinkSync(fullPath);
+    }
   }
 }

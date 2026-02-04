@@ -1,10 +1,11 @@
+import { router } from 'expo-router';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
-import { currentUser } from '@/constants/mock-data';
 import { Colors } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface ProfileItemProps {
@@ -39,6 +40,33 @@ function ProfileItem({ icon, title, value, onPress }: ProfileItemProps) {
 export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          router.replace('/(auth)/login');
+        },
+      },
+    ]);
+  };
+
+  // Fallback user data for display
+  const displayUser = user || {
+    name: 'Guest User',
+    email: 'guest@chatbox.com',
+    phone: '',
+    status: 'Hey there! I am using Chatbox',
+    avatar: 'https://i.pravatar.cc/300?img=1',
+  };
 
   return (
     <ScrollView
@@ -48,15 +76,18 @@ export default function ProfileScreen() {
       {/* Profile Header */}
       <View style={[styles.header, { backgroundColor: colors.background }]}>
         <View style={styles.avatarContainer}>
-          <Avatar uri={currentUser.avatar} size={100} />
+          <Avatar
+            uri={displayUser.avatar || 'https://i.pravatar.cc/300?img=1'}
+            size={100}
+          />
           <Pressable
             style={[styles.editAvatarButton, { backgroundColor: colors.primary }]}>
             <IconSymbol name="camera.fill" size={16} color="#ffffff" />
           </Pressable>
         </View>
-        <Text style={[styles.name, { color: colors.text }]}>{currentUser.name}</Text>
+        <Text style={[styles.name, { color: colors.text }]}>{displayUser.name}</Text>
         <Text style={[styles.status, { color: colors.textSecondary }]}>
-          {currentUser.status}
+          {displayUser.status}
         </Text>
       </View>
 
@@ -65,13 +96,19 @@ export default function ProfileScreen() {
         <ProfileItem
           icon="phone.fill"
           title="Phone"
-          value={currentUser.phone}
+          value={displayUser.phone || 'Not set'}
+        />
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        <ProfileItem
+          icon="paperplane.fill"
+          title="Email"
+          value={displayUser.email}
         />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <ProfileItem
           icon="doc.fill"
           title="About"
-          value={currentUser.status}
+          value={displayUser.status}
         />
       </View>
 
@@ -89,7 +126,7 @@ export default function ProfileScreen() {
             Media, Links, and Docs
           </Text>
           <View style={styles.actionRight}>
-            <Text style={[styles.actionCount, { color: colors.textSecondary }]}>127</Text>
+            <Text style={[styles.actionCount, { color: colors.textSecondary }]}>0</Text>
             <IconSymbol name="chevron.right" size={18} color={colors.textSecondary} />
           </View>
         </Pressable>
@@ -114,6 +151,7 @@ export default function ProfileScreen() {
 
       {/* Logout Button */}
       <Pressable
+        onPress={handleLogout}
         style={({ pressed }) => [
           styles.logoutButton,
           {
@@ -124,6 +162,13 @@ export default function ProfileScreen() {
         ]}>
         <Text style={styles.logoutText}>Log Out</Text>
       </Pressable>
+
+      {/* App Version */}
+      <View style={styles.appInfo}>
+        <Text style={[styles.appVersion, { color: colors.textSecondary }]}>
+          Chatbox v1.0.0
+        </Text>
+      </View>
     </ScrollView>
   );
 }
@@ -218,5 +263,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FF3B30',
     fontWeight: '500',
+  },
+  appInfo: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  appVersion: {
+    fontSize: 12,
   },
 });

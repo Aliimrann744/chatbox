@@ -29,8 +29,8 @@ export default function TabLayout() {
           backgroundColor: colors.background,
           borderTopColor: colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height: 60,
-          paddingBottom: 8,
+          height: 65,
+          paddingBottom: 10,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
@@ -44,8 +44,8 @@ export default function TabLayout() {
           title: 'Chats',
           headerTitle: 'Chatbox',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused && styles.activeIconContainer}>
-              <IconSymbol size={24} name="message.fill" color={color} />
+            <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
+              <IconSymbol size={24} name="message.fill" color={focused ? '#ffffff' : color} />
             </View>
           ),
         }}
@@ -55,8 +55,8 @@ export default function TabLayout() {
         options={{
           title: 'Calls',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused && styles.activeIconContainer}>
-              <IconSymbol size={24} name="phone.fill" color={color} />
+            <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
+              <IconSymbol size={24} name="phone.fill" color={focused ? '#ffffff' : color} />
             </View>
           ),
         }}
@@ -66,8 +66,8 @@ export default function TabLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused && styles.activeIconContainer}>
-              <IconSymbol size={24} name="gear" color={color} />
+            <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
+              <IconSymbol size={24} name="gear" color={focused ? '#ffffff' : color} />
             </View>
           ),
         }}
@@ -77,8 +77,8 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused && styles.activeIconContainer}>
-              <IconSymbol size={24} name="person.fill" color={color} />
+            <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
+              <IconSymbol size={24} name="person.fill" color={focused ? '#ffffff' : color} />
             </View>
           ),
         }}
@@ -88,10 +88,12 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
-  activeIconContainer: {
-    backgroundColor: 'rgba(4, 0, 58, 0.1)',
-    borderRadius: 16,
+  iconContainer: {
+    borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 4,
+  },
+  activeIconContainer: {
+    backgroundColor: '#04003a',
   },
 });

@@ -9,3 +9,158 @@ datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
 }
+
+// User model for authentication
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  phone         String?
+  avatar        String?
+  status        String    @default("Hey there! I'm using Chatbox")
+  isOnline      Boolean   @default(false)
+  lastSeen      DateTime  @default(now())
+  isVerified    Boolean   @default(false)
+  otp           String?
+  otpExpiry     DateTime?
+  refreshToken  String?   @db.Text
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  sentMessages      Message[]      @relation("SentMessages")
+  receivedMessages  Message[]      @relation("ReceivedMessages")
+  chats             ChatMember[]
+  contacts          Contact[]      @relation("UserContacts")
+  contactOf         Contact[]      @relation("ContactUser")
+  calls             Call[]         @relation("CallInitiator")
+  receivedCalls     Call[]         @relation("CallReceiver")
+
+  @@map("users")
+}
+
+// Contact model for user contacts
+model Contact {
+  id        String   @id @default(cuid())
+  userId    String
+  contactId String
+  nickname  String?
+  isBlocked Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User @relation("UserContacts", fields: [userId], references: [id], onDelete: Cascade)
+  contact User @relation("ContactUser", fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contactId])
+  @@map("contacts")
+}
+
+// Chat model (for both direct and group chats)
+model Chat {
+  id          String   @id @default(cuid())
+  name        String?  // For group chats
+  isGroup     Boolean  @default(false)
+  avatar      String?  // For group chats
+  description String?  // For group chats
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members  ChatMember[]
+  messages Message[]
+
+  @@map("chats")
+}
+
+// ChatMember model (many-to-many between User and Chat)
+model ChatMember {
+  id       String   @id @default(cuid())
+  userId   String
+  chatId   String
+  role     String   @default("member") // admin, member
+  isPinned Boolean  @default(false)
+  isMuted  Boolean  @default(false)
+  joinedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chatId])
+  @@map("chat_members")
+}
+
+// Message model
+model Message {
+  id         String        @id @default(cuid())
+  chatId     String
+  senderId   String
+  receiverId String?       // For direct messages
+  content    String        @db.Text
+  type       MessageType   @default(TEXT)
+  status     MessageStatus @default(SENT)
+  mediaUrl   String?
+  replyToId  String?
+
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  chat     Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender   User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User?    @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: SetNull)
+  replyTo  Message? @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies  Message[] @relation("MessageReplies")
+
+  @@map("messages")
+}
+
+// Call model
+model Call {
+  id         String     @id @default(cuid())
+  callerId   String
+  receiverId String
+  type       CallType   @default(AUDIO)
+  status     CallStatus @default(MISSED)
+  duration   Int?       // in seconds
+  startedAt  DateTime?
+  endedAt    DateTime?
+
+  createdAt  DateTime   @default(now())
+
+  caller   User @relation("CallInitiator", fields: [callerId], references: [id], onDelete: Cascade)
+  receiver User @relation("CallReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@map("calls")
+}
+
+// Enums
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  LOCATION
+  CONTACT
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+enum CallType {
+  AUDIO
+  VIDEO
+}
+
+enum CallStatus {
+  MISSED
+  ANSWERED
+  DECLINED
+  BUSY
+}
