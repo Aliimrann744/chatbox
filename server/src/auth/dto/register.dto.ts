@@ -2,8 +2,8 @@ import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-vali
 
 export class RegisterDto {
   @IsEmail()
-  @IsNotEmpty()
-  email: string;
+  @IsOptional()
+  email?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -15,6 +15,10 @@ export class RegisterDto {
   name: string;
 
   @IsString()
+  @IsNotEmpty()
+  phone: string;
+
+  @IsString()
   @IsOptional()
-  phone?: string;
+  countryCode?: string;
 }

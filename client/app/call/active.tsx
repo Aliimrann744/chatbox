@@ -1,0 +1,351 @@
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  Animated,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  Platform,
+} from 'react-native';
+import { router } from 'expo-router';
+
+import { Avatar } from '@/components/ui/avatar';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { useCall } from '@/contexts/call-context';
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+
+export default function ActiveCallScreen() {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
+  const {
+    callState,
+    endCall,
+    toggleMute,
+    toggleSpeaker,
+    toggleVideo,
+  } = useCall();
+
+  const [duration, setDuration] = useState(0);
+  const [showControls, setShowControls] = useState(true);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  // Update call duration
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    if (callState.status === 'connected' && callState.startTime) {
+      interval = setInterval(() => {
+        const now = new Date();
+        const diff = Math.floor((now.getTime() - callState.startTime!.getTime()) / 1000);
+        setDuration(diff);
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [callState.status, callState.startTime]);
+
+  // Navigate away if call ends
+  useEffect(() => {
+    if (callState.status === 'idle') {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/');
+      }
+    }
+  }, [callState.status]);
+
+  // Auto-hide controls for video calls
+  useEffect(() => {
+    if (callState.type === 'VIDEO' && showControls) {
+      const timeout = setTimeout(() => {
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => setShowControls(false));
+      }, 5000);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [callState.type, showControls, fadeAnim]);
+
+  const handleTap = () => {
+    if (callState.type === 'VIDEO') {
+      setShowControls(true);
+      fadeAnim.setValue(1);
+    }
+  };
+
+  const handleEndCall = async () => {
+    await endCall();
+  };
+
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getStatusText = () => {
+    switch (callState.status) {
+      case 'ringing':
+        return 'Ringing...';
+      case 'connecting':
+        return 'Connecting...';
+      case 'connected':
+        return formatDuration(duration);
+      default:
+        return '';
+    }
+  };
+
+  const isConnected = callState.status === 'connected';
+
+  return (
+    <Pressable
+      style={[styles.container, { backgroundColor: '#1a1a2e' }]}
+      onPress={handleTap}>
+      {/* Video placeholder / Avatar */}
+      <View style={styles.mainContent}>
+        {callState.type === 'VIDEO' ? (
+          <View style={styles.videoContainer}>
+            {/* Remote video placeholder */}
+            <View style={styles.remoteVideo}>
+              <Avatar
+                uri={callState.participant?.avatar}
+                size={160}
+                showOnlineStatus={false}
+              />
+              {!isConnected && (
+                <Text style={styles.connectingText}>{getStatusText()}</Text>
+              )}
+            </View>
+
+            {/* Local video placeholder (small) */}
+            <View style={styles.localVideo}>
+              <IconSymbol name="person.fill" size={40} color="#ffffff" />
+            </View>
+          </View>
+        ) : (
+          <View style={styles.voiceContainer}>
+            <Avatar
+              uri={callState.participant?.avatar}
+              size={140}
+              showOnlineStatus={false}
+            />
+            <Text style={styles.participantName}>
+              {callState.participant?.name || 'Unknown'}
+            </Text>
+            <Text style={styles.callStatus}>{getStatusText()}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Controls */}
+      <Animated.View
+        style={[
+          styles.controlsContainer,
+          { opacity: callState.type === 'VIDEO' ? fadeAnim : 1 },
+        ]}>
+        {/* Top info for video calls */}
+        {callState.type === 'VIDEO' && (
+          <View style={styles.topInfo}>
+            <Text style={styles.videoParticipantName}>
+              {callState.participant?.name}
+            </Text>
+            <Text style={styles.videoDuration}>{getStatusText()}</Text>
+          </View>
+        )}
+
+        {/* Action buttons */}
+        <View style={styles.actionsContainer}>
+          {/* Mute button */}
+          <Pressable
+            onPress={toggleMute}
+            style={({ pressed }) => [
+              styles.controlButton,
+              callState.isMuted && styles.controlButtonActive,
+              pressed && styles.buttonPressed,
+            ]}>
+            <IconSymbol
+              name={callState.isMuted ? 'mic.slash.fill' : 'mic.fill'}
+              size={24}
+              color="#ffffff"
+            />
+            <Text style={styles.controlLabel}>
+              {callState.isMuted ? 'Unmute' : 'Mute'}
+            </Text>
+          </Pressable>
+
+          {/* Speaker button (voice only) */}
+          {callState.type === 'VOICE' && (
+            <Pressable
+              onPress={toggleSpeaker}
+              style={({ pressed }) => [
+                styles.controlButton,
+                callState.isSpeakerOn && styles.controlButtonActive,
+                pressed && styles.buttonPressed,
+              ]}>
+              <IconSymbol
+                name={callState.isSpeakerOn ? 'speaker.wave.3.fill' : 'speaker.fill'}
+                size={24}
+                color="#ffffff"
+              />
+              <Text style={styles.controlLabel}>Speaker</Text>
+            </Pressable>
+          )}
+
+          {/* Video toggle button */}
+          {callState.type === 'VIDEO' && (
+            <Pressable
+              onPress={toggleVideo}
+              style={({ pressed }) => [
+                styles.controlButton,
+                !callState.isVideoEnabled && styles.controlButtonActive,
+                pressed && styles.buttonPressed,
+              ]}>
+              <IconSymbol
+                name={callState.isVideoEnabled ? 'video.fill' : 'video.slash.fill'}
+                size={24}
+                color="#ffffff"
+              />
+              <Text style={styles.controlLabel}>
+                {callState.isVideoEnabled ? 'Video' : 'Video Off'}
+              </Text>
+            </Pressable>
+          )}
+
+          {/* Flip camera button (video only) */}
+          {callState.type === 'VIDEO' && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.controlButton,
+                pressed && styles.buttonPressed,
+              ]}>
+              <IconSymbol name="camera.rotate.fill" size={24} color="#ffffff" />
+              <Text style={styles.controlLabel}>Flip</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {/* End call button */}
+        <Pressable
+          onPress={handleEndCall}
+          style={({ pressed }) => [
+            styles.endCallButton,
+            pressed && styles.buttonPressed,
+          ]}>
+          <IconSymbol name="phone.down.fill" size={32} color="#ffffff" />
+        </Pressable>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  mainContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoContainer: {
+    flex: 1,
+    width: '100%',
+  },
+  remoteVideo: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#2a2a3e',
+  },
+  localVideo: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 20,
+    right: 20,
+    width: 100,
+    height: 140,
+    borderRadius: 12,
+    backgroundColor: '#3a3a4e',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  voiceContainer: {
+    alignItems: 'center',
+  },
+  participantName: {
+    fontSize: 28,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginTop: 24,
+  },
+  callStatus: {
+    fontSize: 18,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 8,
+  },
+  connectingText: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 16,
+  },
+  controlsContainer: {
+    paddingBottom: Platform.OS === 'ios' ? 50 : 30,
+    paddingHorizontal: 20,
+  },
+  topInfo: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 20,
+    left: 20,
+  },
+  videoParticipantName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  videoDuration: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 4,
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 32,
+    marginBottom: 32,
+  },
+  controlButton: {
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    minWidth: 64,
+  },
+  controlButtonActive: {
+    backgroundColor: 'rgba(255, 59, 48, 0.3)',
+  },
+  controlLabel: {
+    fontSize: 12,
+    color: '#ffffff',
+    marginTop: 4,
+  },
+  endCallButton: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+  },
+  buttonPressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.95 }],
+  },
+});

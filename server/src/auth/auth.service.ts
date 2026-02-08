@@ -24,11 +24,7 @@ import { getPasswordResetEmailTemplate } from '../templates/password-reset-email
 export class AuthService {
   private transporter: nodemailer.Transporter;
 
-  constructor(
-    private prisma: PrismaService,
-    private jwtService: JwtService,
-    private configService: ConfigService,
-  ) {
+  constructor(private prisma: PrismaService, private jwtService: JwtService, private configService: ConfigService) {
     this.transporter = nodemailer.createTransport({
       host: this.configService.get<string>('SMTP_HOST'),
       port: this.configService.get<number>('SMTP_PORT'),
@@ -83,19 +79,28 @@ export class AuthService {
   }
 
   async register(registerDto: RegisterDto) {
-    const { email, password, name, phone } = registerDto;
-
-    // Check if user already exists
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (existingUser) {
-      if (existingUser.isVerified) {
-        throw new ConflictException('User with this email already exists');
+    const { email, password, name, phone, countryCode } = registerDto;
+    const existingUserByPhone = await this.prisma.user.findUnique({ where: { phone }});
+    if (existingUserByPhone) {
+      if (existingUserByPhone.isVerified) {
+        throw new ConflictException('User with this phone number already exists');
       }
       // Delete unverified user to allow re-registration
-      await this.prisma.user.delete({ where: { id: existingUser.id } });
+      await this.prisma.user.delete({ where: { id: existingUserByPhone.id } });
+    }
+
+    // Check if email exists (if provided)
+    if (email) {
+      const existingUserByEmail = await this.prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (existingUserByEmail) {
+        if (existingUserByEmail.isVerified) {
+          throw new ConflictException('User with this email already exists');
+        }
+        await this.prisma.user.delete({ where: { id: existingUserByEmail.id } });
+      }
     }
 
     // Hash password
@@ -109,30 +114,34 @@ export class AuthService {
     const user = await this.prisma.user.create({
       data: {
         email,
+        phone,
+        countryCode: countryCode || '+1',
         password: hashedPassword,
         name,
-        phone,
         otp,
         otpExpiry,
         isVerified: false,
       },
     });
 
-    // Send OTP email
-    await this.sendEmail(
-      email,
-      'Verify your Chatbox account',
-      getOtpEmailTemplate(name, otp),
-    );
+    // Send OTP email if email provided
+    if (email) {
+      await this.sendEmail(
+        email,
+        'Verify your Chatbox account',
+        getOtpEmailTemplate(name, otp),
+      );
+    }
 
     return {
-      message: 'Registration successful. Please verify your email.',
+      message: 'Registration successful. Please verify your account.',
       userId: user.id,
+      otp: process.env.NODE_ENV === 'development' ? otp : undefined, // Only return OTP in dev mode
     };
   }
 
   async verifyOtp(verifyOtpDto: VerifyOtpDto) {
-    const { email, otpCode } = verifyOtpDto;
+    const { email, otp: otpCode } = verifyOtpDto;
 
     const user = await this.prisma.user.findUnique({
       where: { email },
@@ -187,7 +196,7 @@ export class AuthService {
         name: user.name,
         phone: user.phone,
         avatar: user.avatar,
-        status: user.status,
+        about: user.about,
       },
     };
   }
@@ -266,7 +275,7 @@ export class AuthService {
         name: user.name,
         phone: user.phone,
         avatar: user.avatar,
-        status: user.status,
+        about: user.about,
       },
     };
   }
@@ -303,7 +312,7 @@ export class AuthService {
   }
 
   async resetPassword(resetPasswordDto: ResetPasswordDto) {
-    const { email, otpCode, newPassword } = resetPasswordDto;
+    const { email, otp: otpCode, newPassword } = resetPasswordDto;
 
     const user = await this.prisma.user.findUnique({
       where: { email },
@@ -401,7 +410,7 @@ export class AuthService {
         name: true,
         phone: true,
         avatar: true,
-        status: true,
+        about: true,
         isOnline: true,
         lastSeen: true,
         createdAt: true,

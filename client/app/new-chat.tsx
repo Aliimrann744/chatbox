@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   FlatList,
   Pressable,
@@ -7,13 +7,15 @@ import {
   Text,
   TextInput,
   View,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
-import { mockUsers } from '@/constants/mock-data';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { contactApi, chatApi, Contact } from '@/services/api';
 
 interface ActionItemProps {
   icon: IconSymbolName;
@@ -44,10 +46,10 @@ function ActionItem({ icon, iconColor, title, onPress }: ActionItemProps) {
 }
 
 function ContactItem({
-  user,
+  contact,
   onPress,
 }: {
-  user: typeof mockUsers[0];
+  contact: Contact;
   onPress?: () => void;
 }) {
   const colorScheme = useColorScheme() ?? 'light';
@@ -62,11 +64,11 @@ function ContactItem({
           backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
         },
       ]}>
-      <Avatar uri={user.avatar} size={45} showOnlineStatus isOnline={user.isOnline} />
+      <Avatar uri={contact.avatar} size={45} showOnlineStatus isOnline={contact.isOnline} />
       <View style={styles.contactInfo}>
-        <Text style={[styles.contactName, { color: colors.text }]}>{user.name}</Text>
+        <Text style={[styles.contactName, { color: colors.text }]}>{contact.name}</Text>
         <Text style={[styles.contactStatus, { color: colors.textSecondary }]}>
-          {user.status}
+          {contact.about || contact.phone}
         </Text>
       </View>
     </Pressable>
@@ -77,26 +79,58 @@ export default function NewChatScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const [searchQuery, setSearchQuery] = useState('');
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
 
-  const filteredContacts = mockUsers.filter((user) =>
-    user.name.toLowerCase().includes(searchQuery.toLowerCase())
+  // Fetch contacts on mount
+  useEffect(() => {
+    fetchContacts();
+  }, []);
+
+  const fetchContacts = async () => {
+    try {
+      const data = await contactApi.getContacts();
+      setContacts(data);
+    } catch (error) {
+      console.error('Error fetching contacts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredContacts = contacts.filter((contact) =>
+    contact.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleSelectContact = (userId: string) => {
-    // Navigate to chat with this user or create new chat
-    router.push({ pathname: '/chat/[id]', params: { id: userId } });
+  const handleSelectContact = async (contactId: string) => {
+    if (creating) return;
+
+    setCreating(true);
+    try {
+      // Create or get existing chat with this contact
+      const chat = await chatApi.createChat(contactId);
+      // Navigate to the chat
+      router.replace({ pathname: '/chat/[id]', params: { id: chat.id } });
+    } catch (error: any) {
+      console.error('Error creating chat:', error);
+      Alert.alert('Error', error.message || 'Failed to start chat. Please try again.');
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleNewGroup = () => {
-    // TODO: Navigate to new group screen
+    Alert.alert('Coming Soon', 'Group chat feature is coming soon!');
   };
 
   const handleNewContact = () => {
-    // TODO: Navigate to add contact screen
+    // Navigate to contacts tab
+    router.push('/(tabs)/contacts');
   };
 
   const handleNewCommunity = () => {
-    // TODO: Navigate to new community screen
+    Alert.alert('Coming Soon', 'Community feature is coming soon!');
   };
 
   const renderHeader = () => (
@@ -146,22 +180,47 @@ export default function NewChatScreen() {
     </>
   );
 
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {creating && (
+        <View style={styles.creatingOverlay}>
+          <ActivityIndicator size="large" color="#ffffff" />
+          <Text style={styles.creatingText}>Starting chat...</Text>
+        </View>
+      )}
       <FlatList
         data={filteredContacts}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <ContactItem user={item} onPress={() => handleSelectContact(item.id)} />
+          <ContactItem contact={item} onPress={() => handleSelectContact(item.contactId)} />
         )}
         ListHeaderComponent={renderHeader}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
+            <IconSymbol name="person.2" size={48} color={colors.textSecondary} />
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No contacts found
+              {contacts.length === 0 ? 'No contacts yet' : 'No contacts found'}
             </Text>
+            <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
+              {contacts.length === 0 ? 'Add contacts to start chatting' : 'Try a different search'}
+            </Text>
+            {contacts.length === 0 && (
+              <Pressable
+                onPress={handleNewContact}
+                style={[styles.addContactButton, { backgroundColor: colors.primary }]}>
+                <Text style={styles.addContactText}>Add Contacts</Text>
+              </Pressable>
+            )}
           </View>
         }
       />
@@ -172,6 +231,22 @@ export default function NewChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  creatingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  creatingText: {
+    color: '#ffffff',
+    fontSize: 16,
+    marginTop: 12,
   },
   searchContainer: {
     paddingHorizontal: 16,
@@ -243,10 +318,29 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   emptyContainer: {
-    paddingVertical: 40,
+    paddingVertical: 60,
     alignItems: 'center',
+    paddingHorizontal: 32,
   },
   emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  addContactButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginTop: 24,
+  },
+  addContactText: {
+    color: '#ffffff',
     fontSize: 16,
+    fontWeight: '600',
   },
 });

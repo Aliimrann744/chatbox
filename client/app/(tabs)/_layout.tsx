@@ -51,6 +51,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="contacts"
+        options={{
+          title: 'Contacts',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
+              <IconSymbol size={24} name="person.2.fill" color={focused ? '#ffffff' : color} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="calls"
         options={{
           title: 'Calls',

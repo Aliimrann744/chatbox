@@ -18,14 +18,8 @@ export class UploadService {
     }
   }
 
-  async uploadFile(
-    file: Express.Multer.File,
-    folder: string = 'general',
-  ): Promise<{ url: string; filename: string }> {
-    if (!file) {
-      throw new BadRequestException('No file provided');
-    }
-
+  async uploadFile(file: Express.Multer.File, folder: string = 'general'): Promise<{ url: string; filename: string }> {
+    if (!file) throw new BadRequestException('No file provided');
     const folderPath = path.join(this.uploadDir, folder);
     if (!fs.existsSync(folderPath)) {
       fs.mkdirSync(folderPath, { recursive: true });
@@ -38,7 +32,7 @@ export class UploadService {
 
     fs.writeFileSync(filepath, file.buffer);
 
-    const baseUrl = this.configService.get<string>('BASE_URL') || 'http://localhost:3000';
+    const baseUrl = this.configService.get<string>('BASE_URL');
     const url = `${baseUrl}/uploads/${folder}/${filename}`;
 
     return { url, filename };

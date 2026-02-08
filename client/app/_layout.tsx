@@ -7,6 +7,9 @@ import 'react-native-reanimated';
 
 import { Colors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
+import { CallProvider } from '@/contexts/call-context';
+import { NotificationProvider } from '@/contexts/notification-context';
+import { IncomingCallListener } from '@/components/call/incoming-call-listener';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
@@ -99,8 +102,16 @@ function RootLayoutNav() {
             headerShown: false,
           }}
         />
+        <Stack.Screen
+          name="call"
+          options={{
+            headerShown: false,
+            presentation: 'fullScreenModal',
+          }}
+        />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
+      <IncomingCallListener />
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'light'} />
     </ThemeProvider>
   );
@@ -109,7 +120,11 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <NotificationProvider>
+        <CallProvider>
+          <RootLayoutNav />
+        </CallProvider>
+      </NotificationProvider>
     </AuthProvider>
   );
 }

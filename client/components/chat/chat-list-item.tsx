@@ -4,12 +4,30 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Chat } from '@/constants/mock-data';
+import { Chat } from '@/services/api';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface ChatListItemProps {
   chat: Chat;
+}
+
+// Format timestamp to relative time
+function formatTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (diffDays === 1) {
+    return 'Yesterday';
+  } else if (diffDays < 7) {
+    return date.toLocaleDateString([], { weekday: 'short' });
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
 }
 
 export function ChatListItem({ chat }: ChatListItemProps) {
@@ -21,34 +39,62 @@ export function ChatListItem({ chat }: ChatListItemProps) {
   };
 
   const renderMessageStatus = () => {
-    if (chat.lastMessage.senderId === 'me') {
-      const iconName = chat.lastMessage.status === 'read' ? 'checkmark.double' : 'checkmark';
-      const iconColor = chat.lastMessage.status === 'read' ? colors.primary : colors.textSecondary;
-      return <IconSymbol name={iconName} size={16} color={iconColor} style={styles.statusIcon} />;
+    if (!chat.lastMessage) return null;
+
+    // Only show status for sent messages (we need to check if current user is sender)
+    // For now, we'll check based on status
+    const { status } = chat.lastMessage;
+
+    if (status === 'READ') {
+      return <IconSymbol name="checkmark.circle.fill" size={16} color={colors.primary} style={styles.statusIcon} />;
+    } else if (status === 'DELIVERED') {
+      return <IconSymbol name="checkmark.circle" size={16} color={colors.textSecondary} style={styles.statusIcon} />;
+    } else if (status === 'SENT') {
+      return <IconSymbol name="checkmark" size={16} color={colors.textSecondary} style={styles.statusIcon} />;
     }
+
     return null;
   };
 
   const renderMessagePreview = () => {
-    const { lastMessage } = chat;
-    let prefix = '';
+    if (!chat.lastMessage) {
+      return 'No messages yet';
+    }
 
-    switch (lastMessage.type) {
-      case 'image':
-        prefix = '📷 ';
+    const { type, content, sender } = chat.lastMessage;
+    let prefix = '';
+    let text = content || '';
+
+    // For group chats, show sender name
+    if (chat.type === 'GROUP' && sender) {
+      prefix = `${sender.name}: `;
+    }
+
+    switch (type) {
+      case 'IMAGE':
+        text = '📷 Photo';
         break;
-      case 'audio':
-        prefix = '🎤 ';
+      case 'AUDIO':
+        text = '🎤 Voice message';
         break;
-      case 'video':
-        prefix = '🎥 ';
+      case 'VIDEO':
+        text = '🎥 Video';
         break;
-      case 'document':
-        prefix = '📄 ';
+      case 'DOCUMENT':
+        text = '📄 Document';
+        break;
+      case 'LOCATION':
+        text = '📍 Location';
+        break;
+      case 'CONTACT':
+        text = '👤 Contact';
+        break;
+      case 'STICKER':
+        text = '🎨 Sticker';
         break;
     }
 
-    return prefix + lastMessage.text;
+    return prefix + text;
   };
 
   return (
@@ -61,10 +107,10 @@ export function ChatListItem({ chat }: ChatListItemProps) {
         },
       ]}>
       <Avatar
-        uri={chat.user.avatar}
+        uri={chat.avatar}
         size={55}
-        showOnlineStatus
-        isOnline={chat.user.isOnline}
+        showOnlineStatus={chat.type === 'PRIVATE'}
+        isOnline={chat.isOnline}
       />
 
       <View style={styles.content}>
@@ -72,14 +118,14 @@ export function ChatListItem({ chat }: ChatListItemProps) {
           <Text
             style={[styles.name, { color: colors.text }]}
             numberOfLines={1}>
-            {chat.user.name}
+            {chat.name || 'Unknown'}
           </Text>
           <Text
             style={[
               styles.time,
               { color: chat.unreadCount > 0 ? colors.primary : colors.textSecondary },
             ]}>
-            {chat.lastMessage.timestamp}
+            {chat.lastMessage ? formatTime(chat.lastMessage.createdAt) : ''}
           </Text>
         </View>
 
@@ -103,10 +149,19 @@ export function ChatListItem({ chat }: ChatListItemProps) {
 
           {chat.isMuted && (
             <IconSymbol
-              name="xmark"
+              name="speaker.slash.fill"
               size={14}
               color={colors.textSecondary}
               style={styles.mutedIcon}
+            />
+          )}
+
+          {chat.isPinned && (
+            <IconSymbol
+              name="pin.fill"
+              size={14}
+              color={colors.textSecondary}
+              style={styles.pinnedIcon}
             />
           )}
         </View>
@@ -174,5 +229,8 @@ const styles = StyleSheet.create({
   },
   mutedIcon: {
     marginLeft: 8,
+  },
+  pinnedIcon: {
+    marginLeft: 4,
   },
 });

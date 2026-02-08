@@ -10,157 +10,278 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User model for authentication
+// ==================== USER ====================
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  password      String
-  name          String
-  phone         String?
-  avatar        String?
-  status        String    @default("Hey there! I'm using Chatbox")
-  isOnline      Boolean   @default(false)
-  lastSeen      DateTime  @default(now())
-  isVerified    Boolean   @default(false)
-  otp           String?
-  otpExpiry     DateTime?
-  refreshToken  String?   @db.Text
+  id              String    @id @default(cuid())
+  email           String?   @unique
+  phone           String    @unique
+  countryCode     String    @default("+1")
+  password        String
+  name            String
+  about           String    @default("Hey there! I am using Chatbox")
+  avatar          String?
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  // Verification
+  isVerified      Boolean   @default(false)
+  otp             String?
+  otpExpiry       DateTime?
+
+  // Online Status
+  isOnline        Boolean   @default(false)
+  lastSeen        DateTime  @default(now())
+
+  // Tokens
+  refreshToken    String?   @db.Text
+  fcmToken        String?   // For push notifications
+
+  // Privacy Settings
+  lastSeenPrivacy     PrivacySetting @default(EVERYONE)
+  avatarPrivacy       PrivacySetting @default(EVERYONE)
+  aboutPrivacy        PrivacySetting @default(EVERYONE)
+  readReceiptsEnabled Boolean        @default(true)
+
+  // Timestamps
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // Relations
-  sentMessages      Message[]      @relation("SentMessages")
-  receivedMessages  Message[]      @relation("ReceivedMessages")
-  chats             ChatMember[]
-  contacts          Contact[]      @relation("UserContacts")
-  contactOf         Contact[]      @relation("ContactUser")
-  calls             Call[]         @relation("CallInitiator")
-  receivedCalls     Call[]         @relation("CallReceiver")
+  contacts        Contact[]       @relation("UserContacts")
+  contactOf       Contact[]       @relation("ContactUser")
+  chatMembers     ChatMember[]
+  messages        Message[]       @relation("SentMessages")
+  calls           Call[]          @relation("Caller")
+  receivedCalls   Call[]          @relation("Receiver")
+  blockedUsers    BlockedUser[]   @relation("Blocker")
+  blockedBy       BlockedUser[]   @relation("Blocked")
+  groupsCreated   Chat[]          @relation("GroupCreator")
+  readReceipts    MessageReadReceipt[]
 
+  @@index([phone])
+  @@index([email])
   @@map("users")
 }
 
-// Contact model for user contacts
+enum PrivacySetting {
+  EVERYONE
+  CONTACTS
+  NOBODY
+}
+
+// ==================== CONTACTS ====================
 model Contact {
-  id        String   @id @default(cuid())
-  userId    String
-  contactId String
-  nickname  String?
-  isBlocked Boolean  @default(false)
+  id          String   @id @default(cuid())
+  userId      String
+  contactId   String
+  nickname    String?  // Custom name for contact
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  user        User     @relation("UserContacts", fields: [userId], references: [id], onDelete: Cascade)
+  contact     User     @relation("ContactUser", fields: [contactId], references: [id], onDelete: Cascade)
 
-  user    User @relation("UserContacts", fields: [userId], references: [id], onDelete: Cascade)
-  contact User @relation("ContactUser", fields: [contactId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
 
   @@unique([userId, contactId])
+  @@index([userId])
+  @@index([contactId])
   @@map("contacts")
 }
 
-// Chat model (for both direct and group chats)
-model Chat {
+// ==================== BLOCKED USERS ====================
+model BlockedUser {
   id          String   @id @default(cuid())
-  name        String?  // For group chats
-  isGroup     Boolean  @default(false)
-  avatar      String?  // For group chats
-  description String?  // For group chats
+  blockerId   String
+  blockedId   String
+
+  blocker     User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked     User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
 
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
 
-  members  ChatMember[]
-  messages Message[]
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+  @@map("blocked_users")
+}
 
+// ==================== CHAT ====================
+model Chat {
+  id          String     @id @default(cuid())
+  type        ChatType   @default(PRIVATE)
+
+  // Group specific fields
+  name        String?    // Group name
+  description String?    // Group description
+  avatar      String?    // Group avatar
+  creatorId   String?    // Group creator
+  creator     User?      @relation("GroupCreator", fields: [creatorId], references: [id])
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  members     ChatMember[]
+  messages    Message[]
+
+  @@index([type])
+  @@index([creatorId])
   @@map("chats")
 }
 
-// ChatMember model (many-to-many between User and Chat)
+enum ChatType {
+  PRIVATE   // 1-on-1 chat
+  GROUP     // Group chat
+}
+
+// ==================== CHAT MEMBER ====================
 model ChatMember {
-  id       String   @id @default(cuid())
-  userId   String
-  chatId   String
-  role     String   @default("member") // admin, member
-  isPinned Boolean  @default(false)
-  isMuted  Boolean  @default(false)
-  joinedAt DateTime @default(now())
+  id          String         @id @default(cuid())
+  chatId      String
+  userId      String
+  role        MemberRole     @default(MEMBER)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  // For tracking unread messages
+  lastReadAt  DateTime       @default(now())
+  unreadCount Int            @default(0)
 
-  @@unique([userId, chatId])
+  // Notifications
+  isMuted     Boolean        @default(false)
+  muteUntil   DateTime?
+  isPinned    Boolean        @default(false)
+
+  joinedAt    DateTime       @default(now())
+  leftAt      DateTime?
+
+  chat        Chat           @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+  @@index([chatId])
+  @@index([userId])
   @@map("chat_members")
 }
 
-// Message model
+enum MemberRole {
+  ADMIN
+  MEMBER
+}
+
+// ==================== MESSAGE ====================
 model Message {
-  id         String        @id @default(cuid())
-  chatId     String
-  senderId   String
-  receiverId String?       // For direct messages
-  content    String        @db.Text
-  type       MessageType   @default(TEXT)
-  status     MessageStatus @default(SENT)
-  mediaUrl   String?
-  replyToId  String?
+  id          String        @id @default(cuid())
+  chatId      String
+  senderId    String
 
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  // Content
+  type        MessageType   @default(TEXT)
+  content     String?       @db.Text      // Text content
+  mediaUrl    String?                      // URL for media
+  mediaType   String?                      // MIME type
+  mediaDuration Int?                       // Duration for audio/video in seconds
+  thumbnail   String?                      // Thumbnail for video
+  fileName    String?                      // Original filename
+  fileSize    Int?                         // File size in bytes
 
-  chat     Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  sender   User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  receiver User?    @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: SetNull)
-  replyTo  Message? @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies  Message[] @relation("MessageReplies")
+  // Location (for location messages)
+  latitude    Float?
+  longitude   Float?
+  locationName String?
 
+  // Reply
+  replyToId   String?
+  replyTo     Message?      @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     Message[]     @relation("Replies")
+
+  // Forward
+  isForwarded Boolean       @default(false)
+  forwardCount Int          @default(0)
+
+  // Status
+  status      MessageStatus @default(SENT)
+
+  // Timestamps
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?     // Soft delete
+
+  // Relations
+  chat        Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender      User          @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  readReceipts MessageReadReceipt[]
+
+  @@index([chatId])
+  @@index([senderId])
+  @@index([createdAt])
   @@map("messages")
 }
 
-// Call model
-model Call {
-  id         String     @id @default(cuid())
-  callerId   String
-  receiverId String
-  type       CallType   @default(AUDIO)
-  status     CallStatus @default(MISSED)
-  duration   Int?       // in seconds
-  startedAt  DateTime?
-  endedAt    DateTime?
-
-  createdAt  DateTime   @default(now())
-
-  caller   User @relation("CallInitiator", fields: [callerId], references: [id], onDelete: Cascade)
-  receiver User @relation("CallReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
-
-  @@map("calls")
-}
-
-// Enums
 enum MessageType {
   TEXT
   IMAGE
   VIDEO
-  AUDIO
+  AUDIO       // Voice message
   DOCUMENT
   LOCATION
   CONTACT
+  STICKER
 }
 
 enum MessageStatus {
-  SENT
-  DELIVERED
-  READ
+  SENDING     // Message is being sent
+  SENT        // Server received (single tick)
+  DELIVERED   // Recipient received (double tick)
+  READ        // Recipient read (blue tick)
+  FAILED      // Failed to send
+}
+
+// ==================== MESSAGE READ RECEIPT ====================
+model MessageReadReceipt {
+  id          String   @id @default(cuid())
+  messageId   String
+  userId      String
+  readAt      DateTime @default(now())
+
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@index([userId])
+  @@map("message_read_receipts")
+}
+
+// ==================== CALL ====================
+model Call {
+  id          String     @id @default(cuid())
+  callerId    String
+  receiverId  String
+  chatId      String?    // Optional: for group calls
+
+  type        CallType
+  status      CallStatus @default(RINGING)
+
+  startedAt   DateTime   @default(now())
+  answeredAt  DateTime?
+  endedAt     DateTime?
+  duration    Int?       // Duration in seconds
+
+  caller      User       @relation("Caller", fields: [callerId], references: [id], onDelete: Cascade)
+  receiver    User       @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([callerId])
+  @@index([receiverId])
+  @@index([startedAt])
+  @@map("calls")
 }
 
 enum CallType {
-  AUDIO
+  VOICE
   VIDEO
 }
 
 enum CallStatus {
-  MISSED
+  RINGING
   ANSWERED
+  MISSED
   DECLINED
   BUSY
+  ENDED
 }
