@@ -109,45 +109,23 @@ async function refreshToken(): Promise<boolean> {
 
 // Auth API
 export const authApi = {
-  async register(data: {
-    name: string;
-    email: string;
-    password: string;
-    phone?: string;
-  }) {
+  async sendOtp(data: { phone: string; countryCode?: string }) {
     return request<{
       message: string;
-      user: User;
-    }>('/auth/register', {
+      otp?: string;
+    }>('/auth/send-otp', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  async login(data: { email: string; password: string }) {
+  async verifyOtp(data: { phone: string; otp: string }) {
     const response = await request<{
       message: string;
       user: User;
       accessToken: string;
       refreshToken: string;
-    }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-
-    // Store tokens
-    await storage.setItem(TOKEN_KEY, response.accessToken);
-    await storage.setItem(REFRESH_TOKEN_KEY, response.refreshToken);
-
-    return response;
-  },
-
-  async verifyOtp(data: { email: string; otp: string }) {
-    const response = await request<{
-      message: string;
-      user: User;
-      accessToken: string;
-      refreshToken: string;
+      isNewUser: boolean;
     }>('/auth/verify-otp', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -160,27 +138,6 @@ export const authApi = {
     return response;
   },
 
-  async resendOtp(email: string) {
-    return request<{ message: string }>('/auth/resend-otp', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
-  },
-
-  async forgotPassword(email: string) {
-    return request<{ message: string }>('/auth/forgot-password', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
-  },
-
-  async resetPassword(data: { email: string; otp: string; newPassword: string }) {
-    return request<{ message: string }>('/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
   async logout() {
     try {
       await request('/auth/logout', { method: 'POST' });
@@ -191,7 +148,7 @@ export const authApi = {
   },
 
   async getMe() {
-    return request<User>('/auth/me');
+    return request<User>('/auth/profile');
   },
 
   async getToken() {
@@ -201,6 +158,31 @@ export const authApi = {
   async isAuthenticated() {
     const token = await storage.getItem(TOKEN_KEY);
     return !!token;
+  },
+
+  async updateProfile(data: { name?: string; about?: string; avatar?: { uri: string; type: string; name: string } }) {
+    const token = await storage.getItem(TOKEN_KEY);
+    const formData = new FormData();
+
+    if (data.name !== undefined) formData.append('name', data.name);
+    if (data.about !== undefined) formData.append('about', data.about);
+    if (data.avatar) {
+      await appendFileToFormData(formData, 'avatar', data.avatar);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/auth/update-profile`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      throw { message: result.message || 'Failed to update profile', ...result };
+    }
+    return result as User;
   },
 };
 
@@ -393,16 +375,27 @@ export const settingsApi = {
   },
 };
 
+// Helper to append file to FormData (handles web vs native)
+async function appendFileToFormData(formData: FormData, fieldName: string, file: { uri: string; type: string; name: string }) {
+  if (Platform.OS === 'web') {
+    const response = await fetch(file.uri);
+    const blob = await response.blob();
+    formData.append(fieldName, blob, file.name);
+  } else {
+    formData.append(fieldName, {
+      uri: file.uri,
+      type: file.type,
+      name: file.name,
+    } as any);
+  }
+}
+
 // Upload API
 export const uploadApi = {
   async uploadFile(file: { uri: string; type: string; name: string }, folder?: string) {
     const token = await storage.getItem(TOKEN_KEY);
     const formData = new FormData();
-    formData.append('file', {
-      uri: file.uri,
-      type: file.type,
-      name: file.name,
-    } as any);
+    await appendFileToFormData(formData, 'file', file);
     if (folder) {
       formData.append('folder', folder);
     }
@@ -425,11 +418,7 @@ export const uploadApi = {
   async uploadAvatar(file: { uri: string; type: string; name: string }) {
     const token = await storage.getItem(TOKEN_KEY);
     const formData = new FormData();
-    formData.append('file', {
-      uri: file.uri,
-      type: file.type,
-      name: file.name,
-    } as any);
+    await appendFileToFormData(formData, 'file', file);
 
     const response = await fetch(`${API_BASE_URL}/upload/avatar`, {
       method: 'POST',

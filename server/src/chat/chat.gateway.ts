@@ -66,10 +66,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Notify contacts that user is online
       await this.broadcastOnlineStatus(userId, true);
-
       console.log(`User ${userId} connected with socket ${client.id}`);
-
-      // Send connection success
       client.emit('connected', { userId, socketId: client.id });
     } catch (error) {
       console.log('Connection error:', error.message);

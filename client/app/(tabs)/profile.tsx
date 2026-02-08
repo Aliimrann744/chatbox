@@ -1,12 +1,24 @@
 import { router } from 'expo-router';
-import React from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { authApi } from '@/services/api';
 
 interface ProfileItemProps {
   icon: IconSymbolName;
@@ -25,29 +37,47 @@ function ProfileItem({ icon, title, value, onPress }: ProfileItemProps) {
       style={({ pressed }) => [
         styles.profileItem,
         {
-          backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
+          backgroundColor: pressed && onPress ? colors.backgroundSecondary : colors.background,
         },
       ]}>
-      <IconSymbol name={icon} size={22} color={colors.primary} style={styles.itemIcon} />
+      <IconSymbol name={icon} size={22} color="#ffffff" style={styles.itemIcon} />
       <View style={styles.itemContent}>
         <Text style={[styles.itemTitle, { color: colors.textSecondary }]}>{title}</Text>
         <Text style={[styles.itemValue, { color: colors.text }]}>{value}</Text>
       </View>
+      {onPress && <IconSymbol name="chevron.right" size={16} color={colors.textSecondary} />}
     </Pressable>
   );
+}
+
+function getInitials(name: string): string {
+  if (!name || !name.trim()) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
+
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editField, setEditField] = useState<'name' | 'about'>('name');
+  const [editValue, setEditValue] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+
+  const displayUser = user || {
+    name: 'Guest User',
+    phone: '',
+    about: 'Hey there! I am using Chatbox',
+    avatar: null,
+  };
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
-      {
-        text: 'Cancel',
-        style: 'cancel',
-      },
+      { text: 'Cancel', style: 'cancel' },
       {
         text: 'Logout',
         style: 'destructive',
@@ -59,13 +89,53 @@ export default function ProfileScreen() {
     ]);
   };
 
-  // Fallback user data for display
-  const displayUser = user || {
-    name: 'Guest User',
-    email: 'guest@chatbox.com',
-    phone: '',
-    status: 'Hey there! I am using Chatbox',
-    avatar: 'https://i.pravatar.cc/300?img=1',
+  const handlePickAvatar = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (result.canceled || !result.assets[0]) return;
+
+    setIsUploadingAvatar(true);
+    try {
+      const asset = result.assets[0];
+      const ext = asset.uri.split('.').pop() || 'jpg';
+      await authApi.updateProfile({
+        avatar: { uri: asset.uri, type: `image/${ext}`, name: `avatar.${ext}` },
+      });
+      await refreshUser();
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update avatar');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const openEditModal = (field: 'name' | 'about') => {
+    setEditField(field);
+    setEditValue(field === 'name' ? (displayUser.name || '') : (displayUser.about || ''));
+    setEditModalVisible(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (editField === 'name' && editValue.trim().length < 2) {
+      Alert.alert('Error', 'Name must be at least 2 characters');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await authApi.updateProfile({ [editField]: editValue.trim() });
+      await refreshUser();
+      setEditModalVisible(false);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update profile');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -76,23 +146,39 @@ export default function ProfileScreen() {
       {/* Profile Header */}
       <View style={[styles.header, { backgroundColor: colors.background }]}>
         <View style={styles.avatarContainer}>
-          <Avatar
-            uri={displayUser.avatar || 'https://i.pravatar.cc/300?img=1'}
-            size={100}
-          />
+          {displayUser.avatar ? (
+            <Avatar uri={displayUser.avatar} size={100} />
+          ) : (
+            <View style={[styles.initialsContainer, { backgroundColor: colors.primary }]}>
+              <Text style={styles.initialsText}>{getInitials(displayUser.name)}</Text>
+            </View>
+          )}
           <Pressable
+            onPress={handlePickAvatar}
+            disabled={isUploadingAvatar}
             style={[styles.editAvatarButton, { backgroundColor: colors.primary }]}>
-            <IconSymbol name="camera.fill" size={16} color="#ffffff" />
+            {isUploadingAvatar ? (
+              <ActivityIndicator size={14} color="#ffffff" />
+            ) : (
+              <IconSymbol name="camera.fill" size={16} color="#ffffff" />
+            )}
           </Pressable>
         </View>
         <Text style={[styles.name, { color: colors.text }]}>{displayUser.name}</Text>
         <Text style={[styles.status, { color: colors.textSecondary }]}>
-          {displayUser.status}
+          {displayUser.about}
         </Text>
       </View>
 
       {/* Profile Info */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>
+        <ProfileItem
+          icon="person.fill"
+          title="Name"
+          value={displayUser.name || 'Not set'}
+          onPress={() => openEditModal('name')}
+        />
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <ProfileItem
           icon="phone.fill"
           title="Phone"
@@ -100,15 +186,10 @@ export default function ProfileScreen() {
         />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <ProfileItem
-          icon="paperplane.fill"
-          title="Email"
-          value={displayUser.email}
-        />
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <ProfileItem
           icon="doc.fill"
           title="About"
-          value={displayUser.status}
+          value={displayUser.about || 'Hey there! I am using Chatbox'}
+          onPress={() => openEditModal('about')}
         />
       </View>
 
@@ -117,11 +198,9 @@ export default function ProfileScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.actionItem,
-            {
-              backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
-            },
+            { backgroundColor: pressed ? colors.backgroundSecondary : colors.background },
           ]}>
-          <IconSymbol name="photo" size={22} color={colors.primary} style={styles.itemIcon} />
+          <IconSymbol name="photo" size={22} color="#ffffff" style={styles.itemIcon} />
           <Text style={[styles.actionText, { color: colors.text }]}>
             Media, Links, and Docs
           </Text>
@@ -134,16 +213,9 @@ export default function ProfileScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.actionItem,
-            {
-              backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
-            },
+            { backgroundColor: pressed ? colors.backgroundSecondary : colors.background },
           ]}>
-          <IconSymbol
-            name="magnifyingglass"
-            size={22}
-            color={colors.primary}
-            style={styles.itemIcon}
-          />
+          <IconSymbol name="magnifyingglass" size={22} color="#ffffff" style={styles.itemIcon} />
           <Text style={[styles.actionText, { color: colors.text }]}>Starred Messages</Text>
           <IconSymbol name="chevron.right" size={18} color={colors.textSecondary} />
         </Pressable>
@@ -154,11 +226,7 @@ export default function ProfileScreen() {
         onPress={handleLogout}
         style={({ pressed }) => [
           styles.logoutButton,
-          {
-            backgroundColor: pressed
-              ? 'rgba(255, 59, 48, 0.1)'
-              : colors.background,
-          },
+          { backgroundColor: pressed ? 'rgba(255, 59, 48, 0.1)' : colors.background },
         ]}>
         <Text style={styles.logoutText}>Log Out</Text>
       </Pressable>
@@ -169,6 +237,47 @@ export default function ProfileScreen() {
           Chatbox v1.0.0
         </Text>
       </View>
+
+      {/* Edit Modal */}
+      <Modal visible={editModalVisible} transparent animationType="fade">
+        <Pressable style={styles.modalOverlay} onPress={() => !isSaving && setEditModalVisible(false)}>
+          <Pressable style={[styles.modalContent, { backgroundColor: colors.background }]} onPress={() => {}}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              Edit {editField === 'name' ? 'Name' : 'About'}
+            </Text>
+            <View style={[styles.modalInput, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
+              <TextInput
+                style={[styles.modalInputText, { color: colors.text }]}
+                value={editValue}
+                onChangeText={setEditValue}
+                placeholder={editField === 'name' ? 'Enter your name' : 'Enter your about'}
+                placeholderTextColor={colors.textSecondary}
+                autoFocus
+                maxLength={editField === 'name' ? 50 : 140}
+                multiline={editField === 'about'}
+              />
+            </View>
+            <View style={styles.modalButtons}>
+              <Pressable
+                onPress={() => setEditModalVisible(false)}
+                disabled={isSaving}
+                style={[styles.modalButton, { backgroundColor: colors.backgroundSecondary }]}>
+                <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleSaveEdit}
+                disabled={isSaving}
+                style={[styles.modalButton, { backgroundColor: colors.primary }, isSaving && { opacity: 0.7 }]}>
+                {isSaving ? (
+                  <ActivityIndicator size={16} color="#ffffff" />
+                ) : (
+                  <Text style={[styles.modalButtonText, { color: '#ffffff' }]}>Save</Text>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScrollView>
   );
 }
@@ -188,6 +297,18 @@ const styles = StyleSheet.create({
   avatarContainer: {
     position: 'relative',
     marginBottom: 16,
+  },
+  initialsContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  initialsText: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   editAvatarButton: {
     position: 'absolute',
@@ -214,13 +335,12 @@ const styles = StyleSheet.create({
   },
   profileItem: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
   itemIcon: {
     marginRight: 16,
-    marginTop: 2,
   },
   itemContent: {
     flex: 1,
@@ -270,5 +390,47 @@ const styles = StyleSheet.create({
   },
   appVersion: {
     fontSize: 12,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 24,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 20,
+  },
+  modalInputText: {
+    fontSize: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

@@ -97,6 +97,26 @@ export function ChatListItem({ chat }: ChatListItemProps) {
     return prefix + text;
   };
 
+  function getInitials(name?: string) {
+    if (!name) return '?';
+
+    const words = name.trim().split(' ');
+    if (words.length === 1) {
+      return words[0][0].toUpperCase();
+    }
+
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+
+  const InitialsAvatar = ({ name }: { name?: string }) => {
+    const initials = getInitials(name);
+    return (
+      <View style={styles.initialsAvatar}>
+        <Text style={styles.initialsText}>{initials}</Text>
+      </View>
+    );
+  };
+
   return (
     <Pressable
       onPress={handlePress}
@@ -106,12 +126,11 @@ export function ChatListItem({ chat }: ChatListItemProps) {
           backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
         },
       ]}>
-      <Avatar
-        uri={chat.avatar}
-        size={55}
-        showOnlineStatus={chat.type === 'PRIVATE'}
-        isOnline={chat.isOnline}
-      />
+      {chat?.avatar ? (
+        <Avatar uri={chat.avatar} size={55} showOnlineStatus={chat.type === 'PRIVATE'} isOnline={chat.isOnline} />
+      ) : (
+        <InitialsAvatar name={chat.name} />
+      )}
 
       <View style={styles.content}>
         <View style={styles.topRow}>
@@ -186,6 +205,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
+  },
+  initialsAvatar: {
+    width: 55,
+    height: 55,
+    borderRadius: 27.5,
+    backgroundColor: '#080053',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  initialsText: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '600',
   },
   name: {
     fontSize: 16,

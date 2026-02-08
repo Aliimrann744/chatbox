@@ -6,10 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(
-    private configService: ConfigService,
-    private prisma: PrismaService,
-  ) {
+  constructor(private configService: ConfigService, private prisma: PrismaService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -17,19 +14,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; email: string }) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-    });
+  async validate(payload: { sub: string; phone: string }) {
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub }});
 
-    if (!user) {
-      throw new UnauthorizedException('User not found');
-    }
-
-    if (!user.isVerified) {
-      throw new UnauthorizedException('User is not verified');
-    }
-
-    return { id: payload.sub, email: payload.email };
+    if (!user) throw new UnauthorizedException('User not found');
+    if (!user.isVerified) throw new UnauthorizedException('User is not verified');
+    return { id: payload.sub, phone: payload.phone };
   }
 }

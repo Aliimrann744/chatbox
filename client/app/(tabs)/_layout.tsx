@@ -14,7 +14,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.primary,
+        tabBarActiveTintColor: '#ffffff',
         tabBarInactiveTintColor: colors.tabIconDefault,
         headerShown: true,
         headerStyle: {
@@ -29,7 +29,7 @@ export default function TabLayout() {
           backgroundColor: colors.background,
           borderTopColor: colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height: 65,
+          height: 70,
           paddingBottom: 10,
           paddingTop: 8,
         },

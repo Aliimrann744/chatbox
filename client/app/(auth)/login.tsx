@@ -1,4 +1,4 @@
-import { Link, router } from 'expo-router';
+import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -21,47 +21,40 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 export default function LoginScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { login } = useAuth();
+  const { sendOtp } = useAuth();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [countryCode, setCountryCode] = useState('+92');
+  const [phone, setPhone] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ phone?: string }>({});
 
   const validate = () => {
     const newErrors: typeof errors = {};
 
-    if (!email) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = 'Please enter a valid email';
-    }
-
-    if (!password) {
-      newErrors.password = 'Password is required';
+    const cleaned = phone.replace(/\D/g, '');
+    if (!cleaned) {
+      newErrors.phone = 'Phone number is required';
+    } else if (cleaned.length < 7 || cleaned.length > 15) {
+      newErrors.phone = 'Please enter a valid phone number';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleLogin = async () => {
+  const handleNext = async () => {
     if (!validate()) return;
 
     setIsLoading(true);
     try {
-      await login(email.toLowerCase().trim(), password);
-      router.replace('/(tabs)');
+      const cleaned = phone.replace(/\D/g, '');
+      await sendOtp(cleaned, countryCode);
+      router.push({
+        pathname: '/(auth)/verify-otp',
+        params: { phone: cleaned, countryCode },
+      });
     } catch (error: any) {
-      if (error.requiresVerification) {
-        router.push({
-          pathname: '/(auth)/verify-otp',
-          params: { email: error.email, type: 'verification' },
-        });
-      } else {
-        Alert.alert('Login Failed', error.message || 'Invalid email or password');
-      }
+      Alert.alert('Error', error.message || 'Failed to send OTP');
     } finally {
       setIsLoading(false);
     }
@@ -77,9 +70,6 @@ export default function LoginScreen() {
         showsVerticalScrollIndicator={false}>
         {/* Logo */}
         <View style={styles.logoContainer}>
-          <View style={[styles.logo, { backgroundColor: colors.primary }]}>
-            <Text style={styles.logoText}>C</Text>
-          </View>
           <Text style={[styles.appName, { color: colors.text }]}>Chatbox</Text>
           <Text style={[styles.tagline, { color: colors.textSecondary }]}>
             Connect with friends and family
@@ -88,101 +78,72 @@ export default function LoginScreen() {
 
         {/* Form */}
         <View style={styles.form}>
-          <Text style={[styles.title, { color: colors.text }]}>Welcome Back</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Enter Your Phone Number</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Sign in to continue
+            We'll send you a verification code via WhatsApp
           </Text>
 
-          {/* Email Input */}
+          {/* Phone Input */}
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text }]}>Email</Text>
-            <View
-              style={[
-                styles.inputContainer,
-                { backgroundColor: colors.inputBackground, borderColor: errors.email ? '#ef4444' : colors.border },
-              ]}>
-              <IconSymbol name="paperplane.fill" size={20} color={colors.textSecondary} />
-              <TextInput
-                style={[styles.input, { color: colors.text }]}
-                placeholder="Enter your email"
-                placeholderTextColor={colors.textSecondary}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoComplete="email"
-              />
-            </View>
-            {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
-          </View>
-
-          {/* Password Input */}
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text }]}>Password</Text>
-            <View
-              style={[
-                styles.inputContainer,
-                { backgroundColor: colors.inputBackground, borderColor: errors.password ? '#ef4444' : colors.border },
-              ]}>
-              <IconSymbol name="doc.fill" size={20} color={colors.textSecondary} />
-              <TextInput
-                style={[styles.input, { color: colors.text }]}
-                placeholder="Enter your password"
-                placeholderTextColor={colors.textSecondary}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoComplete="password"
-              />
-              <Pressable onPress={() => setShowPassword(!showPassword)}>
-                <IconSymbol
-                  name={showPassword ? 'xmark' : 'checkmark'}
-                  size={20}
-                  color={colors.textSecondary}
+            <Text style={[styles.label, { color: colors.text }]}>Phone Number</Text>
+            <View style={styles.phoneRow}>
+              {/* Country Code */}
+              <View
+                style={[
+                  styles.countryCodeContainer,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: colors.border,
+                  },
+                ]}>
+                <TextInput
+                  style={[styles.countryCodeInput, { color: colors.text }]}
+                  value={countryCode}
+                  onChangeText={setCountryCode}
+                  keyboardType="phone-pad"
+                  maxLength={5}
                 />
-              </Pressable>
+              </View>
+
+              {/* Phone Number */}
+              <View
+                style={[
+                  styles.phoneContainer,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: errors.phone ? '#ef4444' : colors.border,
+                  },
+                ]}>
+                <IconSymbol name="phone.fill" size={20} color={colors.textSecondary} />
+                <TextInput
+                  style={[styles.input, { color: colors.text }]}
+                  placeholder="Phone number"
+                  placeholderTextColor={colors.textSecondary}
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                  autoFocus
+                />
+              </View>
             </View>
-            {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+            {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
           </View>
 
-          {/* Forgot Password */}
-          <Link href="/(auth)/forgot-password" asChild>
-            <Pressable style={styles.forgotPassword}>
-              <Text style={[styles.forgotPasswordText, { color: colors.primary }]}>
-                Forgot Password?
-              </Text>
-            </Pressable>
-          </Link>
-
-          {/* Login Button */}
+          {/* Next Button */}
           <Pressable
             style={[
               styles.button,
               { backgroundColor: colors.primary },
               isLoading && styles.buttonDisabled,
             ]}
-            onPress={handleLogin}
+            onPress={handleNext}
             disabled={isLoading}>
             {isLoading ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text style={styles.buttonText}>Sign In</Text>
+              <Text style={styles.buttonText}>Next</Text>
             )}
           </Pressable>
-
-          {/* Register Link */}
-          <View style={styles.registerContainer}>
-            <Text style={[styles.registerText, { color: colors.textSecondary }]}>
-              Don't have an account?{' '}
-            </Text>
-            <Link href="/(auth)/register" asChild>
-              <Pressable>
-                <Text style={[styles.registerLink, { color: colors.primary }]}>
-                  Sign Up
-                </Text>
-              </Pressable>
-            </Link>
-          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -202,19 +163,6 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     marginBottom: 40,
-  },
-  logo: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  logoText: {
-    fontSize: 40,
-    fontWeight: 'bold',
-    color: '#ffffff',
   },
   appName: {
     fontSize: 28,
@@ -237,14 +185,33 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   label: {
     fontSize: 14,
     fontWeight: '500',
     marginBottom: 8,
   },
-  inputContainer: {
+  phoneRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  countryCodeContainer: {
+    width: 72,
+    height: 52,
+    borderWidth: 1,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  countryCodeInput: {
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  phoneContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
@@ -262,14 +229,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginBottom: 24,
-  },
-  forgotPasswordText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
   button: {
     height: 52,
     borderRadius: 12,
@@ -283,17 +242,6 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#ffffff',
     fontSize: 16,
-    fontWeight: '600',
-  },
-  registerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  registerText: {
-    fontSize: 14,
-  },
-  registerLink: {
-    fontSize: 14,
     fontWeight: '600',
   },
 });

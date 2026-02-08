@@ -33,13 +33,17 @@ class NotificationService {
 
   // Initialize notifications
   async initialize(): Promise<void> {
-    // Register for push notifications
-    const token = await this.registerForPushNotifications();
+    try {
+      // Register for push notifications
+      const token = await this.registerForPushNotifications();
 
-    if (token) {
-      this.expoPushToken = token;
-      // Register token with server
-      await this.registerTokenWithServer(token);
+      if (token) {
+        this.expoPushToken = token;
+        // Register token with server
+        await this.registerTokenWithServer(token);
+      }
+    } catch (error) {
+      console.warn('Push notifications not available:', error);
     }
 
     // Handle notifications received while app is foregrounded
@@ -89,13 +93,18 @@ class NotificationService {
 
     try {
       // Get Expo push token
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      if (!projectId) {
+        console.warn('No EAS projectId found. Push notifications require a development build with EAS configured.');
+        return null;
+      }
       const tokenResponse = await Notifications.getExpoPushTokenAsync({
-        projectId: Constants.expoConfig?.extra?.eas?.projectId,
+        projectId,
       });
       token = tokenResponse.data;
       console.log('Expo Push Token:', token);
     } catch (error) {
-      console.error('Error getting push token:', error);
+      console.warn('Push notifications not available (this is expected in Expo Go):', error);
     }
 
     // Configure Android channel

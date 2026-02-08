@@ -1,47 +1,45 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as fs from 'fs';
-import * as path from 'path';
+import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 
 @Injectable()
 export class UploadService {
-  private uploadDir: string;
-
   constructor(private configService: ConfigService) {
-    this.uploadDir = path.join(process.cwd(), 'uploads');
-    this.ensureUploadDir();
-  }
-
-  private ensureUploadDir() {
-    if (!fs.existsSync(this.uploadDir)) {
-      fs.mkdirSync(this.uploadDir, { recursive: true });
-    }
+    cloudinary.config({
+      cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
+      api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
+      api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
+    });
   }
 
   async uploadFile(file: Express.Multer.File, folder: string = 'general'): Promise<{ url: string; filename: string }> {
     if (!file) throw new BadRequestException('No file provided');
-    const folderPath = path.join(this.uploadDir, folder);
-    if (!fs.existsSync(folderPath)) {
-      fs.mkdirSync(folderPath, { recursive: true });
-    }
 
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    const filename = `${uniqueSuffix}${ext}`;
-    const filepath = path.join(folderPath, filename);
+    const result = await new Promise<UploadApiResponse>((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: `chatbox/${folder}`,
+          resource_type: 'auto',
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        },
+      );
+      stream.end(file.buffer);
+    });
 
-    fs.writeFileSync(filepath, file.buffer);
-
-    const baseUrl = this.configService.get<string>('BASE_URL');
-    const url = `${baseUrl}/uploads/${folder}/${filename}`;
-
-    return { url, filename };
+    return {
+      url: result.secure_url,
+      filename: result.public_id,
+    };
   }
 
-  async deleteFile(filepath: string): Promise<void> {
-    const fullPath = path.join(this.uploadDir, filepath);
-    if (fs.existsSync(fullPath)) {
-      fs.unlinkSync(fullPath);
+  async deleteFile(publicId: string): Promise<void> {
+    try {
+      await cloudinary.uploader.destroy(publicId);
+    } catch (error) {
+      console.error('Failed to delete file from Cloudinary:', error);
     }
   }
 }

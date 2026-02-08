@@ -24,7 +24,8 @@
       "Bash(timeout 10 npm run:*)",
       "Bash(ls:*)",
       "Bash(npm view:*)",
-      "Bash(npx prisma db execute:*)"
+      "Bash(npx prisma db execute:*)",
+      "Bash(npm uninstall:*)"
     ]
   }
 }

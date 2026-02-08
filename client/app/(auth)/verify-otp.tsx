@@ -19,10 +19,10 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 const OTP_LENGTH = 6;
 
 export default function VerifyOtpScreen() {
-  const { email, type } = useLocalSearchParams<{ email: string; type: 'verification' | 'reset' }>();
+  const { phone, countryCode } = useLocalSearchParams<{ phone: string; countryCode: string }>();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { verifyOtp, resendOtp } = useAuth();
+  const { verifyOtp, sendOtp } = useAuth();
 
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [isLoading, setIsLoading] = useState(false);
@@ -82,16 +82,11 @@ export default function VerifyOtpScreen() {
 
     setIsLoading(true);
     try {
-      if (type === 'reset') {
-        // Navigate to reset password screen with OTP
-        router.push({
-          pathname: '/(auth)/reset-password',
-          params: { email, otp: otpString },
-        });
-      } else {
-        await verifyOtp(email!, otpString);
-        router.replace('/(tabs)');
-      }
+      const { isNewUser } = await verifyOtp(phone!, otpString);
+      router.replace({
+        pathname: '/(auth)/loading',
+        params: { isNewUser: isNewUser ? '1' : '0' },
+      });
     } catch (error: any) {
       Alert.alert('Verification Failed', error.message || 'Invalid or expired OTP');
     } finally {
@@ -103,12 +98,12 @@ export default function VerifyOtpScreen() {
     if (!canResend) return;
 
     try {
-      await resendOtp(email!);
+      await sendOtp(phone!, countryCode);
       setCanResend(false);
       setResendTimer(60);
       setOtp(Array(OTP_LENGTH).fill(''));
       inputRefs.current[0]?.focus();
-      Alert.alert('OTP Sent', 'A new verification code has been sent to your email');
+      Alert.alert('OTP Sent', 'A new verification code has been sent via WhatsApp');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to resend OTP');
     }
@@ -125,12 +120,14 @@ export default function VerifyOtpScreen() {
             <Text style={styles.iconText}>OTP</Text>
           </View>
           <Text style={[styles.title, { color: colors.text }]}>
-            {type === 'reset' ? 'Reset Password' : 'Verify Your Email'}
+            Verify Your Number
           </Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            We've sent a 6-digit verification code to
+            We've sent a 6-digit verification code via WhatsApp to
           </Text>
-          <Text style={[styles.email, { color: colors.primary }]}>{email}</Text>
+          <Text style={[styles.phoneDisplay, { color: colors.primary }]}>
+            {countryCode} {phone}
+          </Text>
         </View>
 
         {/* OTP Inputs */}
@@ -187,16 +184,14 @@ export default function VerifyOtpScreen() {
           {isLoading ? (
             <ActivityIndicator color="#ffffff" />
           ) : (
-            <Text style={styles.buttonText}>
-              {type === 'reset' ? 'Continue' : 'Verify & Continue'}
-            </Text>
+            <Text style={styles.buttonText}>Verify & Continue</Text>
           )}
         </Pressable>
 
-        {/* Back to Login */}
+        {/* Change Number */}
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Text style={[styles.backText, { color: colors.textSecondary }]}>
-            Go back
+            Change number
           </Text>
         </Pressable>
       </View>
@@ -239,7 +234,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
   },
-  email: {
+  phoneDisplay: {
     fontSize: 14,
     fontWeight: '600',
     marginTop: 4,
