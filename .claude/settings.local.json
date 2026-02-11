@@ -25,7 +25,10 @@
       "Bash(ls:*)",
       "Bash(npm view:*)",
       "Bash(npx prisma db execute:*)",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npx eas-cli --version)",
+      "Bash(eas:*)"
     ]
   }
 }

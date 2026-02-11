@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { authApi, User } from '@/services/api';
+import { authApi, User, setOnAuthFailure } from '@/services/api';
+import socketService from '@/services/socket';
 
 interface AuthState {
   user: User | null;
@@ -19,18 +20,53 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({ user: null, isLoading: true, isAuthenticated: false });
 
+  // Register auth failure callback — fires when refresh token is definitively rejected (401/403)
+  // This is the ONLY path that forces the user back to login
+  useEffect(() => {
+    setOnAuthFailure(() => {
+      socketService.disconnect();
+      setState({ user: null, isLoading: false, isAuthenticated: false });
+    });
+    return () => setOnAuthFailure(null);
+  }, []);
+
+  // Auto-connect/disconnect WebSocket based on auth state
+  useEffect(() => {
+    if (state.isAuthenticated && !state.isLoading) {
+      socketService.connect();
+    } else if (!state.isAuthenticated && !state.isLoading) {
+      socketService.disconnect();
+    }
+  }, [state.isAuthenticated, state.isLoading]);
+
   useEffect(() => {
     checkAuth();
   }, []);
 
   const checkAuth = async () => {
     try {
-      const isAuth = await authApi.isAuthenticated();
-      if (isAuth) {
+      const hasToken = await authApi.isAuthenticated();
+      if (!hasToken) {
+        setState({ user: null, isLoading: false, isAuthenticated: false });
+        return;
+      }
+
+      // Token exists — try to load user profile
+      // If access token is expired, request() will auto-refresh it
+      try {
         const user = await authApi.getMe();
         setState({ user, isLoading: false, isAuthenticated: true });
-      } else {
-        setState({ user: null, isLoading: false, isAuthenticated: false });
+      } catch (error: any) {
+        // Check if tokens were cleared by a definitive refresh failure
+        const stillHasToken = await authApi.isAuthenticated();
+        if (stillHasToken) {
+          // Network error or temporary server issue — stay authenticated
+          // User profile will load when connectivity returns
+          setState({ user: null, isLoading: false, isAuthenticated: true });
+        } else {
+          // Refresh token was rejected — tokens were cleared, need fresh login
+          setState({ user: null, isLoading: false, isAuthenticated: false });
+        }
       }
     } catch (error) {
       setState({ user: null, isLoading: false, isAuthenticated: false });
@@ -53,6 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       // Ignore server errors — tokens are already cleared by authApi.logout's finally block
     }
+    socketService.disconnect();
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
 
@@ -61,10 +98,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const user = await authApi.getMe();
       setState((prev) => ({ ...prev, user }));
     } catch (error) {
-      // Token might be invalid, logout
-      await logout();
+      // Don't immediately logout — request() already attempted token refresh.
+      // Only mark unauthenticated if tokens were cleared (refresh definitively failed)
+      const hasToken = await authApi.isAuthenticated();
+      if (!hasToken) {
+        socketService.disconnect();
+        setState({ user: null, isLoading: false, isAuthenticated: false });
+      }
+      // Otherwise silently fail — profile will refresh when network returns
     }
-  }, [logout]);
+  }, []);
 
   const value: AuthContextType = {
     ...state,

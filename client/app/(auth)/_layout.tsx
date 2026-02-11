@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import React from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -7,6 +8,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 export default function AuthLayout() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
 
   return (
     <Stack
@@ -14,6 +16,8 @@ export default function AuthLayout() {
         headerShown: false,
         contentStyle: {
           backgroundColor: colors.background,
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
         },
       }}>
       <Stack.Screen name="login" />

@@ -2,7 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
 // const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000/api';
-const API_BASE_URL = 'http://localhost:4000/api';
+const API_BASE_URL = 'https://7aa2-144-48-133-159.ngrok-free.app/api';
 const TOKEN_KEY = 'accessToken';
 const REFRESH_TOKEN_KEY = 'refreshToken';
 
@@ -29,18 +29,33 @@ const storage = {
   },
 };
 
-// API response types
-interface ApiResponse<T = any> {
-  data?: T;
-  message?: string;
-  error?: string;
-  statusCode?: number;
+// Token refresh mutex - prevents concurrent refresh calls
+let isRefreshing = false;
+let refreshSubscribers: ((success: boolean) => void)[] = [];
+
+// Auth failure callback - called when refresh token is definitively invalid
+let authFailureCallback: (() => void) | null = null;
+
+export function setOnAuthFailure(callback: (() => void) | null) {
+  authFailureCallback = callback;
 }
 
-// Request helper
+function onRefreshComplete(success: boolean) {
+  refreshSubscribers.forEach(cb => cb(success));
+  refreshSubscribers = [];
+}
+
+function waitForRefresh(): Promise<boolean> {
+  return new Promise(resolve => {
+    refreshSubscribers.push(resolve);
+  });
+}
+
+// Request helper with retry protection
 async function request<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  _isRetry = false
 ): Promise<T> {
   const accessToken = await storage.getItem(TOKEN_KEY);
 
@@ -61,12 +76,11 @@ async function request<T>(
   const data = await response.json();
 
   if (!response.ok) {
-    // Handle token expiration
-    if (response.status === 401 && accessToken) {
+    // Handle token expiration - only retry once to prevent infinite loops
+    if (response.status === 401 && accessToken && !_isRetry) {
       const refreshed = await refreshToken();
       if (refreshed) {
-        // Retry the request with new token
-        return request(endpoint, options);
+        return request(endpoint, options, true);
       }
     }
 
@@ -80,11 +94,22 @@ async function request<T>(
   return data;
 }
 
-// Refresh token
+// Refresh token with mutex
 async function refreshToken(): Promise<boolean> {
+  // If already refreshing, wait for the result instead of making a duplicate call
+  if (isRefreshing) {
+    return waitForRefresh();
+  }
+
+  isRefreshing = true;
+
   try {
     const refresh = await storage.getItem(REFRESH_TOKEN_KEY);
-    if (!refresh) return false;
+    if (!refresh) {
+      onRefreshComplete(false);
+      isRefreshing = false;
+      return false;
+    }
 
     const response = await fetch(`${API_BASE_URL}/auth/refresh-token`, {
       method: 'POST',
@@ -93,16 +118,30 @@ async function refreshToken(): Promise<boolean> {
     });
 
     if (!response.ok) {
-      await storage.removeItem(TOKEN_KEY);
-      await storage.removeItem(REFRESH_TOKEN_KEY);
+      // Only clear tokens when server definitively rejects the refresh token (401/403)
+      if (response.status === 401 || response.status === 403) {
+        await storage.removeItem(TOKEN_KEY);
+        await storage.removeItem(REFRESH_TOKEN_KEY);
+        authFailureCallback?.();
+      }
+      // For other errors (500, network issues), keep tokens for retry later
+      onRefreshComplete(false);
+      isRefreshing = false;
       return false;
     }
 
     const data = await response.json();
     await storage.setItem(TOKEN_KEY, data.accessToken);
-    await storage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
+    if (data.refreshToken) {
+      await storage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
+    }
+    onRefreshComplete(true);
+    isRefreshing = false;
     return true;
   } catch {
+    // Network error - don't clear tokens, user stays logged in
+    onRefreshComplete(false);
+    isRefreshing = false;
     return false;
   }
 }
@@ -110,10 +149,7 @@ async function refreshToken(): Promise<boolean> {
 // Auth API
 export const authApi = {
   async sendOtp(data: { phone: string; countryCode?: string }) {
-    return request<{
-      message: string;
-      otp?: string;
-    }>('/auth/send-otp', {
+    return request<{ message: string; otp?: string; }>('/auth/send-otp', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -139,11 +175,26 @@ export const authApi = {
   },
 
   async logout() {
+    // Save token before clearing so we can still notify the server
+    const token = await storage.getItem(TOKEN_KEY);
+
+    // Always clear tokens first — this guarantees local cleanup
+    await storage.removeItem(TOKEN_KEY);
+    await storage.removeItem(REFRESH_TOKEN_KEY);
+
+    // Notify the server (best effort — don't use request() to avoid 401 retry loops)
     try {
-      await request('/auth/logout', { method: 'POST' });
-    } finally {
-      await storage.removeItem(TOKEN_KEY);
-      await storage.removeItem(REFRESH_TOKEN_KEY);
+      if (token) {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      }
+    } catch {
+      // Ignore server errors — tokens are already cleared locally
     }
   },
 
@@ -619,4 +670,4 @@ export interface PrivacySettings {
   readReceiptsEnabled: boolean;
 }
 
-export { storage, API_BASE_URL };
+export { storage, API_BASE_URL, setOnAuthFailure };

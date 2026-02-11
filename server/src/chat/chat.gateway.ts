@@ -80,11 +80,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (userId) {
       this.connectedUsers.delete(userId);
 
-      // Update offline status
-      await this.chatService.setUserOnline(userId, false);
-
-      // Notify contacts
-      await this.broadcastOnlineStatus(userId, false);
+      try {
+        await this.chatService.setUserOnline(userId, false);
+        await this.broadcastOnlineStatus(userId, false);
+      } catch (error) {
+        console.log(`Cleanup failed for user ${userId}:`, error.message);
+      }
 
       console.log(`User ${userId} disconnected`);
     }

@@ -1,13 +1,9 @@
-import {
-  Controller,
-  Post,
-  UseInterceptors,
-  UploadedFile,
-  Body,
-  BadRequestException,
-} from '@nestjs/common';
+import { Controller, Post, UseInterceptors, UploadedFile, Body, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from './upload.service';
+import { allowedMimeTypes } from 'src/constant/mime-types';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 
 @Controller('upload')
 export class UploadController {
@@ -16,36 +12,21 @@ export class UploadController {
   @Post()
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB
-      },
+      storage: diskStorage({
+        destination: './tmp',
+        filename: (req, file, cb) => {
+          const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extname(file.originalname)}`;
+          cb(null, uniqueName);
+        },
+      }),
+      limits: { fileSize: 50 * 1024 * 1024 },
       fileFilter: (req, file, callback) => {
-        const allowedMimeTypes = [
-          'image/jpeg',
-          'image/png',
-          'image/gif',
-          'image/webp',
-          'video/mp4',
-          'video/webm',
-          'audio/mpeg',
-          'audio/wav',
-          'application/pdf',
-          'application/msword',
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        ];
-
-        if (allowedMimeTypes.includes(file.mimetype)) {
-          callback(null, true);
-        } else {
-          callback(new BadRequestException('Invalid file type'), false);
-        }
+        if (allowedMimeTypes.includes(file.mimetype)) { callback(null, true); } 
+        else { callback(new BadRequestException('Invalid file type'), false); }
       },
     }),
   )
-  async uploadFile(
-    @UploadedFile() file: Express.Multer.File,
-    @Body('folder') folder?: string,
-  ) {
+  async uploadFile(@UploadedFile() file: Express.Multer.File, @Body('folder') folder?: string) {
     return this.uploadService.uploadFile(file, folder);
   }
 

@@ -11,18 +11,12 @@ interface FloatingActionButtonProps {
   size?: number;
 }
 
-export function FloatingActionButton({
-  onPress,
-  icon = 'plus',
-  size = 56,
-}: FloatingActionButtonProps) {
+export function FloatingActionButton({ onPress, icon = 'plus', size = 56 }: FloatingActionButtonProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
+    <Pressable onPress={onPress}style={({ pressed }) => [
         styles.button,
         {
           backgroundColor: colors.primary,

@@ -47,8 +47,10 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      const cleaned = phone.replace(/\D/g, '');
-      await sendOtp(cleaned, countryCode);
+      const cleaned = phone?.replace(/\D/g, '')?.replace(/^0/, '');
+      console.log("cleaned", cleaned);
+      const response = await sendOtp(cleaned, countryCode);
+      console.log("Response", response);
       router.push({
         pathname: '/(auth)/verify-otp',
         params: { phone: cleaned, countryCode },

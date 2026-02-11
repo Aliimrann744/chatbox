@@ -68,7 +68,7 @@ export function CallListItem({ call }: CallListItemProps) {
         <IconSymbol
           name={call.callType === 'video' ? 'video.fill' : 'phone.fill'}
           size={22}
-          color={colors.primary}
+          color="#fff"
         />
       </Pressable>
     </Pressable>

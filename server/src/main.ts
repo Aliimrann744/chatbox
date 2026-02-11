@@ -4,6 +4,13 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const server = app.getHttpServer();
+  server.setTimeout(60000);
+
+  app.use((req, res, next) => {
+    res.setHeader('ngrok-skip-browser-warning', 'true');
+    next();
+  });
 
   // Enable CORS
   app.enableCors({

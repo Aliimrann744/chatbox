@@ -71,11 +71,7 @@ export function AudioPlayer({ uri, duration = 0, isOwnMessage = false }: AudioPl
         {isThisLoading ? (
           <View style={[styles.loadingDot, { backgroundColor: buttonColor }]} />
         ) : (
-          <IconSymbol
-            name={isThisPlaying ? 'pause.fill' : 'play.fill'}
-            size={18}
-            color={buttonColor}
-          />
+          <IconSymbol name={isThisPlaying ? 'pause.fill' : 'play.fill'} size={26} color={buttonColor} />
         )}
       </Pressable>
 

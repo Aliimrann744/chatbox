@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -10,6 +11,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 export default function TabLayout() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
@@ -29,8 +31,8 @@ export default function TabLayout() {
           backgroundColor: colors.background,
           borderTopColor: colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height: 70,
-          paddingBottom: 10,
+          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
@@ -42,11 +44,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Chats',
-          headerTitle: 'Chatbox',
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
-              <IconSymbol size={24} name="message.fill" color={focused ? '#ffffff' : color} />
-            </View>
+            <IconSymbol size={24} name="message.fill" color={focused ? '#ffffff' : color} />
           ),
         }}
       />
@@ -55,9 +54,7 @@ export default function TabLayout() {
         options={{
           title: 'Contacts',
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
-              <IconSymbol size={24} name="person.2.fill" color={focused ? '#ffffff' : color} />
-            </View>
+            <IconSymbol size={24} name="person.2.fill" color={focused ? '#ffffff' : color} />
           ),
         }}
       />
@@ -66,9 +63,7 @@ export default function TabLayout() {
         options={{
           title: 'Calls',
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
-              <IconSymbol size={24} name="phone.fill" color={focused ? '#ffffff' : color} />
-            </View>
+            <IconSymbol size={24} name="phone.fill" color={focused ? '#ffffff' : color} />
           ),
         }}
       />
@@ -77,9 +72,7 @@ export default function TabLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
-              <IconSymbol size={24} name="gear" color={focused ? '#ffffff' : color} />
-            </View>
+            <IconSymbol size={24} name="gear" color={focused ? '#ffffff' : color} />
           ),
         }}
       />
@@ -88,23 +81,10 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
-              <IconSymbol size={24} name="person.fill" color={focused ? '#ffffff' : color} />
-            </View>
+            <IconSymbol size={24} name="person.fill" color={focused ? '#ffffff' : color} />
           ),
         }}
       />
     </Tabs>
   );
-}
-
-const styles = StyleSheet.create({
-  iconContainer: {
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-  },
-  activeIconContainer: {
-    backgroundColor: '#04003a',
-  },
-});
+};

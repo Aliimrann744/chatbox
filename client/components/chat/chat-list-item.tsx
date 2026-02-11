@@ -97,15 +97,11 @@ export function ChatListItem({ chat }: ChatListItemProps) {
     return prefix + text;
   };
 
-  function getInitials(name?: string) {
-    if (!name) return '?';
-
-    const words = name.trim().split(' ');
-    if (words.length === 1) {
-      return words[0][0].toUpperCase();
-    }
-
-    return (words[0][0] + words[1][0]).toUpperCase();
+  function getInitials(name: string | undefined): string {
+    if (!name || !name.trim()) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
 
   const InitialsAvatar = ({ name }: { name?: string }) => {
@@ -118,9 +114,7 @@ export function ChatListItem({ chat }: ChatListItemProps) {
   };
 
   return (
-    <Pressable
-      onPress={handlePress}
-      style={({ pressed }) => [
+    <Pressable onPress={handlePress} style={({ pressed }) => [
         styles.container,
         {
           backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
@@ -128,8 +122,8 @@ export function ChatListItem({ chat }: ChatListItemProps) {
       ]}>
       {chat?.avatar ? (
         <Avatar uri={chat.avatar} size={55} showOnlineStatus={chat.type === 'PRIVATE'} isOnline={chat.isOnline} />
-      ) : (
-        <InitialsAvatar name={chat.name} />
+      ) : ( 
+        <InitialsAvatar name={chat?.name} />
       )}
 
       <View style={styles.content}>

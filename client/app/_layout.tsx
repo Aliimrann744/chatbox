@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
 import { Colors } from '@/constants/theme';
@@ -122,12 +123,14 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <NotificationProvider>
-        <CallProvider>
-          <RootLayoutNav />
-        </CallProvider>
-      </NotificationProvider>
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <NotificationProvider>
+          <CallProvider>
+            <RootLayoutNav />
+          </CallProvider>
+        </NotificationProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

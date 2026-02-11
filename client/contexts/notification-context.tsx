@@ -54,7 +54,7 @@ export function NotificationProvider({
     );
 
     return () => {
-      Notifications.removeNotificationSubscription(subscription);
+      subscription.remove();
     };
   }, []);
 

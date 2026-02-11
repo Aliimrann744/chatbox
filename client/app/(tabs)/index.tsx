@@ -39,9 +39,6 @@ export default function ChatsScreen() {
   useEffect(() => {
     fetchChats();
 
-    // Connect to socket
-    socketService.connect();
-
     // Listen for new messages to update chat list
     const unsubscribeNewMessage = socketService.on('new_message', (message: any) => {
       setChats((prevChats) => {
@@ -106,10 +103,7 @@ export default function ChatsScreen() {
   }, [fetchChats]);
 
   // Filter chats based on search
-  const filteredChats = chats.filter((chat) =>
-    (chat.name || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
+  const filteredChats = chats.filter((chat) => (chat.name || '').toLowerCase().includes(searchQuery.toLowerCase()));
   const pinnedChats = filteredChats.filter((chat) => chat.isPinned);
   const regularChats = filteredChats.filter((chat) => !chat.isPinned);
 

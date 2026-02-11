@@ -1,17 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  ActivityIndicator,
-  Image,
-} from 'react-native';
+import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator, Image } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -24,24 +14,9 @@ import { chatApi, Chat, Message, uploadApi } from '@/services/api';
 import socketService from '@/services/socket';
 import { useAuth } from '@/contexts/auth-context';
 import { useCall } from '@/contexts/call-context';
-import {
-  pickImage,
-  pickVideo,
-  pickDocument,
-  takePhoto,
-  PickedMedia,
-  getMessageTypeFromMimeType,
-} from '@/utils/media-picker';
+import { pickImage, pickVideo, pickDocument, takePhoto, PickedMedia, getMessageTypeFromMimeType } from '@/utils/media-picker';
 import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-picker';
-
-// Generate temporary ID for optimistic updates
-const generateTempId = () => `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-// Format timestamp
-function formatTime(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
+import { formatTime, generateTempId, getStatusText } from '@/utils/helpers';
 
 function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
   const colorScheme = useColorScheme() ?? 'light';
@@ -90,11 +65,7 @@ function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
         );
       case 'AUDIO':
         return message.mediaUrl ? (
-          <AudioPlayer
-            uri={message.mediaUrl}
-            duration={message.mediaDuration ? message.mediaDuration * 1000 : 0}
-            isOwnMessage={isMe}
-          />
+          <AudioPlayer uri={message.mediaUrl} duration={message.mediaDuration ? message.mediaDuration * 1000 : 0} isOwnMessage={isMe} />
         ) : (
           <View style={styles.audioContainer}>
             <IconSymbol name="mic.fill" size={24} color={colors.primary} />
@@ -162,29 +133,21 @@ function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
   };
 
   return (
-    <View
-      style={[
-        styles.messageBubbleContainer,
-        isMe ? styles.messageBubbleContainerMe : styles.messageBubbleContainerOther,
-      ]}>
-      {message.replyTo && (
-        <View style={[styles.replyContainer, { borderLeftColor: colors.primary }]}>
-          <Text style={[styles.replyName, { color: colors.primary }]}>
-            {message.replyTo.sender.name}
-          </Text>
-          <Text style={[styles.replyText, { color: colors.textSecondary }]} numberOfLines={1}>
-            {message.replyTo.content || `[${message.replyTo.type}]`}
-          </Text>
-        </View>
-      )}
-      <View
-        style={[
-          styles.messageBubble,
-          isMe
-            ? { backgroundColor: colors.messageOutgoing }
-            : { backgroundColor: colors.messageIncoming },
-          !isMe && colorScheme === 'light' && styles.messageBubbleBorder,
-        ]}>
+    <View style={[styles.messageBubbleContainer, isMe ? styles.messageBubbleContainerMe : styles.messageBubbleContainerOther]}>
+      <View style={
+        [styles.messageBubble, isMe ? [{ backgroundColor: colors.messageOutgoing }, styles.messageBubbleMe] : 
+        [{ backgroundColor: colors.messageIncoming }, styles.messageBubbleOther], 
+        !isMe && colorScheme === 'light' && styles.messageBubbleBorder]}>
+        {message.replyTo && (
+          <View style={[styles.replyContainer, { borderLeftColor: colors.primary, backgroundColor: isMe ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.04)' }]}>
+            <Text style={[styles.replyName, { color: colors.primary }]}>
+              {message.replyTo.sender.name}
+            </Text>
+            <Text style={[styles.replyText, { color: colors.textSecondary }]} numberOfLines={1}>
+              {message.replyTo.content || `[${message.replyTo.type}]`}
+            </Text>
+          </View>
+        )}
         {renderContent()}
         <View style={styles.messageFooter}>
           <Text style={[styles.messageTime, { color: colors.textSecondary }]}>
@@ -197,66 +160,51 @@ function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
   );
 }
 
-function ChatHeader({
-  chat,
-  isTyping,
-  onBack,
-  onCall,
-  onVideoCall,
-}: {
-  chat: Chat | null;
-  isTyping: boolean;
-  onBack: () => void;
-  onCall: () => void;
-  onVideoCall: () => void;
-}) {
+function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall }: { chat: any; isTyping: boolean; onBack: () => void; onCall: () => void; onVideoCall: () => void; }) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-
-  const getStatusText = () => {
-    if (isTyping) return 'typing...';
-    if (chat?.isOnline) return 'Online';
-    if (chat?.lastSeen) {
-      const lastSeen = new Date(chat.lastSeen);
-      return `Last seen ${lastSeen.toLocaleDateString()} ${lastSeen.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    }
-    return '';
-  };
+  const insets = useSafeAreaInsets();
+  const statusText = getStatusText(isTyping, chat);
 
   return (
-    <View style={[styles.header, { backgroundColor: colors.primary }]}>
-      <Pressable onPress={onBack} style={styles.headerBackButton}>
-        <IconSymbol name="chevron.left" size={24} color={colors.headerText} />
+    <View style={[styles.header, { backgroundColor: colors.primary, paddingTop: insets.top + 8 }]}>
+      <Pressable onPress={onBack} style={styles.headerBackButton} hitSlop={8}>
+        <IconSymbol name="chevron.left" size={36} style={[{ padding: 0 }]} color={colors.headerText} />
       </Pressable>
 
       <Pressable style={styles.headerUserInfo}>
-        <Avatar uri={chat?.avatar} size={40} showOnlineStatus isOnline={chat?.isOnline} />
+        <Avatar uri={chat?.avatar || ""} size={38} showOnlineStatus isOnline={chat?.isOnline} />
         <View style={styles.headerTextContainer}>
-          <Text style={[styles.headerUsername, { color: colors.headerText }]}>
-            {chat?.name || 'Loading...'}
+          <Text style={[styles.headerUsername, { color: colors.headerText }]} numberOfLines={1}>
+            {chat?.name || 'Chat'}
           </Text>
-          <Text style={[styles.headerStatus, { color: 'rgba(255, 255, 255, 0.7)' }]}>
-            {getStatusText()}
-          </Text>
+          {statusText ? (
+            <Text
+              style={[
+                styles.headerStatus,
+                { color: isTyping ? '#25D366' : 'rgba(255, 255, 255, 0.7)' },
+              ]}
+              numberOfLines={1}
+            >
+              {statusText}
+            </Text>
+          ) : null}
         </View>
       </Pressable>
 
-      <Pressable onPress={onVideoCall} style={styles.headerActionButton}>
-        <IconSymbol name="video.fill" size={22} color={colors.headerText} />
-      </Pressable>
-
-      <Pressable onPress={onCall} style={styles.headerActionButton}>
-        <IconSymbol name="phone.fill" size={22} color={colors.headerText} />
-      </Pressable>
+      <View style={styles.headerActions}>
+        <Pressable onPress={onVideoCall} style={styles.headerActionButton} hitSlop={6}>
+          <IconSymbol name="video.fill" size={20} color={colors.headerText} />
+        </Pressable>
+        <Pressable onPress={onCall} style={styles.headerActionButton} hitSlop={6}>
+          <IconSymbol name="phone.fill" size={20} color={colors.headerText} />
+        </Pressable>
+      </View>
     </View>
   );
 }
 
-function AttachmentMenu({ visible, onClose, onSelect }: {
-  visible: boolean;
-  onClose: () => void;
-  onSelect: (type: string) => void;
-}) {
+function AttachmentMenu({ visible, onClose, onSelect }: { visible: boolean; onClose: () => void; onSelect: (type: string) => void; }) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
@@ -265,10 +213,9 @@ function AttachmentMenu({ visible, onClose, onSelect }: {
   const attachmentOptions = [
     { icon: 'doc.fill' as const, label: 'Document', type: 'document', color: '#5856D6' },
     { icon: 'camera.fill' as const, label: 'Camera', type: 'camera', color: '#FF3B30' },
-    { icon: 'photo' as const, label: 'Gallery', type: 'gallery', color: '#FF9500' },
-    { icon: 'mic.fill' as const, label: 'Audio', type: 'audio', color: '#FF2D55' },
+    { icon: 'photo' as const, label: 'Photos', type: 'gallery', color: '#FF9500' },
+    { icon: 'video.fill' as const, label: 'Video', type: 'video', color: '#AF52DE' },
     { icon: 'location.fill' as const, label: 'Location', type: 'location', color: '#34C759' },
-    { icon: 'person.fill' as const, label: 'Contact', type: 'contact', color: '#007AFF' },
   ];
 
   return (
@@ -297,19 +244,7 @@ function AttachmentMenu({ visible, onClose, onSelect }: {
   );
 }
 
-function MessageInput({
-  value,
-  onChange,
-  onSend,
-  onAttachment,
-  onVoiceStart,
-  onVoiceStop,
-  onVoiceCancel,
-  isRecording,
-  recordingDuration,
-  onTypingStart,
-  onTypingStop,
-}: {
+function MessageInput({ value, onChange, onSend, onAttachment, onVoiceStart, onVoiceStop, onVoiceCancel, isRecording, recordingDuration, onTypingStart, onTypingStop }: {
   value: string;
   onChange: (text: string) => void;
   onSend: () => void;
@@ -324,7 +259,8 @@ function MessageInput({
 }) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const insets = useSafeAreaInsets();
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null | any>(null);
 
   const handleTextChange = (text: string) => {
     onChange(text);
@@ -350,19 +286,12 @@ function MessageInput({
   // Show voice recorder when recording
   if (isRecording) {
     return (
-      <View style={[styles.inputContainer, { backgroundColor: colors.background }]}>
+      <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: insets.bottom + 6 }]}>
         <View style={[styles.inputRow, { backgroundColor: colors.inputBackground }]}>
-          <InlineVoiceRecorder
-            isRecording={isRecording}
-            duration={recordingDuration}
-            onStop={onVoiceStop}
-            onCancel={onVoiceCancel}
-          />
+          <InlineVoiceRecorder isRecording={isRecording} duration={recordingDuration} onStop={onVoiceStop} onCancel={onVoiceCancel} />
         </View>
 
-        <Pressable
-          onPress={onVoiceStop}
-          style={[styles.sendButton, { backgroundColor: colors.primary }]}>
+        <Pressable onPress={onVoiceStop} style={[styles.sendButton, { backgroundColor: '#25D366' }]}>
           <IconSymbol name="arrow.up" size={22} color="#ffffff" />
         </Pressable>
       </View>
@@ -370,31 +299,24 @@ function MessageInput({
   }
 
   return (
-    <View style={[styles.inputContainer, { backgroundColor: colors.background }]}>
+    <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: insets.bottom + 6 }]}>
       <View style={[styles.inputRow, { backgroundColor: colors.inputBackground }]}>
+        
         <Pressable onPress={onAttachment} style={styles.inputIconButton}>
-          <IconSymbol name="plus.circle.fill" size={26} color={colors.primary} />
+          <IconSymbol name="plus" size={24} color="#fff" />
         </Pressable>
 
         <TextInput
-          style={[styles.textInput, { color: colors.text }]}
-          placeholder="Type a message..."
-          placeholderTextColor={colors.textSecondary}
-          value={value}
-          onChangeText={handleTextChange}
-          multiline
-          maxLength={1000}
+          style={[styles.textInput, { color: colors.text }]} placeholder="Type a message..."
+          placeholderTextColor={colors.textSecondary} value={value} onChangeText={handleTextChange}
+          multiline maxLength={1000}
         />
+
+
       </View>
 
-      <Pressable
-        onPress={value.trim() ? onSend : onVoiceStart}
-        style={[styles.sendButton, { backgroundColor: colors.primary }]}>
-        <IconSymbol
-          name={value.trim() ? 'paperplane.fill' : 'mic.fill'}
-          size={22}
-          color="#ffffff"
-        />
+      <Pressable onPress={value.trim() ? onSend : onVoiceStart} style={[styles.sendButton, { backgroundColor: '#007a64' }]}>
+        <IconSymbol name={value.trim() ? 'paperplane.fill' : 'mic.fill'} size={24} color="#ffffff" />
       </Pressable>
     </View>
   );
@@ -417,16 +339,13 @@ export default function ChatDetailScreen() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
-
   const flatListRef = useRef<FlatList>(null);
+  // Get the other participant for PRIVATE chats
+  const otherMember = chat?.members?.find((m) => m.user.id !== user?.id);
+  const otherUser = otherMember?.user;
 
   // Voice recording
-  const {
-    recording: voiceRecording,
-    startRecording,
-    stopRecording,
-    cancelRecording,
-  } = useVoiceRecorder();
+  const { recording: voiceRecording, startRecording, stopRecording, cancelRecording } = useVoiceRecorder();
 
   // Fetch chat and messages
   const fetchData = useCallback(async () => {
@@ -577,34 +496,16 @@ export default function ChatDetailScreen() {
   };
 
   const handleCall = async () => {
-    if (!chat || chat.type !== 'PRIVATE') return;
+    if (!chat || chat.type !== 'PRIVATE' || !otherUser) return;
 
-    // Get the other participant
-    const otherMember = chat.members?.find((m) => m.user.id !== user?.id);
-    if (!otherMember) return;
-
-    await initiateCall(
-      otherMember.user.id,
-      otherMember.user.name,
-      otherMember.user.avatar,
-      'VOICE'
-    );
+    await initiateCall(otherUser.id, otherUser.name, otherUser.avatar, 'VOICE');
     router.push('/call/active');
   };
 
   const handleVideoCall = async () => {
-    if (!chat || chat.type !== 'PRIVATE') return;
+    if (!chat || chat.type !== 'PRIVATE' || !otherUser) return;
 
-    // Get the other participant
-    const otherMember = chat.members?.find((m) => m.user.id !== user?.id);
-    if (!otherMember) return;
-
-    await initiateCall(
-      otherMember.user.id,
-      otherMember.user.name,
-      otherMember.user.avatar,
-      'VIDEO'
-    );
+    await initiateCall(otherUser.id, otherUser.name, otherUser.avatar, 'VIDEO');
     router.push('/call/active');
   };
 
@@ -612,8 +513,6 @@ export default function ChatDetailScreen() {
     if (!messageText.trim() || !chatId || !user) return;
 
     const tempId = generateTempId();
-
-    // Optimistic update
     const optimisticMessage: Message = {
       id: tempId,
       chatId,
@@ -818,7 +717,7 @@ export default function ChatDetailScreen() {
         senderId: user.id,
         type: 'AUDIO',
         mediaUrl: result.uri,
-        mediaType: 'audio/m4a',
+        mediaType: 'audio/mp4',
         mediaDuration: durationSeconds,
         status: 'SENDING',
         isForwarded: false,
@@ -842,8 +741,8 @@ export default function ChatDetailScreen() {
         const uploadResult = await uploadApi.uploadFile(
           {
             uri: result.uri,
-            type: 'audio/m4a',
-            name: `voice_${Date.now()}.m4a`,
+            type: 'audio/mp4',
+            name: `voice_${Date.now()}.mp4`,
           },
           'voice'
         );
@@ -853,7 +752,7 @@ export default function ChatDetailScreen() {
           chatId,
           type: 'AUDIO',
           mediaUrl: uploadResult.url,
-          mediaType: 'audio/m4a',
+          mediaType: 'audio/mp4',
           mediaDuration: durationSeconds,
           tempId,
         });
@@ -903,7 +802,15 @@ export default function ChatDetailScreen() {
       keyboardVerticalOffset={0}>
       {/* Custom Header */}
       <ChatHeader
-        chat={chat}
+        chat={chat?.type === 'PRIVATE' ? {
+          name: otherUser?.name,
+          avatar: otherUser?.avatar,
+          isOnline: otherUser?.isOnline,
+          lastSeen: otherUser?.lastSeen,
+        } : {
+          name: chat?.name,
+          avatar: chat?.avatar,
+        }}
         isTyping={isTyping}
         onBack={handleBack}
         onCall={handleCall}
@@ -933,7 +840,6 @@ export default function ChatDetailScreen() {
         }}
       />
 
-      {/* Message Input */}
       <MessageInput
         value={messageText}
         onChange={setMessageText}
@@ -969,28 +875,38 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: Platform.OS === 'ios' ? 50 : 10,
     paddingBottom: 10,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
   },
   headerBackButton: {
-    padding: 10,
+    padding: 6,
   },
   headerUserInfo: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    marginLeft: 2,
   },
   headerTextContainer: {
     marginLeft: 10,
     flex: 1,
   },
   headerUsername: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
   },
   headerStatus: {
-    fontSize: 13,
+    fontSize: 12,
+    marginTop: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   headerActionButton: {
     padding: 10,
@@ -1006,8 +922,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   messageBubbleContainer: {
-    marginVertical: 2,
-    maxWidth: '80%',
+    marginVertical: 1,
+    maxWidth: '82%',
+    paddingHorizontal: 2,
   },
   messageBubbleContainerMe: {
     alignSelf: 'flex-end',
@@ -1018,8 +935,9 @@ const styles = StyleSheet.create({
   replyContainer: {
     borderLeftWidth: 3,
     paddingLeft: 8,
+    paddingVertical: 4,
     marginBottom: 4,
-    opacity: 0.7,
+    borderRadius: 4,
   },
   replyName: {
     fontSize: 12,
@@ -1029,9 +947,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   messageBubble: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 6,
+    borderRadius: 8,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 0.5 },
+    shadowOpacity: 0.08,
+    shadowRadius: 1,
+    display: "flex",
+    flexDirection: "row",
+    gap: 5,
+  },
+  messageBubbleMe: {
+    borderTopRightRadius: 2,
+  },
+  messageBubbleOther: {
+    borderTopLeftRadius: 2,
   },
   messageBubbleBorder: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -1045,7 +978,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    marginTop: 4,
+    alignSelf: 'flex-end',
+    marginTop: 2,
     gap: 4,
   },
   messageTime: {
@@ -1128,35 +1062,43 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    gap: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    gap: 6,
   },
   inputRow: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    borderRadius: 24,
+    borderRadius: 25,
     paddingHorizontal: 4,
-    paddingVertical: 6,
+    paddingVertical: 4,
     minHeight: 48,
   },
   inputIconButton: {
     padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   textInput: {
     flex: 1,
     fontSize: 16,
+    height: 40,
     maxHeight: 120,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 8,
   },
   sendButton: {
-    width: 48,
-    height: 48,
+    width: 46,
+    height: 46,
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   attachmentOverlay: {
     position: 'absolute',
@@ -1175,12 +1117,12 @@ const styles = StyleSheet.create({
   attachmentGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-around',
+    justifyContent: 'center',
   },
   attachmentOption: {
     alignItems: 'center',
-    width: '33%',
-    marginBottom: 20,
+    width: '20%',
+    marginBottom: 6,
   },
   attachmentIconContainer: {
     width: 56,

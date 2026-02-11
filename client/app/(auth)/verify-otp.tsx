@@ -1,29 +1,17 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const OTP_LENGTH = 6;
-
 export default function VerifyOtpScreen() {
   const { phone, countryCode } = useLocalSearchParams<{ phone: string; countryCode: string }>();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { verifyOtp, sendOtp } = useAuth();
-
+  const [resendLoading, setResetLoading] = useState(false);
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [isLoading, setIsLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(60);
@@ -96,7 +84,7 @@ export default function VerifyOtpScreen() {
 
   const handleResend = async () => {
     if (!canResend) return;
-
+    setResetLoading(true);
     try {
       await sendOtp(phone!, countryCode);
       setCanResend(false);
@@ -106,6 +94,8 @@ export default function VerifyOtpScreen() {
       Alert.alert('OTP Sent', 'A new verification code has been sent via WhatsApp');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to resend OTP');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -125,7 +115,7 @@ export default function VerifyOtpScreen() {
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             We've sent a 6-digit verification code via WhatsApp to
           </Text>
-          <Text style={[styles.phoneDisplay, { color: colors.primary }]}>
+          <Text style={[styles.phoneDisplay, { color: "#ffffff" }]}>
             {countryCode} {phone}
           </Text>
         </View>
@@ -160,14 +150,14 @@ export default function VerifyOtpScreen() {
         {/* Timer */}
         <View style={styles.timerContainer}>
           {canResend ? (
-            <Pressable onPress={handleResend}>
-              <Text style={[styles.resendText, { color: colors.primary }]}>
-                Resend Code
+            <Pressable onPress={handleResend} disabled={resendLoading}>
+              <Text style={[styles.resendText, { color: "#ffffff" }]}>
+                Resend Code {resendLoading ? <ActivityIndicator color="#ffffff" /> : ""}
               </Text>
             </Pressable>
           ) : (
             <Text style={[styles.timerText, { color: colors.textSecondary }]}>
-              Resend code in <Text style={{ color: colors.primary }}>{resendTimer}s</Text>
+              Resend code in <Text style={{ color: "#ffffff" }}>{resendTimer}s</Text>
             </Text>
           )}
         </View>
@@ -263,6 +253,9 @@ const styles = StyleSheet.create({
   resendText: {
     fontSize: 14,
     fontWeight: '600',
+    alignItems: 'center',
+    display: "flex",
+    gap: 1,
   },
   button: {
     height: 52,

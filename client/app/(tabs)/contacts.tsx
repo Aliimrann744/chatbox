@@ -1,24 +1,13 @@
 import { router } from 'expo-router';
 import * as Contacts from 'expo-contacts';
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Alert,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  ActivityIndicator,
-  SectionList,
-} from 'react-native';
-
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View, ActivityIndicator, SectionList, Platform } from 'react-native';
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { contactApi, chatApi, Contact, User, SyncedContact } from '@/services/api';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 interface ContactSection {
   title: string;
@@ -130,25 +119,40 @@ export default function ContactsScreen() {
     }
   };
 
-  // Search users
-  const handleSearch = async (query: string) => {
+  // Debounced search
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearch = (query: string) => {
     setSearchQuery(query);
+
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
 
     if (query.length < 2) {
       setSearchResults([]);
+      setSearching(false);
       return;
     }
 
     setSearching(true);
-    try {
-      const results = await contactApi.searchUsers(query);
-      setSearchResults(results);
-    } catch (error) {
-      console.error('Error searching users:', error);
-    } finally {
-      setSearching(false);
-    }
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const results = await contactApi.searchUsers(query);
+        setSearchResults(results);
+      } catch (error) {
+        console.error('Error searching users:', error);
+      } finally {
+        setSearching(false);
+      }
+    }, 500);
   };
+
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, []);
 
   // Start chat with contact
   const handleStartChat = async (contactId: string) => {
@@ -168,6 +172,7 @@ export default function ContactsScreen() {
       Alert.alert('Success', 'Contact added successfully!');
       fetchContacts();
       setSearchResults((prev) => prev.filter((u) => u.id !== userId));
+      setSearchQuery('');
     } catch (error) {
       console.error('Error adding contact:', error);
       Alert.alert('Error', 'Failed to add contact. Please try again.');
@@ -175,11 +180,7 @@ export default function ContactsScreen() {
   };
 
   // Filter contacts based on search
-  const filteredContacts = contacts.filter(
-    (contact) =>
-      contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.phone.includes(searchQuery)
-  );
+  const filteredContacts = contacts.filter((contact) => contact.name.toLowerCase().includes(searchQuery.toLowerCase()) || contact.phone.includes(searchQuery));
 
   // Group contacts alphabetically
   const groupedContacts: ContactSection[] = [];
@@ -193,63 +194,80 @@ export default function ContactsScreen() {
     grouped[firstLetter].push(contact);
   });
 
-  Object.keys(grouped)
-    .sort()
-    .forEach((letter) => {
-      groupedContacts.push({
-        title: letter,
-        data: grouped[letter],
-      });
-    });
+  Object.keys(grouped).sort().forEach((letter) => {
+    groupedContacts.push({ title: letter, data: grouped[letter]});
+  });
+
+  function getInitials(name: string): string {
+    if (!name || !name.trim()) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
 
   const renderContactItem = ({ item }: { item: Contact | SyncedContact }) => (
     <Pressable
       onPress={() => handleStartChat(item.id)}
       style={({ pressed }) => [
         styles.contactItem,
-        { backgroundColor: pressed ? colors.backgroundSecondary : colors.background },
-      ]}>
-      <Avatar uri={item.avatar} size={50} showOnlineStatus isOnline={item.isOnline} />
+        { backgroundColor: pressed ? colors.primary + '12' : colors.background },
+        pressed && styles.contactItemPressed,
+      ]}
+    >
+      {item?.avatar ? (
+        <Avatar uri={item.avatar || ""} size={50} showOnlineStatus isOnline={item.isOnline} />
+      ) : (
+        <View style={[styles.initialsContainer, { backgroundColor: colors.primary }]}>
+          <Text style={styles.initialsText}>{getInitials(item.name)}</Text>
+        </View>
+      )}
       <View style={styles.contactInfo}>
         <Text style={[styles.contactName, { color: colors.text }]}>{item.name}</Text>
         <Text style={[styles.contactAbout, { color: colors.textSecondary }]}>
           {item.about || item.phone}
         </Text>
       </View>
-      <Pressable
-        onPress={() => handleStartChat(item.id)}
-        style={styles.chatButton}>
-        <IconSymbol name="message.fill" size={20} color={colors.primary} />
+      <Pressable onPress={() => handleStartChat(item.id)} style={styles.chatButton}>
+        <IconSymbol name="message.fill" size={20} color="#fff" />
       </Pressable>
     </Pressable>
   );
 
   const renderSearchResult = ({ item }: { item: User }) => {
-    const isContact = contacts.some((c) => c.contactId === item.id);
+    const isExistingContact = contacts?.some((c) => c?.contactId === item?.id);
 
     return (
-      <View style={[styles.contactItem, { backgroundColor: colors.background }]}>
-        <Avatar uri={item.avatar} size={50} showOnlineStatus isOnline={item.isOnline} />
+      <Pressable
+        onPress={() => isExistingContact ? handleStartChat(item.id) : handleAddContact(item.id)}
+        style={({ pressed }) => [
+          styles.contactItem,
+          { backgroundColor: pressed ? colors.primary + '12' : colors.background },
+          pressed && styles.contactItemPressed,
+        ]}
+      >
+        {item.avatar ? (
+          <Avatar uri={item.avatar || ""} size={50} showOnlineStatus isOnline={item.isOnline} />
+        ) : (
+          <View style={[styles.initialsContainer, { backgroundColor: colors.primary }]}>
+            <Text style={styles.initialsText}>{getInitials(item.name)}</Text>
+          </View>
+        )}
         <View style={styles.contactInfo}>
           <Text style={[styles.contactName, { color: colors.text }]}>{item.name}</Text>
           <Text style={[styles.contactAbout, { color: colors.textSecondary }]}>
             {item.about || item.phone}
           </Text>
         </View>
-        {isContact ? (
-          <Pressable
-            onPress={() => handleStartChat(item.id)}
-            style={styles.chatButton}>
+        {isExistingContact ? (
+          <Pressable onPress={() => handleStartChat(item.id)} style={styles.chatButton}>
             <IconSymbol name="message.fill" size={20} color={colors.primary} />
           </Pressable>
         ) : (
-          <Pressable
-            onPress={() => handleAddContact(item.id)}
-            style={[styles.addButton, { backgroundColor: colors.primary }]}>
-            <IconSymbol name="plus" size={18} color="#ffffff" />
+          <Pressable onPress={() => handleAddContact(item.id)} style={[styles.addButton, { backgroundColor: "#9a9a9a" }]}>
+            <IconSymbol name="plus" size={18} color={colors.primary} />
           </Pressable>
         )}
-      </View>
+      </Pressable>
     );
   };
 
@@ -294,23 +312,13 @@ export default function ContactsScreen() {
           )}
         </View>
 
-        <Pressable
-          onPress={syncContacts}
-          disabled={syncing}
-          style={[
-            styles.syncButton,
-            { backgroundColor: colors.primary },
-            syncing && styles.syncingButton,
-          ]}>
-          {syncing ? (
-            <ActivityIndicator size="small" color="#ffffff" />
-          ) : (
-            <IconSymbol name="arrow.triangle.2.circlepath" size={20} color="#ffffff" />
+        <Pressable onPress={syncContacts} disabled={syncing} style={[styles.syncButton, { backgroundColor: colors.primary }, syncing && styles.syncingButton]}>
+          {syncing ? (<ActivityIndicator size="small" color="#ffffff" />) : (
+            <MaterialIcons name="sync" size={20} color="#fff" />
           )}
         </Pressable>
       </View>
 
-      {/* Search Results or Contacts List */}
       {searchQuery.length >= 2 ? (
         <View style={styles.searchResultsContainer}>
           <Text style={[styles.searchResultsTitle, { color: colors.textSecondary }]}>
@@ -343,7 +351,7 @@ export default function ContactsScreen() {
               Alert.alert('Invite', 'Share invite link feature coming soon!');
             }}>
             <View style={[styles.inviteIcon, { backgroundColor: colors.primary + '20' }]}>
-              <IconSymbol name="person.badge.plus" size={24} color={colors.primary} />
+              <IconSymbol name="person.badge.plus" size={24} color={colors.textSecondary} />
             </View>
             <View style={styles.inviteText}>
               <Text style={[styles.inviteTitle, { color: colors.text }]}>
@@ -366,11 +374,11 @@ export default function ContactsScreen() {
               <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
                 Sync your contacts or search for users
               </Text>
-              <Pressable
+              {/* <Pressable
                 onPress={syncContacts}
                 style={[styles.syncContactsButton, { backgroundColor: colors.primary }]}>
                 <Text style={styles.syncContactsText}>Sync Contacts</Text>
-              </Pressable>
+              </Pressable> */}
             </View>
           ) : (
             <SectionList
@@ -407,6 +415,20 @@ const styles = StyleSheet.create({
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  initialsContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 50,
+    borderWidth: 1,
+    borderColor: "#fff",
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  initialsText: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   headerBar: {
     flexDirection: 'row',
@@ -485,6 +507,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
+    borderRadius: 8,
+    marginHorizontal: 4,
+  },
+  contactItemPressed: {
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
   },
   contactInfo: {
     flex: 1,

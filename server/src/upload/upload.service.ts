@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
+import { createReadStream, unlink } from 'fs';
 
 @Injectable()
 export class UploadService {
@@ -20,14 +21,16 @@ export class UploadService {
         {
           folder: `chatbox/${folder}`,
           resource_type: 'auto',
+          timeout: 60000,
         },
         (error, result) => {
           if (error) return reject(error);
           resolve(result);
         },
       );
-      stream.end(file.buffer);
+      createReadStream(file.path).pipe(stream);
     });
+    unlink(file.path, () => {});
 
     return {
       url: result.secure_url,

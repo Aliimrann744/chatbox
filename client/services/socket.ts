@@ -1,10 +1,10 @@
 import { io, Socket } from 'socket.io-client';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { API_BASE_URL } from '@/services/api';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000/api';
 // Strip /api suffix for socket connections — Socket.IO namespaces don't use the REST prefix
-const SOCKET_URL = API_URL.replace(/\/api\/?$/, '');
+const SOCKET_URL = API_BASE_URL.replace(/\/api\/?$/, '');
 
 // Types for socket events
 export interface Message {
@@ -72,32 +72,51 @@ class SocketService {
   // ==================== CONNECTION ====================
 
   async connect() {
+    // Prevent double connection
+    if (this.chatSocket?.connected && this.callSocket?.connected) return;
+
+    // Clean up any stale connections first
+    if (this.chatSocket || this.callSocket) {
+      this.disconnect();
+    }
+
     const token = await this.getToken();
     if (!token) {
       console.log('No token available, cannot connect to socket');
       return;
     }
 
-    // Connect to chat namespace
+    // Connect to chat namespace - dynamic auth so reconnections use the latest token
     this.chatSocket = io(`${SOCKET_URL}/chat`, {
-      auth: { token },
+      auth: (cb) => {
+        this.getToken().then(t => cb({ token: t }));
+      },
       transports: ['websocket'],
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
-    // Connect to call namespace
+    // Connect to call namespace - dynamic auth so reconnections use the latest token
     this.callSocket = io(`${SOCKET_URL}/call`, {
-      auth: { token },
+      auth: (cb) => {
+        this.getToken().then(t => cb({ token: t }));
+      },
       transports: ['websocket'],
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
     this.setupChatListeners();
     this.setupCallListeners();
+  }
+
+  async reconnect() {
+    this.disconnect();
+    await this.connect();
   }
 
   disconnect() {

@@ -48,7 +48,7 @@ export const Colors = {
     cardBackground: '#1f2c34',
     inputBackground: '#2a3942',
     messageOutgoing: '#005c4b',
-    messageIncoming: '#1f2c34',
+    messageIncoming: '#4e4e4e',
     online: '#25D366',
     headerBackground: primaryColor,
     headerText: '#ffffff',
