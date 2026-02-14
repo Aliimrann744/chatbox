@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import * as ExpoContacts from 'expo-contacts';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   FlatList,
@@ -16,6 +17,7 @@ import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { contactApi, chatApi, Contact } from '@/services/api';
+import { getInitials } from '@/utils/helpers';
 
 interface ActionItemProps {
   icon: IconSymbolName;
@@ -29,14 +31,7 @@ function ActionItem({ icon, iconColor, title, onPress }: ActionItemProps) {
   const colors = Colors[colorScheme];
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.actionItem,
-        {
-          backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
-        },
-      ]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.actionItem, { backgroundColor: pressed ? colors.backgroundSecondary : colors.background }]}>
       <View style={[styles.actionIconContainer, { backgroundColor: iconColor }]}>
         <IconSymbol name={icon} size={22} color="#ffffff" />
       </View>
@@ -64,7 +59,15 @@ function ContactItem({
           backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
         },
       ]}>
-      <Avatar uri={contact.avatar || ""} size={45} showOnlineStatus isOnline={contact.isOnline} />
+      {contact?.avatar ? (
+        <Avatar uri={contact.avatar || ""} size={38} showOnlineStatus isOnline={contact.isOnline} />
+      ) : (
+        <View style={{ width: 42, height: 42, borderRadius: 25, backgroundColor: "#E5E7EB", alignItems: "center", justifyContent: "center" }}>
+          <Text style={{ fontSize: 14, fontWeight: "600", color: "#374151" }}>
+            {getInitials(contact.nickname || contact.name) || "User"}
+          </Text>
+        </View>
+      )}
       <View style={styles.contactInfo}>
         <Text style={[styles.contactName, { color: colors.text }]}>{contact.nickname || contact.name}</Text>
         <Text style={[styles.contactStatus, { color: colors.textSecondary }]}>
@@ -83,23 +86,58 @@ export default function NewChatScreen() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
 
-  // Fetch contacts on mount
-  useEffect(() => {
-    fetchContacts();
-  }, []);
-
-  const fetchContacts = async () => {
+  // Auto-sync device contacts then fetch contacts list
+  const syncAndFetch = useCallback(async () => {
     try {
+      const { status } = await ExpoContacts.requestPermissionsAsync();
+      if (status === 'granted') {
+        const { data } = await ExpoContacts.getContactsAsync({
+          fields: [ExpoContacts.Fields.PhoneNumbers, ExpoContacts.Fields.Name],
+        });
+
+        const deviceContacts: { phone: string; name: string }[] = [];
+        data.forEach((contact) => {
+          const contactName = contact.name || '';
+          if (contact.phoneNumbers) {
+            contact.phoneNumbers.forEach((phone) => {
+              if (phone.number) {
+                const cleaned = phone.number.replace(/[\s\-\(\)]/g, '');
+                deviceContacts.push({ phone: cleaned, name: contactName });
+              }
+            });
+          }
+        });
+
+        if (deviceContacts.length > 0) {
+          const syncedContacts = await contactApi.syncContacts(deviceContacts);
+          setContacts(syncedContacts);
+          return;
+        }
+      }
+
+      // Fallback: just fetch existing contacts
       const data = await contactApi.getContacts();
       setContacts(data);
     } catch (error) {
-      console.error('Error fetching contacts:', error);
+      console.error('Error syncing contacts:', error);
+      try {
+        const data = await contactApi.getContacts();
+        setContacts(data);
+      } catch {
+        // Silent fail
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Sync on mount
+  useEffect(() => {
+    syncAndFetch();
+  }, [syncAndFetch]);
 
   const filteredContacts = contacts.filter((contact) => {
+    if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     const displayName = (contact.nickname || contact.name || '').toLowerCase();
     return displayName.includes(q) || contact.phone.includes(q);
@@ -110,9 +148,7 @@ export default function NewChatScreen() {
 
     setCreating(true);
     try {
-      // Create or get existing chat with this contact
       const chat = await chatApi.createChat(contactId);
-      // Navigate to the chat
       router.replace({ pathname: '/chat/[id]', params: { id: chat.id } });
     } catch (error: any) {
       console.error('Error creating chat:', error);
@@ -127,60 +163,12 @@ export default function NewChatScreen() {
   };
 
   const handleNewContact = () => {
-    // Navigate to contacts tab
     router.push('/(tabs)/contacts');
   };
 
   const handleNewCommunity = () => {
     Alert.alert('Coming Soon', 'Community feature is coming soon!');
   };
-
-  const renderHeader = () => (
-    <>
-      {/* Search Bar */}
-      <View style={[styles.searchContainer, { backgroundColor: colors.background }]}>
-        <View style={[styles.searchBar, { backgroundColor: colors.inputBackground }]}>
-          <IconSymbol name="magnifyingglass" size={20} color={colors.textSecondary} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search contacts..."
-            placeholderTextColor={colors.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-      </View>
-
-      {/* Action Items */}
-      <View style={styles.actionsContainer}>
-        <ActionItem
-          icon="person.2.fill"
-          iconColor={colors.primary}
-          title="New Group"
-          onPress={handleNewGroup}
-        />
-        <ActionItem
-          icon="person.badge.plus"
-          iconColor={colors.primary}
-          title="New Contact"
-          onPress={handleNewContact}
-        />
-        <ActionItem
-          icon="building.2.fill"
-          iconColor={colors.primary}
-          title="New Community"
-          onPress={handleNewCommunity}
-        />
-      </View>
-
-      {/* Contacts Section Header */}
-      <View style={[styles.sectionHeader, { backgroundColor: colors.backgroundSecondary }]}>
-        <Text style={[styles.sectionHeaderText, { color: colors.textSecondary }]}>
-          Contacts on Chatbox
-        </Text>
-      </View>
-    </>
-  );
 
   if (loading) {
     return (
@@ -198,31 +186,77 @@ export default function NewChatScreen() {
           <Text style={styles.creatingText}>Starting chat...</Text>
         </View>
       )}
+
+      {/* Search Bar - outside FlatList to prevent focus loss */}
+      <View style={[styles.searchContainer, { backgroundColor: colors.background }]}>
+        <View style={[styles.searchBar, { backgroundColor: colors.inputBackground }]}>
+          <IconSymbol name="magnifyingglass" size={20} color={colors.textSecondary} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Search contacts..."
+            placeholderTextColor={colors.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <Pressable onPress={() => setSearchQuery('')}>
+              <IconSymbol name="xmark.circle.fill" size={18} color={colors.textSecondary} />
+            </Pressable>
+          )}
+        </View>
+      </View>
+
       <FlatList
         data={filteredContacts}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <ContactItem contact={item} onPress={() => handleSelectContact(item.contactId)} />
         )}
-        ListHeaderComponent={renderHeader}
+        ListHeaderComponent={
+          <>
+            {/* Action Items */}
+            {!searchQuery && (
+              <View style={styles.actionsContainer}>
+                <ActionItem
+                  icon="person.2.fill"
+                  iconColor={colors.primary}
+                  title="New Group"
+                  onPress={handleNewGroup}
+                />
+                <ActionItem
+                  icon="person.badge.plus"
+                  iconColor={colors.primary}
+                  title="New Contact"
+                  onPress={handleNewContact}
+                />
+                <ActionItem
+                  icon="building.2.fill"
+                  iconColor={colors.primary}
+                  title="New Community"
+                  onPress={handleNewCommunity}
+                />
+              </View>
+            )}
+
+            {/* Contacts Section Header */}
+            <View style={[styles.sectionHeader, { backgroundColor: colors.backgroundSecondary }]}>
+              <Text style={[styles.sectionHeaderText, { color: colors.textSecondary }]}>
+                Contacts on Chatbox
+              </Text>
+            </View>
+          </>
+        }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <IconSymbol name="person.2" size={48} color={colors.textSecondary} />
+            <IconSymbol name="person" size={48} color={colors.textSecondary} />
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              {contacts.length === 0 ? 'No contacts yet' : 'No contacts found'}
+              {searchQuery ? 'No contacts found' : contacts.length === 0 ? 'No contacts yet' : 'No contacts found'}
             </Text>
             <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-              {contacts.length === 0 ? 'Add contacts to start chatting' : 'Try a different search'}
+              {searchQuery ? 'Try a different search' : 'Save contacts on your phone to see them here'}
             </Text>
-            {contacts.length === 0 && (
-              <Pressable
-                onPress={handleNewContact}
-                style={[styles.addContactButton, { backgroundColor: colors.primary }]}>
-                <Text style={styles.addContactText}>Add Contacts</Text>
-              </Pressable>
-            )}
           </View>
         }
       />
@@ -333,16 +367,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginTop: 8,
-  },
-  addContactButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    marginTop: 24,
-  },
-  addContactText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

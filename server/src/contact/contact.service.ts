@@ -19,35 +19,38 @@ export class ContactService {
     phoneNumbers?: string[],
     contacts?: DeviceContact[],
   ) {
-    // Build phone-to-name map from new format
+    // Build a map: every possible phone variation → device name
     const phoneToName = new Map<string, string>();
     if (contacts && contacts.length > 0) {
       contacts.forEach((c) => {
-        const normalized = this.normalizePhoneNumber(c.phone);
-        phoneToName.set(normalized, c.name);
+        const variations = this.getPhoneVariations(c.phone);
+        variations.forEach((v) => phoneToName.set(v, c.name));
       });
     }
 
     // Collect all phone numbers (from both old and new format)
-    const allPhones: string[] = [];
+    const rawPhones: string[] = [];
     if (contacts && contacts.length > 0) {
-      allPhones.push(...contacts.map((c) => this.normalizePhoneNumber(c.phone)));
+      rawPhones.push(...contacts.map((c) => c.phone));
     }
     if (phoneNumbers && phoneNumbers.length > 0) {
-      allPhones.push(...phoneNumbers.map((p) => this.normalizePhoneNumber(p)));
+      rawPhones.push(...phoneNumbers);
     }
 
-    if (allPhones.length === 0) {
+    if (rawPhones.length === 0) {
       return this.getContacts(userId);
     }
 
-    // Deduplicate
-    const normalizedNumbers = [...new Set(allPhones)];
+    // Generate all possible variations for matching against DB
+    const allVariations = new Set<string>();
+    rawPhones.forEach((phone) => {
+      this.getPhoneVariations(phone).forEach((v) => allVariations.add(v));
+    });
 
-    // Find registered users with these phone numbers
+    // Find registered users matching any phone variation
     const registeredUsers = await this.prisma.user.findMany({
       where: {
-        phone: { in: normalizedNumbers },
+        phone: { in: [...allVariations] },
         isVerified: true,
         id: { not: userId },
       },
@@ -64,7 +67,15 @@ export class ContactService {
         const isBlocked = await this.isBlocked(userId, user.id);
         if (isBlocked) return;
 
-        const deviceName = phoneToName.get(user.phone) || null;
+        // Look up device name using variations of the user's stored phone
+        const userVariations = this.getPhoneVariations(user.phone);
+        let deviceName: string | null = null;
+        for (const v of userVariations) {
+          if (phoneToName.has(v)) {
+            deviceName = phoneToName.get(v)!;
+            break;
+          }
+        }
 
         const existingContact = await this.prisma.contact.findUnique({
           where: {
@@ -76,7 +87,6 @@ export class ContactService {
         });
 
         if (!existingContact) {
-          // Create new contact with device name as nickname
           await this.prisma.contact.create({
             data: {
               userId,
@@ -85,7 +95,6 @@ export class ContactService {
             },
           });
         } else if (deviceName && existingContact.nickname !== deviceName) {
-          // Update nickname if device name changed
           await this.prisma.contact.update({
             where: { id: existingContact.id },
             data: { nickname: deviceName },
@@ -94,7 +103,6 @@ export class ContactService {
       }),
     );
 
-    // Return the full contacts list (consistent shape)
     return this.getContacts(userId);
   }
 
@@ -367,8 +375,45 @@ export class ContactService {
     return !!blocked;
   }
 
+  /**
+   * Generate all possible phone number variations for matching.
+   * Device might send "+923001234567", DB stores "3001234567".
+   * This bridges the gap by trying all reasonable formats.
+   */
+  private getPhoneVariations(phone: string): string[] {
+    const variations = new Set<string>();
+    const cleaned = phone.replace(/[\s\-\(\)]/g, '');
+
+    // Original cleaned
+    variations.add(cleaned);
+
+    // Without "+" prefix: "+923001234567" → "923001234567"
+    const withoutPlus = cleaned.startsWith('+') ? cleaned.substring(1) : cleaned;
+    variations.add(withoutPlus);
+
+    // Only digits
+    const digits = cleaned.replace(/\D/g, '');
+    variations.add(digits);
+
+    // Without leading "0": "03001234567" → "3001234567"
+    if (digits.startsWith('0')) {
+      variations.add(digits.substring(1));
+    }
+
+    // Last 10 digits (strips 1-3 digit country code)
+    if (digits.length > 10) {
+      variations.add(digits.substring(digits.length - 10));
+    }
+
+    // Last 9 digits (for countries with 9-digit local numbers)
+    if (digits.length > 9) {
+      variations.add(digits.substring(digits.length - 9));
+    }
+
+    return [...variations];
+  }
+
   private normalizePhoneNumber(phone: string): string {
-    // Remove spaces, dashes, parentheses
     return phone.replace(/[\s\-\(\)]/g, '');
   }
 

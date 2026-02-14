@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
 import { FlatList, StyleSheet, Text, TextInput, View, RefreshControl, ActivityIndicator } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { ChatListItem } from '@/components/chat/chat-list-item';
 import { FloatingActionButton } from '@/components/ui/floating-action-button';
@@ -95,6 +96,13 @@ export default function ChatsScreen() {
       unsubscribeOnlineStatus();
     };
   }, [fetchChats]);
+
+  // Re-fetch chats when tab comes into focus (catches new chats created from new-chat screen)
+  useFocusEffect(
+    useCallback(() => {
+      fetchChats();
+    }, [fetchChats])
+  );
 
   // Refresh handler
   const onRefresh = useCallback(() => {
