@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
+import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AudioPlayer } from '@/components/chat/audio-player';
@@ -16,7 +16,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { useCall } from '@/contexts/call-context';
 import { pickImage, pickVideo, pickDocument, takePhoto, PickedMedia, getMessageTypeFromMimeType } from '@/utils/media-picker';
 import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-picker';
-import { formatTime, generateTempId, getStatusText } from '@/utils/helpers';
+import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
 
 function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
   const colorScheme = useColorScheme() ?? 'light';
@@ -173,10 +173,18 @@ function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall }: { chat: any
       </Pressable>
 
       <Pressable style={styles.headerUserInfo}>
-        <Avatar uri={chat?.avatar || ""} size={38} showOnlineStatus isOnline={chat?.isOnline} />
+        {chat?.avatar ? (
+          <Avatar uri={chat.avatar} size={38} showOnlineStatus isOnline={chat?.isOnline} />
+        ) : (
+          <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: "#E5E7EB", alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: "#374151" }}>
+              {getInitials(chat?.name) || "U"}
+            </Text>
+          </View>
+        )}
         <View style={styles.headerTextContainer}>
           <Text style={[styles.headerUsername, { color: colors.headerText }]} numberOfLines={1}>
-            {chat?.name || 'Chat'}
+            {chat?.name || 'User'}
           </Text>
           {statusText ? (
             <Text
@@ -288,11 +296,40 @@ function MessageInput({ value, onChange, onSend, onAttachment, onVoiceStart, onV
     return (
       <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: insets.bottom + 6 }]}>
         <View style={[styles.inputRow, { backgroundColor: colors.inputBackground }]}>
-          <InlineVoiceRecorder isRecording={isRecording} duration={recordingDuration} onStop={onVoiceStop} onCancel={onVoiceCancel} />
+          
+          <Pressable onPress={onAttachment} style={styles.inputIconButton}>
+            <IconSymbol name="plus" size={24} color="#fff" />
+          </Pressable>
+
+          {isRecording ? (
+            <InlineVoiceRecorder 
+              isRecording={isRecording} 
+              duration={recordingDuration} 
+              onStop={onVoiceStop} 
+              onCancel={onVoiceCancel} 
+            />
+          ) : (
+            <TextInput
+              style={[styles.textInput, { color: colors.text }]} 
+              placeholder="Type a message..."
+              placeholderTextColor={colors.textSecondary} 
+              value={value} 
+              onChangeText={handleTextChange}
+              multiline 
+              maxLength={1000}
+            />
+          )}
         </View>
 
-        <Pressable onPress={onVoiceStop} style={[styles.sendButton, { backgroundColor: '#25D366' }]}>
-          <IconSymbol name="arrow.up" size={22} color="#ffffff" />
+        <Pressable
+          onPress={isRecording ? onVoiceStop : value.trim() ? onSend : onVoiceStart}
+          style={[styles.sendButton, { backgroundColor: isRecording ? '#25D366' : '#007a64' }]}
+        >
+          <Ionicons
+            name={isRecording ? "stop-circle" : value.trim() ? "send" : "mic"}
+            size={24}
+            color="#fff"
+          />
         </Pressable>
       </View>
     );
@@ -311,12 +348,10 @@ function MessageInput({ value, onChange, onSend, onAttachment, onVoiceStart, onV
           placeholderTextColor={colors.textSecondary} value={value} onChangeText={handleTextChange}
           multiline maxLength={1000}
         />
-
-
       </View>
 
       <Pressable onPress={value.trim() ? onSend : onVoiceStart} style={[styles.sendButton, { backgroundColor: '#007a64' }]}>
-        <IconSymbol name={value.trim() ? 'paperplane.fill' : 'mic.fill'} size={24} color="#ffffff" />
+        <Ionicons name={value.trim() ? "send" : "mic"} size={24} color="#fff" />
       </Pressable>
     </View>
   );
@@ -903,6 +938,10 @@ const styles = StyleSheet.create({
   headerStatus: {
     fontSize: 12,
     marginTop: 1,
+  },
+  headerAvatart: {
+    width: 50,
+    height: 50,
   },
   headerActions: {
     flexDirection: 'row',

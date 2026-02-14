@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 
 // const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000/api';
 const API_BASE_URL = 'https://7aa2-144-48-133-159.ngrok-free.app/api';
+// const API_BASE_URL = 'http://localhost:4000/api';
 const TOKEN_KEY = 'accessToken';
 const REFRESH_TOKEN_KEY = 'refreshToken';
 
@@ -294,10 +295,10 @@ export const contactApi = {
     return request<Contact[]>('/contacts');
   },
 
-  async syncContacts(phoneNumbers: string[]) {
-    return request<SyncedContact[]>('/contacts/sync', {
+  async syncContacts(contacts: { phone: string; name: string }[]) {
+    return request<Contact[]>('/contacts/sync', {
       method: 'POST',
-      body: JSON.stringify({ phoneNumbers }),
+      body: JSON.stringify({ contacts }),
     });
   },
 

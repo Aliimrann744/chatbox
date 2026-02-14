@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PrivacySetting } from '@prisma/client';
+import { DeviceContact } from './dto/sync-contacts.dto';
 
 @Injectable()
 export class ContactService {
@@ -13,41 +14,58 @@ export class ContactService {
 
   // ==================== CONTACT SYNC ====================
 
-  async syncContacts(userId: string, phoneNumbers: string[]) {
-    // Normalize phone numbers
-    const normalizedNumbers = phoneNumbers.map((phone) =>
-      this.normalizePhoneNumber(phone),
-    );
+  async syncContacts(
+    userId: string,
+    phoneNumbers?: string[],
+    contacts?: DeviceContact[],
+  ) {
+    // Build phone-to-name map from new format
+    const phoneToName = new Map<string, string>();
+    if (contacts && contacts.length > 0) {
+      contacts.forEach((c) => {
+        const normalized = this.normalizePhoneNumber(c.phone);
+        phoneToName.set(normalized, c.name);
+      });
+    }
+
+    // Collect all phone numbers (from both old and new format)
+    const allPhones: string[] = [];
+    if (contacts && contacts.length > 0) {
+      allPhones.push(...contacts.map((c) => this.normalizePhoneNumber(c.phone)));
+    }
+    if (phoneNumbers && phoneNumbers.length > 0) {
+      allPhones.push(...phoneNumbers.map((p) => this.normalizePhoneNumber(p)));
+    }
+
+    if (allPhones.length === 0) {
+      return this.getContacts(userId);
+    }
+
+    // Deduplicate
+    const normalizedNumbers = [...new Set(allPhones)];
 
     // Find registered users with these phone numbers
     const registeredUsers = await this.prisma.user.findMany({
       where: {
         phone: { in: normalizedNumbers },
         isVerified: true,
-        id: { not: userId }, // Exclude self
+        id: { not: userId },
       },
       select: {
         id: true,
         phone: true,
         name: true,
-        avatar: true,
-        about: true,
-        isOnline: true,
-        lastSeen: true,
-        avatarPrivacy: true,
-        aboutPrivacy: true,
-        lastSeenPrivacy: true,
       },
     });
 
-    // Apply privacy settings and check blocked status
-    const filteredUsers = await Promise.all(
+    // Auto-add contacts: filter blocked, then create/update
+    await Promise.all(
       registeredUsers.map(async (user) => {
-        // Check if blocked
         const isBlocked = await this.isBlocked(userId, user.id);
-        if (isBlocked) return null;
+        if (isBlocked) return;
 
-        // Check if already a contact
+        const deviceName = phoneToName.get(user.phone) || null;
+
         const existingContact = await this.prisma.contact.findUnique({
           where: {
             userId_contactId: {
@@ -57,28 +75,27 @@ export class ContactService {
           },
         });
 
-        return {
-          id: user.id,
-          phone: user.phone,
-          name: user.name,
-          avatar: this.shouldShowField(user.avatarPrivacy, existingContact)
-            ? user.avatar
-            : null,
-          about: this.shouldShowField(user.aboutPrivacy, existingContact)
-            ? user.about
-            : null,
-          isOnline: this.shouldShowField(user.lastSeenPrivacy, existingContact)
-            ? user.isOnline
-            : null,
-          lastSeen: this.shouldShowField(user.lastSeenPrivacy, existingContact)
-            ? user.lastSeen
-            : null,
-          isContact: !!existingContact,
-        };
+        if (!existingContact) {
+          // Create new contact with device name as nickname
+          await this.prisma.contact.create({
+            data: {
+              userId,
+              contactId: user.id,
+              nickname: deviceName,
+            },
+          });
+        } else if (deviceName && existingContact.nickname !== deviceName) {
+          // Update nickname if device name changed
+          await this.prisma.contact.update({
+            where: { id: existingContact.id },
+            data: { nickname: deviceName },
+          });
+        }
       }),
     );
 
-    return filteredUsers.filter(Boolean);
+    // Return the full contacts list (consistent shape)
+    return this.getContacts(userId);
   }
 
   // ==================== CONTACT MANAGEMENT ====================

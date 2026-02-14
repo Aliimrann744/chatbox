@@ -64,9 +64,9 @@ function ContactItem({
           backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
         },
       ]}>
-      <Avatar uri={contact.avatar} size={45} showOnlineStatus isOnline={contact.isOnline} />
+      <Avatar uri={contact.avatar || ""} size={45} showOnlineStatus isOnline={contact.isOnline} />
       <View style={styles.contactInfo}>
-        <Text style={[styles.contactName, { color: colors.text }]}>{contact.name}</Text>
+        <Text style={[styles.contactName, { color: colors.text }]}>{contact.nickname || contact.name}</Text>
         <Text style={[styles.contactStatus, { color: colors.textSecondary }]}>
           {contact.about || contact.phone}
         </Text>
@@ -99,9 +99,11 @@ export default function NewChatScreen() {
     }
   };
 
-  const filteredContacts = contacts.filter((contact) =>
-    contact.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredContacts = contacts.filter((contact) => {
+    const q = searchQuery.toLowerCase();
+    const displayName = (contact.nickname || contact.name || '').toLowerCase();
+    return displayName.includes(q) || contact.phone.includes(q);
+  });
 
   const handleSelectContact = async (contactId: string) => {
     if (creating) return;

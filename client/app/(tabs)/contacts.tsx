@@ -1,17 +1,17 @@
 import { router } from 'expo-router';
 import * as Contacts from 'expo-contacts';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View, ActivityIndicator, SectionList, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Alert, Pressable, RefreshControl, StyleSheet, Text, TextInput, View, ActivityIndicator, SectionList } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { contactApi, chatApi, Contact, User, SyncedContact } from '@/services/api';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { contactApi, chatApi, Contact } from '@/services/api';
 
 interface ContactSection {
   title: string;
-  data: (Contact | SyncedContact)[];
+  data: Contact[];
 }
 
 export default function ContactsScreen() {
@@ -20,139 +20,83 @@ export default function ContactsScreen() {
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
 
-  // Fetch contacts from server
-  const fetchContacts = useCallback(async () => {
+  // Auto-sync device contacts with server
+  const autoSync = useCallback(async () => {
     try {
-      const data = await contactApi.getContacts();
-      setContacts(data);
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status !== 'granted') {
+        // Permission denied - fall back to fetching existing contacts
+        const data = await contactApi.getContacts();
+        setContacts(data);
+        return;
+      }
+
+      // Get device contacts with names
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
+      });
+
+      // Build {phone, name}[] from device contacts
+      const deviceContacts: { phone: string; name: string }[] = [];
+      data.forEach((contact) => {
+        const contactName = contact.name || '';
+        if (contact.phoneNumbers) {
+          contact.phoneNumbers.forEach((phone) => {
+            if (phone.number) {
+              const cleaned = phone.number.replace(/[\s\-\(\)]/g, '');
+              deviceContacts.push({ phone: cleaned, name: contactName });
+            }
+          });
+        }
+      });
+
+      if (deviceContacts.length === 0) {
+        // No phone contacts - fetch existing contacts from server
+        const data = await contactApi.getContacts();
+        setContacts(data);
+        return;
+      }
+
+      // Sync with server - returns Contact[] with auto-added contacts
+      const syncedContacts = await contactApi.syncContacts(deviceContacts);
+      setContacts(syncedContacts);
     } catch (error) {
-      console.error('Error fetching contacts:', error);
+      console.error('Error syncing contacts:', error);
+      // Fall back to fetching existing contacts
+      try {
+        const data = await contactApi.getContacts();
+        setContacts(data);
+      } catch {
+        // Silent fail
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  // Initial load
+  // Auto-sync on mount
   useEffect(() => {
-    fetchContacts();
-  }, [fetchContacts]);
+    autoSync();
+  }, [autoSync]);
 
-  // Refresh handler
+  // Re-sync on tab focus (detects newly saved phone contacts)
+  useFocusEffect(
+    useCallback(() => {
+      if (!loading) {
+        autoSync();
+      }
+    }, [autoSync, loading])
+  );
+
+  // Pull-to-refresh
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchContacts();
-  }, [fetchContacts]);
-
-  // Sync device contacts
-  const syncContacts = async () => {
-    try {
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Contacts permission is required to sync your contacts.',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-
-      setSyncing(true);
-
-      // Get all contacts from device
-      const { data } = await Contacts.getContactsAsync({
-        fields: [Contacts.Fields.PhoneNumbers],
-      });
-
-      // Extract phone numbers
-      const phoneNumbers: string[] = [];
-      data.forEach((contact) => {
-        if (contact.phoneNumbers) {
-          contact.phoneNumbers.forEach((phone) => {
-            if (phone.number) {
-              // Clean phone number (remove spaces, dashes, etc.)
-              const cleaned = phone.number.replace(/[\s\-\(\)]/g, '');
-              phoneNumbers.push(cleaned);
-            }
-          });
-        }
-      });
-
-      if (phoneNumbers.length === 0) {
-        Alert.alert('No Contacts', 'No phone numbers found in your contacts.');
-        return;
-      }
-
-      // Sync with server
-      const syncedContacts = await contactApi.syncContacts(phoneNumbers);
-
-      // Show results
-      const newContacts = syncedContacts.filter((c) => !c.isContact);
-      if (newContacts.length > 0) {
-        Alert.alert(
-          'Contacts Found',
-          `Found ${newContacts.length} new contact(s) on Chatbox!`,
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'Up to Date',
-          'All your contacts using Chatbox are already in your list.',
-          [{ text: 'OK' }]
-        );
-      }
-
-      // Refresh contacts list
-      fetchContacts();
-    } catch (error) {
-      console.error('Error syncing contacts:', error);
-      Alert.alert('Error', 'Failed to sync contacts. Please try again.');
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  // Debounced search
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-
-    if (searchTimerRef.current) {
-      clearTimeout(searchTimerRef.current);
-    }
-
-    if (query.length < 2) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
-
-    setSearching(true);
-    searchTimerRef.current = setTimeout(async () => {
-      try {
-        const results = await contactApi.searchUsers(query);
-        setSearchResults(results);
-      } catch (error) {
-        console.error('Error searching users:', error);
-      } finally {
-        setSearching(false);
-      }
-    }, 500);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    };
-  }, []);
+    autoSync();
+  }, [autoSync]);
 
   // Start chat with contact
   const handleStartChat = async (contactId: string) => {
@@ -165,29 +109,22 @@ export default function ContactsScreen() {
     }
   };
 
-  // Add contact
-  const handleAddContact = async (userId: string) => {
-    try {
-      await contactApi.addContact(userId);
-      Alert.alert('Success', 'Contact added successfully!');
-      fetchContacts();
-      setSearchResults((prev) => prev.filter((u) => u.id !== userId));
-      setSearchQuery('');
-    } catch (error) {
-      console.error('Error adding contact:', error);
-      Alert.alert('Error', 'Failed to add contact. Please try again.');
-    }
-  };
-
-  // Filter contacts based on search
-  const filteredContacts = contacts.filter((contact) => contact.name.toLowerCase().includes(searchQuery.toLowerCase()) || contact.phone.includes(searchQuery));
+  // Local search - filter by nickname, name, or phone
+  const filteredContacts = contacts.filter((contact) => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    const displayName = (contact.nickname || contact.name || '').toLowerCase();
+    const phone = contact.phone || '';
+    return displayName.includes(q) || phone.includes(q);
+  });
 
   // Group contacts alphabetically
   const groupedContacts: ContactSection[] = [];
   const grouped: { [key: string]: Contact[] } = {};
 
   filteredContacts.forEach((contact) => {
-    const firstLetter = contact.name.charAt(0).toUpperCase();
+    const displayName = contact.nickname || contact.name || '?';
+    const firstLetter = displayName.charAt(0).toUpperCase();
     if (!grouped[firstLetter]) {
       grouped[firstLetter] = [];
     }
@@ -195,7 +132,7 @@ export default function ContactsScreen() {
   });
 
   Object.keys(grouped).sort().forEach((letter) => {
-    groupedContacts.push({ title: letter, data: grouped[letter]});
+    groupedContacts.push({ title: letter, data: grouped[letter] });
   });
 
   function getInitials(name: string): string {
@@ -205,68 +142,30 @@ export default function ContactsScreen() {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
 
-  const renderContactItem = ({ item }: { item: Contact | SyncedContact }) => (
-    <Pressable
-      onPress={() => handleStartChat(item.id)}
-      style={({ pressed }) => [
-        styles.contactItem,
-        { backgroundColor: pressed ? colors.primary + '12' : colors.background },
-        pressed && styles.contactItemPressed,
-      ]}
-    >
-      {item?.avatar ? (
-        <Avatar uri={item.avatar || ""} size={50} showOnlineStatus isOnline={item.isOnline} />
-      ) : (
-        <View style={[styles.initialsContainer, { backgroundColor: colors.primary }]}>
-          <Text style={styles.initialsText}>{getInitials(item.name)}</Text>
-        </View>
-      )}
-      <View style={styles.contactInfo}>
-        <Text style={[styles.contactName, { color: colors.text }]}>{item.name}</Text>
-        <Text style={[styles.contactAbout, { color: colors.textSecondary }]}>
-          {item.about || item.phone}
-        </Text>
-      </View>
-      <Pressable onPress={() => handleStartChat(item.id)} style={styles.chatButton}>
-        <IconSymbol name="message.fill" size={20} color="#fff" />
-      </Pressable>
-    </Pressable>
-  );
-
-  const renderSearchResult = ({ item }: { item: User }) => {
-    const isExistingContact = contacts?.some((c) => c?.contactId === item?.id);
-
+  const renderContactItem = ({ item }: { item: Contact }) => {
+    const displayName = item.nickname || item.name;
     return (
       <Pressable
-        onPress={() => isExistingContact ? handleStartChat(item.id) : handleAddContact(item.id)}
+        onPress={() => handleStartChat(item.contactId)}
         style={({ pressed }) => [
           styles.contactItem,
           { backgroundColor: pressed ? colors.primary + '12' : colors.background },
           pressed && styles.contactItemPressed,
         ]}
       >
-        {item.avatar ? (
+        {item?.avatar ? (
           <Avatar uri={item.avatar || ""} size={50} showOnlineStatus isOnline={item.isOnline} />
         ) : (
           <View style={[styles.initialsContainer, { backgroundColor: colors.primary }]}>
-            <Text style={styles.initialsText}>{getInitials(item.name)}</Text>
+            <Text style={styles.initialsText}>{getInitials(displayName)}</Text>
           </View>
         )}
         <View style={styles.contactInfo}>
-          <Text style={[styles.contactName, { color: colors.text }]}>{item.name}</Text>
+          <Text style={[styles.contactName, { color: colors.text }]}>{displayName}</Text>
           <Text style={[styles.contactAbout, { color: colors.textSecondary }]}>
             {item.about || item.phone}
           </Text>
         </View>
-        {isExistingContact ? (
-          <Pressable onPress={() => handleStartChat(item.id)} style={styles.chatButton}>
-            <IconSymbol name="message.fill" size={20} color={colors.primary} />
-          </Pressable>
-        ) : (
-          <Pressable onPress={() => handleAddContact(item.id)} style={[styles.addButton, { backgroundColor: "#9a9a9a" }]}>
-            <IconSymbol name="plus" size={18} color={colors.primary} />
-          </Pressable>
-        )}
       </Pressable>
     );
   };
@@ -289,80 +188,55 @@ export default function ContactsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Search and Sync Bar */}
+      {/* Search Bar */}
       <View style={[styles.headerBar, { backgroundColor: colors.backgroundSecondary }]}>
         <View style={[styles.searchBar, { backgroundColor: colors.inputBackground }]}>
           <IconSymbol name="magnifyingglass" size={20} color={colors.textSecondary} />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search contacts or users..."
+            placeholder="Search contacts..."
             placeholderTextColor={colors.textSecondary}
             value={searchQuery}
-            onChangeText={handleSearch}
-            onFocus={() => setShowSearch(true)}
+            onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
-            <Pressable
-              onPress={() => {
-                setSearchQuery('');
-                setSearchResults([]);
-              }}>
+            <Pressable onPress={() => setSearchQuery('')}>
               <IconSymbol name="xmark.circle.fill" size={18} color={colors.textSecondary} />
             </Pressable>
           )}
         </View>
-
-        <Pressable onPress={syncContacts} disabled={syncing} style={[styles.syncButton, { backgroundColor: colors.primary }, syncing && styles.syncingButton]}>
-          {syncing ? (<ActivityIndicator size="small" color="#ffffff" />) : (
-            <MaterialIcons name="sync" size={20} color="#fff" />
-          )}
-        </Pressable>
       </View>
 
-      {searchQuery.length >= 2 ? (
-        <View style={styles.searchResultsContainer}>
-          <Text style={[styles.searchResultsTitle, { color: colors.textSecondary }]}>
-            Search Results
+      {/* No results message when search matches nothing */}
+      {searchQuery.length > 0 && filteredContacts.length === 0 ? (
+        <View style={styles.emptySearch}>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            No results found
           </Text>
-          {searching ? (
-            <ActivityIndicator style={styles.searchLoading} color={colors.primary} />
-          ) : searchResults.length > 0 ? (
-            <FlatList
-              data={searchResults}
-              keyExtractor={(item) => item.id}
-              renderItem={renderSearchResult}
-              showsVerticalScrollIndicator={false}
-            />
-          ) : (
-            <View style={styles.emptySearch}>
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                No users found
-              </Text>
-            </View>
-          )}
         </View>
       ) : (
         <>
           {/* Invite Link */}
-          <Pressable
-            style={[styles.inviteSection, { backgroundColor: colors.background }]}
-            onPress={() => {
-              // TODO: Share invite link
-              Alert.alert('Invite', 'Share invite link feature coming soon!');
-            }}>
-            <View style={[styles.inviteIcon, { backgroundColor: colors.primary + '20' }]}>
-              <IconSymbol name="person.badge.plus" size={24} color={colors.textSecondary} />
-            </View>
-            <View style={styles.inviteText}>
-              <Text style={[styles.inviteTitle, { color: colors.text }]}>
-                Invite Friends
-              </Text>
-              <Text style={[styles.inviteSubtitle, { color: colors.textSecondary }]}>
-                Share Chatbox with your friends
-              </Text>
-            </View>
-            <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
-          </Pressable>
+          {!searchQuery && (
+            <Pressable
+              style={[styles.inviteSection, { backgroundColor: colors.background }]}
+              onPress={() => {
+                Alert.alert('Invite', 'Share invite link feature coming soon!');
+              }}>
+              <View style={[styles.inviteIcon, { backgroundColor: colors.primary + '20' }]}>
+                <IconSymbol name="person.badge.plus" size={24} color={colors.textSecondary} />
+              </View>
+              <View style={styles.inviteText}>
+                <Text style={[styles.inviteTitle, { color: colors.text }]}>
+                  Invite Friends
+                </Text>
+                <Text style={[styles.inviteSubtitle, { color: colors.textSecondary }]}>
+                  Share Chatbox with your friends
+                </Text>
+              </View>
+              <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
+            </Pressable>
+          )}
 
           {/* Contacts List */}
           {contacts.length === 0 ? (
@@ -372,13 +246,8 @@ export default function ContactsScreen() {
                 No contacts yet
               </Text>
               <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-                Sync your contacts or search for users
+                Save contacts on your phone to see them here
               </Text>
-              {/* <Pressable
-                onPress={syncContacts}
-                style={[styles.syncContactsButton, { backgroundColor: colors.primary }]}>
-                <Text style={styles.syncContactsText}>Sync Contacts</Text>
-              </Pressable> */}
             </View>
           ) : (
             <SectionList
@@ -451,16 +320,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     padding: 0,
   },
-  syncButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  syncingButton: {
-    opacity: 0.7,
-  },
   inviteSection: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -529,31 +388,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
-  chatButton: {
-    padding: 10,
-  },
-  addButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   listContent: {
     paddingBottom: 100,
-  },
-  searchResultsContainer: {
-    flex: 1,
-  },
-  searchResultsTitle: {
-    fontSize: 13,
-    fontWeight: '500',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    textTransform: 'uppercase',
-  },
-  searchLoading: {
-    marginTop: 20,
   },
   emptySearch: {
     alignItems: 'center',
@@ -574,16 +410,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginTop: 8,
-  },
-  syncContactsButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    marginTop: 24,
-  },
-  syncContactsText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

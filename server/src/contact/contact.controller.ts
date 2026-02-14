@@ -20,7 +20,7 @@ export class ContactController {
 
   @Post('sync')
   async syncContacts(@CurrentUser() user: any, @Body() dto: SyncContactsDto) {
-    return this.contactService.syncContacts(user.id, dto.phoneNumbers);
+    return this.contactService.syncContacts(user.id, dto.phoneNumbers, dto.contacts);
   }
 
   // ==================== CONTACT MANAGEMENT ====================
