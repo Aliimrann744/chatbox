@@ -74,7 +74,7 @@ export class AuthController {
   )
   async updateProfile(
     @Request() req,
-    @Body() body: { name?: string; about?: string },
+    @Body() body: { name?: string; about?: string; phone?: string; countryCode?: string },
     @UploadedFile() file?: Express.Multer.File,
   ) {
     return this.authService.updateProfile(req.user.id, body, file);

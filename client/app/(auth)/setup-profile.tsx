@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
@@ -22,6 +22,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { authApi } from '@/services/api';
 
 export default function SetupProfileScreen() {
+  const { loginMode } = useLocalSearchParams<{ loginMode?: string }>();
+  const isEmailSignup = loginMode === 'email';
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { refreshUser } = useAuth();
@@ -29,8 +31,10 @@ export default function SetupProfileScreen() {
   const [name, setName] = useState('');
   const [about, setAbout] = useState('');
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState('+92');
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<{ name?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string; phone?: string }>({});
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -52,6 +56,16 @@ export default function SetupProfileScreen() {
     } else if (name.trim().length < 2) {
       newErrors.name = 'Name must be at least 2 characters';
     }
+
+    if (isEmailSignup) {
+      const cleaned = phone.replace(/\D/g, '');
+      if (!cleaned) {
+        newErrors.phone = 'Phone number is required';
+      } else if (cleaned.length < 7 || cleaned.length > 15) {
+        newErrors.phone = 'Please enter a valid phone number';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -61,10 +75,22 @@ export default function SetupProfileScreen() {
 
     setIsLoading(true);
     try {
-      const profileData: { name: string; about: string; avatar?: { uri: string; type: string; name: string } } = {
+      const profileData: {
+        name: string;
+        about: string;
+        phone?: string;
+        countryCode?: string;
+        avatar?: { uri: string; type: string; name: string };
+      } = {
         name: name.trim(),
         about: about.trim() || 'Hey there! I am using Chatbox',
       };
+
+      if (isEmailSignup) {
+        const cleaned = phone.replace(/\D/g, '').replace(/^0/, '');
+        profileData.phone = cleaned;
+        profileData.countryCode = countryCode;
+      }
 
       if (avatarUri) {
         const ext = avatarUri.split('.').pop() || 'jpg';
@@ -159,6 +185,53 @@ export default function SetupProfileScreen() {
           </View>
         </View>
 
+        {/* Phone Number Input (for email signups) */}
+        {isEmailSignup && (
+          <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Phone Number</Text>
+            <View style={styles.phoneRow}>
+              {/* Country Code */}
+              <View
+                style={[
+                  styles.countryCodeContainer,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: colors.border,
+                  },
+                ]}>
+                <TextInput
+                  style={[styles.countryCodeInput, { color: colors.text }]}
+                  value={countryCode}
+                  onChangeText={setCountryCode}
+                  keyboardType="phone-pad"
+                  maxLength={5}
+                />
+              </View>
+
+              {/* Phone Number */}
+              <View
+                style={[
+                  styles.phoneContainer,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: errors.phone ? '#ef4444' : colors.border,
+                  },
+                ]}>
+                <IconSymbol name="phone.fill" size={20} color={colors.textSecondary} />
+                <TextInput
+                  style={[styles.input, { color: colors.text }]}
+                  placeholder="Phone number"
+                  placeholderTextColor={colors.textSecondary}
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
+            </View>
+            {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
+          </View>
+        )}
+
         {/* Continue Button */}
         <Pressable
           style={[
@@ -249,6 +322,34 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
+  },
+  phoneRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  countryCodeContainer: {
+    width: 72,
+    height: 52,
+    borderWidth: 1,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  countryCodeInput: {
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  phoneContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 52,
+    gap: 12,
   },
   errorText: {
     color: '#ef4444',

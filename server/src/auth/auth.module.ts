@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { MailService } from './mail.service';
 import { UploadModule } from '../upload/upload.module';
 import { APP_GUARD } from '@nestjs/core';
 
@@ -27,6 +28,7 @@ import { APP_GUARD } from '@nestjs/core';
   controllers: [AuthController],
   providers: [
     AuthService,
+    MailService,
     JwtStrategy,
     {
       provide: APP_GUARD,

@@ -7,7 +7,12 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const OTP_LENGTH = 6;
 export default function VerifyOtpScreen() {
-  const { phone, countryCode } = useLocalSearchParams<{ phone: string; countryCode: string }>();
+  const { phone, countryCode, email, loginMode } = useLocalSearchParams<{
+    phone?: string;
+    countryCode?: string;
+    email?: string;
+    loginMode: 'phone' | 'email';
+  }>();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { verifyOtp, sendOtp } = useAuth();
@@ -17,6 +22,7 @@ export default function VerifyOtpScreen() {
   const [resendTimer, setResendTimer] = useState(60);
   const [canResend, setCanResend] = useState(false);
 
+  const isEmailMode = loginMode === 'email';
   const inputRefs = useRef<(TextInput | null)[]>([]);
 
   // Timer for resend
@@ -70,10 +76,11 @@ export default function VerifyOtpScreen() {
 
     setIsLoading(true);
     try {
-      const { isNewUser } = await verifyOtp(phone!, otpString);
+      const verifyParams = isEmailMode ? { email: email! } : { phone: phone! };
+      const { isNewUser } = await verifyOtp(verifyParams, otpString);
       router.replace({
         pathname: '/(auth)/loading',
-        params: { isNewUser: isNewUser ? '1' : '0' },
+        params: { isNewUser: isNewUser ? '1' : '0', loginMode },
       });
     } catch (error: any) {
       Alert.alert('Verification Failed', error.message || 'Invalid or expired OTP');
@@ -86,12 +93,18 @@ export default function VerifyOtpScreen() {
     if (!canResend) return;
     setResetLoading(true);
     try {
-      await sendOtp(phone!, countryCode);
+      if (isEmailMode) {
+        await sendOtp({ email: email! });
+      } else {
+        await sendOtp({ phone: phone!, countryCode });
+      }
       setCanResend(false);
       setResendTimer(60);
       setOtp(Array(OTP_LENGTH).fill(''));
       inputRefs.current[0]?.focus();
-      Alert.alert('OTP Sent', 'A new verification code has been sent via WhatsApp');
+      Alert.alert('OTP Sent', isEmailMode
+        ? 'A new verification code has been sent to your email'
+        : 'A new verification code has been sent via WhatsApp');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to resend OTP');
     } finally {
@@ -110,13 +123,15 @@ export default function VerifyOtpScreen() {
             <Text style={styles.iconText}>OTP</Text>
           </View>
           <Text style={[styles.title, { color: colors.text }]}>
-            Verify Your Number
+            {isEmailMode ? 'Verify Your Email' : 'Verify Your Number'}
           </Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            We've sent a 6-digit verification code via WhatsApp to
+            {isEmailMode
+              ? "We've sent a 6-digit verification code to"
+              : "We've sent a 6-digit verification code via WhatsApp to"}
           </Text>
           <Text style={[styles.phoneDisplay, { color: "#ffffff" }]}>
-            {countryCode} {phone}
+            {isEmailMode ? email : `${countryCode} ${phone}`}
           </Text>
         </View>
 
@@ -178,10 +193,10 @@ export default function VerifyOtpScreen() {
           )}
         </Pressable>
 
-        {/* Change Number */}
+        {/* Change Number/Email */}
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Text style={[styles.backText, { color: colors.textSecondary }]}>
-            Change number
+            {isEmailMode ? 'Change email' : 'Change number'}
           </Text>
         </Pressable>
       </View>

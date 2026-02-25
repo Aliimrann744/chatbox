@@ -149,14 +149,14 @@ async function refreshToken(): Promise<boolean> {
 
 // Auth API
 export const authApi = {
-  async sendOtp(data: { phone: string; countryCode?: string }) {
+  async sendOtp(data: { phone?: string; countryCode?: string; email?: string }) {
     return request<{ message: string; otp?: string; }>('/auth/send-otp', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  async verifyOtp(data: { phone: string; otp: string }) {
+  async verifyOtp(data: { phone?: string; email?: string; otp: string }) {
     const response = await request<{
       message: string;
       user: User;
@@ -212,12 +212,14 @@ export const authApi = {
     return !!token;
   },
 
-  async updateProfile(data: { name?: string; about?: string; avatar?: { uri: string; type: string; name: string } }) {
+  async updateProfile(data: { name?: string; about?: string; phone?: string; countryCode?: string; avatar?: { uri: string; type: string; name: string } }) {
     const token = await storage.getItem(TOKEN_KEY);
     const formData = new FormData();
 
     if (data.name !== undefined) formData.append('name', data.name);
     if (data.about !== undefined) formData.append('about', data.about);
+    if (data.phone !== undefined) formData.append('phone', data.phone);
+    if (data.countryCode !== undefined) formData.append('countryCode', data.countryCode);
     if (data.avatar) {
       await appendFileToFormData(formData, 'avatar', data.avatar);
     }
@@ -493,7 +495,7 @@ export interface User {
   id: string;
   name: string;
   email?: string;
-  phone: string;
+  phone?: string;
   avatar?: string;
   about?: string;
   isOnline?: boolean;
@@ -671,4 +673,4 @@ export interface PrivacySettings {
   readReceiptsEnabled: boolean;
 }
 
-export { storage, API_BASE_URL, setOnAuthFailure };
+export { storage, API_BASE_URL };

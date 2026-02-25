@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
+import { MailService } from './mail.service';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 
@@ -14,6 +15,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private uploadService: UploadService,
+    private mailService: MailService,
   ) {}
 
   private generateOtp(): string {
@@ -44,8 +46,8 @@ export class AuthService {
     }
   }
 
-  private async generateTokens(userId: string, phone: string) {
-    const payload = { sub: userId, phone };
+  private async generateTokens(userId: string, identifier: string) {
+    const payload = { sub: userId, phone: identifier };
 
     const accessToken = this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_SECRET'),
@@ -69,17 +71,41 @@ export class AuthService {
   }
 
   async sendOtp(sendOtpDto: SendOtpDto) {
-    const { phone, countryCode } = sendOtpDto;
+    const { phone, countryCode, email } = sendOtpDto;
 
     const otp = this.generateOtp();
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
-    let user = await this.prisma.user.findUnique({ where: { phone } });
+    if (email) {
+      // Email-based OTP
+      let user = await this.prisma.user.findUnique({ where: { email } });
+
+      if (user) {
+        await this.prisma.user.update({ where: { id: user.id }, data: { otp, otpExpiry } });
+      } else {
+        user = await this.prisma.user.create({ data: { email, otp, otpExpiry, isVerified: false } });
+      }
+
+      try {
+        await this.mailService.sendOtpEmail(email, otp);
+      } catch (error) {
+        console.error('Error sending email OTP:', error);
+        throw new BadRequestException('Failed to send OTP via email');
+      }
+
+      return {
+        message: 'OTP sent successfully via email',
+        otp: process.env.NODE_ENV === 'development' ? otp : undefined,
+      };
+    }
+
+    // Phone-based OTP (existing flow)
+    let user = await this.prisma.user.findUnique({ where: { phone: phone! } });
 
     if (user) {
       await this.prisma.user.update({ where: { id: user.id }, data: { otp, otpExpiry }});
     } else {
-      user = await this.prisma.user.create({ data: { phone, countryCode: countryCode || '+92', otp, otpExpiry, isVerified: false }});
+      user = await this.prisma.user.create({ data: { phone: phone!, countryCode: countryCode || '+92', otp, otpExpiry, isVerified: false }});
     }
 
     const fullPhone = `${countryCode || user?.countryCode}${phone}`;
@@ -92,8 +118,14 @@ export class AuthService {
   }
 
   async verifyOtp(verifyOtpDto: VerifyOtpDto) {
-    const { phone, otp: otpCode } = verifyOtpDto;
-    const user = await this.prisma.user.findUnique({ where: { phone }});
+    const { phone, email, otp: otpCode } = verifyOtpDto;
+
+    let user;
+    if (email) {
+      user = await this.prisma.user.findUnique({ where: { email } });
+    } else {
+      user = await this.prisma.user.findUnique({ where: { phone: phone! } });
+    }
 
     if (!user) throw new NotFoundException('User not found');
     if (!user.otp || !user.otpExpiry) throw new BadRequestException('No OTP found. Please request a new one.');
@@ -105,13 +137,13 @@ export class AuthService {
       where: { id: user.id }, data: { isVerified: true, otp: null, otpExpiry: null, isOnline: true },
     });
 
-    const tokens = await this.generateTokens(user.id, user.phone);
+    const tokens = await this.generateTokens(user.id, user.phone || user.email!);
 
     return {
       message: 'OTP verified successfully',
       ...tokens,
       isNewUser,
-      user: { id: user.id, name: user.name, phone: user.phone, avatar: user.avatar, about: user.about },
+      user: { id: user.id, name: user.name, phone: user.phone, email: user.email, avatar: user.avatar, about: user.about },
     };
   }
 
@@ -126,7 +158,7 @@ export class AuthService {
       const isRefreshTokenValid = await bcrypt.compare(refreshToken, user.refreshToken);
 
       if (!isRefreshTokenValid) throw new UnauthorizedException('Invalid refresh token');
-      const tokens = await this.generateTokens(user.id, user.phone);
+      const tokens = await this.generateTokens(user.id, user.phone || user.email!);
 
       return {
         message: 'Token refreshed successfully',
@@ -147,18 +179,18 @@ export class AuthService {
 
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId },
-      select: { id: true, name: true, phone: true, avatar: true, about: true, isOnline: true, lastSeen: true, createdAt: true },
+      select: { id: true, name: true, phone: true, email: true, avatar: true, about: true, isOnline: true, lastSeen: true, createdAt: true },
     });
 
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
 
-  async updateProfile(userId: string, data: { name?: string; about?: string }, file?: Express.Multer.File) {
+  async updateProfile(userId: string, data: { name?: string; about?: string; phone?: string; countryCode?: string }, file?: Express.Multer.File) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const updateData: { name?: string; about?: string; avatar?: string } = {};
+    const updateData: { name?: string; about?: string; avatar?: string; phone?: string; countryCode?: string } = {};
 
     if (data.name !== undefined) {
       if (data.name.trim().length < 2) throw new BadRequestException('Name must be at least 2 characters');
@@ -169,6 +201,19 @@ export class AuthService {
       updateData.about = data.about.trim();
     }
 
+    // Handle phone number update (for email-signup users adding phone)
+    if (data.phone !== undefined && data.phone.trim()) {
+      const cleanedPhone = data.phone.trim();
+      const existingUser = await this.prisma.user.findUnique({ where: { phone: cleanedPhone } });
+      if (existingUser && existingUser.id !== userId) {
+        throw new BadRequestException('This phone number is already in use');
+      }
+      updateData.phone = cleanedPhone;
+      if (data.countryCode) {
+        updateData.countryCode = data.countryCode;
+      }
+    }
+
     if (file) {
       const uploaded = await this.uploadService.uploadFile(file, 'avatars');
       updateData.avatar = uploaded.url;
@@ -177,7 +222,7 @@ export class AuthService {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: updateData,
-      select: { id: true, name: true, phone: true, avatar: true, about: true, isOnline: true, lastSeen: true, createdAt: true },
+      select: { id: true, name: true, phone: true, email: true, avatar: true, about: true, isOnline: true, lastSeen: true, createdAt: true },
     });
 
     return updated;

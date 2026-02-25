@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
-import { createReadStream, unlink } from 'fs';
+import { Readable } from 'stream';
 
 @Injectable()
 export class UploadService {
@@ -28,9 +28,8 @@ export class UploadService {
           resolve(result);
         },
       );
-      createReadStream(file.path).pipe(stream);
+      Readable.from(file.buffer).pipe(stream);
     });
-    unlink(file.path, () => {});
 
     return {
       url: result.secure_url,

@@ -161,7 +161,7 @@ function AnimatedLockIcon({ color }: { color: string }) {
 }
 
 export default function LoadingScreen() {
-  const { isNewUser } = useLocalSearchParams<{ isNewUser: string }>();
+  const { isNewUser, loginMode } = useLocalSearchParams<{ isNewUser: string; loginMode?: string }>();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
@@ -187,7 +187,10 @@ export default function LoadingScreen() {
 
     const navTimeout = setTimeout(() => {
       if (isNewUser === '1') {
-        router.replace('/(auth)/setup-profile');
+        router.replace({
+          pathname: '/(auth)/setup-profile',
+          params: { loginMode: loginMode || 'phone' },
+        });
       } else {
         router.replace('/(tabs)');
       }

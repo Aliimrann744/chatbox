@@ -9,8 +9,8 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  sendOtp: (phone: string, countryCode?: string) => Promise<void>;
-  verifyOtp: (phone: string, otp: string) => Promise<{ isNewUser: boolean }>;
+  sendOtp: (params: { phone?: string; countryCode?: string; email?: string }) => Promise<void>;
+  verifyOtp: (params: { phone?: string; email?: string }, otp: string) => Promise<{ isNewUser: boolean }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -73,12 +73,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const sendOtp = useCallback(async (phone: string, countryCode?: string) => {
-    await authApi.sendOtp({ phone, countryCode });
+  const sendOtp = useCallback(async (params: { phone?: string; countryCode?: string; email?: string }) => {
+    await authApi.sendOtp(params);
   }, []);
 
-  const verifyOtp = useCallback(async (phone: string, otp: string) => {
-    const response = await authApi.verifyOtp({ phone, otp });
+  const verifyOtp = useCallback(async (params: { phone?: string; email?: string }, otp: string) => {
+    const response = await authApi.verifyOtp({ ...params, otp });
     setState({ user: response.user, isLoading: false, isAuthenticated: true });
     return { isNewUser: response.isNewUser };
   }, []);
