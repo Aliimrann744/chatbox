@@ -41,6 +41,13 @@ const VALID_SF_SYMBOLS: string[] = [
   'video.fill',
   'phone.arrow.up.right',
   'phone.arrow.down.left',
+  'phone.down.fill',
+  'mic.slash.fill',
+  'speaker.wave.3.fill',
+  'speaker.fill',
+  'video.slash.fill',
+  'camera.rotate.fill',
+  'exclamationmark.circle',
 ];
 
 export type IconSymbolName = string;

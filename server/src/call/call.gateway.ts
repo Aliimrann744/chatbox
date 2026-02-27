@@ -11,6 +11,7 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { CallService } from './call.service';
+import { AgoraService } from './agora.service';
 import { CallType, CallStatus } from '@prisma/client';
 
 @WebSocketGateway({
@@ -33,6 +34,7 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private jwtService: JwtService,
     private configService: ConfigService,
     private callService: CallService,
+    private agoraService: AgoraService,
   ) {}
 
   // ==================== CONNECTION HANDLING ====================
@@ -136,15 +138,45 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const call = await this.callService.acceptCall(data.callId);
 
-      // Notify caller that call was accepted
+      // Generate Agora tokens for both participants
+      const channelName = data.callId;
+      const callerUid = this.agoraService.userIdToUid(call.callerId);
+      const receiverUid = this.agoraService.userIdToUid(call.receiverId);
+      const appId = this.agoraService.getAppId();
+
+      const callerToken = this.agoraService.generateRtcToken(
+        channelName,
+        callerUid,
+      );
+      const receiverToken = this.agoraService.generateRtcToken(
+        channelName,
+        receiverUid,
+      );
+
+      // Notify caller that call was accepted (with Agora credentials)
       const callerSocketId = this.connectedUsers.get(call.callerId);
       if (callerSocketId) {
         this.server.to(callerSocketId).emit('call_accepted', {
           callId: data.callId,
+          agora: {
+            appId,
+            token: callerToken,
+            channelName,
+            uid: callerUid,
+          },
         });
       }
 
-      return { success: true };
+      // Return Agora credentials to receiver (the accepting client)
+      return {
+        success: true,
+        agora: {
+          appId,
+          token: receiverToken,
+          channelName,
+          uid: receiverUid,
+        },
+      };
     } catch (error) {
       return { success: false, error: error.message };
     }

@@ -28,7 +28,11 @@
       "Bash(npm uninstall:*)",
       "mcp__ide__getDiagnostics",
       "Bash(npx eas-cli --version)",
-      "Bash(eas:*)"
+      "Bash(eas:*)",
+      "WebSearch",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:docs.agora.io)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

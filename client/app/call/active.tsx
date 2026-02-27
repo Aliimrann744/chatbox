@@ -14,17 +14,12 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useCall } from '@/contexts/call-context';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { RtcSurfaceView } from '@/utils/agora';
 
 export default function ActiveCallScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const {
-    callState,
-    endCall,
-    toggleMute,
-    toggleSpeaker,
-    toggleVideo,
-  } = useCall();
+  const { callState, endCall, toggleMute, toggleSpeaker, toggleVideo, switchCamera, remoteUid, localUid } = useCall();
 
   const [duration, setDuration] = useState(0);
   const [showControls, setShowControls] = useState(true);
@@ -32,7 +27,7 @@ export default function ActiveCallScreen() {
 
   // Update call duration
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
 
     if (callState.status === 'connected' && callState.startTime) {
       interval = setInterval(() => {
@@ -109,34 +104,34 @@ export default function ActiveCallScreen() {
     <Pressable
       style={[styles.container, { backgroundColor: '#1a1a2e' }]}
       onPress={handleTap}>
-      {/* Video placeholder / Avatar */}
+      {/* Video / Avatar area */}
       <View style={styles.mainContent}>
         {callState.type === 'VIDEO' ? (
           <View style={styles.videoContainer}>
-            {/* Remote video placeholder */}
+            {/* Remote video */}
             <View style={styles.remoteVideo}>
-              <Avatar
-                uri={callState.participant?.avatar}
-                size={160}
-                showOnlineStatus={false}
-              />
-              {!isConnected && (
-                <Text style={styles.connectingText}>{getStatusText()}</Text>
+              {remoteUid !== null ? (
+                <RtcSurfaceView canvas={{ uid: remoteUid }} style={{ flex: 1 }} />
+              ) : (
+                <>
+                  <Avatar uri={callState.participant?.avatar || ""} size={160} showOnlineStatus={false} />
+                  {!isConnected && (<Text style={styles.connectingText}>{getStatusText()}</Text>)}
+                </>
               )}
             </View>
 
-            {/* Local video placeholder (small) */}
+            {/* Local video PiP */}
             <View style={styles.localVideo}>
-              <IconSymbol name="person.fill" size={40} color="#ffffff" />
+              {callState.isVideoEnabled && localUid !== null ? (
+                <RtcSurfaceView canvas={{ uid: 0 }} style={{ flex: 1, borderRadius: 12 }} zOrderMediaOverlay={true} />
+              ) : (
+                <IconSymbol name="person.fill" size={40} color="#ffffff" />
+              )}
             </View>
           </View>
         ) : (
           <View style={styles.voiceContainer}>
-            <Avatar
-              uri={callState.participant?.avatar}
-              size={140}
-              showOnlineStatus={false}
-            />
+            <Avatar uri={callState.participant?.avatar || ""} size={140} showOnlineStatus={false} />
             <Text style={styles.participantName}>
               {callState.participant?.name || 'Unknown'}
             </Text>
@@ -222,6 +217,7 @@ export default function ActiveCallScreen() {
           {/* Flip camera button (video only) */}
           {callState.type === 'VIDEO' && (
             <Pressable
+              onPress={switchCamera}
               style={({ pressed }) => [
                 styles.controlButton,
                 pressed && styles.buttonPressed,
@@ -275,6 +271,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#3a3a4e',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   voiceContainer: {
     alignItems: 'center',
@@ -317,28 +314,34 @@ const styles = StyleSheet.create({
   actionsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 32,
+    gap: 20,
     marginBottom: 32,
   },
   controlButton: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    minWidth: 64,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   controlButtonActive: {
-    backgroundColor: 'rgba(255, 59, 48, 0.3)',
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
   },
   controlLabel: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#ffffff',
     marginTop: 4,
+    position: 'absolute',
+    bottom: -18,
+    textAlign: 'center',
   },
   endCallButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#FF3B30',
     justifyContent: 'center',
     alignItems: 'center',

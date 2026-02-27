@@ -1,7 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Alert, AppState, Platform } from 'react-native';
+import { Alert, PermissionsAndroid, Platform } from 'react-native';
+import {
+  createAgoraRtcEngine,
+  ChannelProfileType,
+  ClientRoleType,
+  isAgoraAvailable,
+} from '@/utils/agora';
+import type { IRtcEngine } from '@/utils/agora';
 import socketService from '@/services/socket';
 import { useAuth } from '@/contexts/auth-context';
+
+const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
 
 export type CallType = 'VOICE' | 'VIDEO';
 export type CallStatus = 'idle' | 'ringing' | 'connecting' | 'connected' | 'ended';
@@ -34,8 +43,9 @@ interface CallContextType {
   toggleMute: () => void;
   toggleSpeaker: () => void;
   toggleVideo: () => void;
-  localStream: any | null;
-  remoteStream: any | null;
+  switchCamera: () => void;
+  remoteUid: number | null;
+  localUid: number | null;
 }
 
 const initialCallState: CallState = {
@@ -55,22 +65,117 @@ const CallContext = createContext<CallContextType | undefined>(undefined);
 export function CallProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [callState, setCallState] = useState<CallState>(initialCallState);
-  const [localStream, setLocalStream] = useState<any>(null);
-  const [remoteStream, setRemoteStream] = useState<any>(null);
+  const [remoteUid, setRemoteUid] = useState<number | null>(null);
+  const [localUid, setLocalUid] = useState<number | null>(null);
 
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const callTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const engineRef = useRef<IRtcEngine | null>(null);
+  const callTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Initialize Agora engine on mount
+  useEffect(() => {
+    if (!isAgoraAvailable || !AGORA_APP_ID) {
+      if (!isAgoraAvailable) console.warn('Agora SDK not available on this platform. Call signaling only.');
+      else console.warn('Agora App ID not configured. Calls will not work.');
+      return;
+    }
+
+    const initEngine = async () => {
+      // Request Android permissions
+      if (Platform.OS === 'android') {
+        try {
+          await PermissionsAndroid.requestMultiple([
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+            PermissionsAndroid.PERMISSIONS.CAMERA,
+          ]);
+        } catch (err) {
+          console.warn('Permission request error:', err);
+        }
+      }
+
+      try {
+        const engine = createAgoraRtcEngine();
+        engine.initialize({ appId: AGORA_APP_ID });
+
+        engine.registerEventHandler({
+          onJoinChannelSuccess: (_connection, elapsed) => {
+            console.log('Agora: Joined channel successfully', elapsed);
+            setCallState((prev) => ({
+              ...prev,
+              status: 'connected',
+              startTime: new Date(),
+            }));
+          },
+          onUserJoined: (_connection, uid) => {
+            console.log('Agora: Remote user joined', uid);
+            setRemoteUid(uid);
+          },
+          onUserOffline: (_connection, uid) => {
+            console.log('Agora: Remote user offline', uid);
+            setRemoteUid(null);
+          },
+          onError: (err, msg) => {
+            console.error('Agora error:', err, msg);
+          },
+        });
+
+        engineRef.current = engine;
+      } catch (error) {
+        console.error('Failed to initialize Agora engine:', error);
+      }
+    };
+
+    initEngine();
+
+    return () => {
+      if (engineRef.current) {
+        engineRef.current.release();
+        engineRef.current = null;
+      }
+    };
+  }, []);
+
+  // Join Agora channel helper
+  const joinAgoraChannel = useCallback(
+    (agora: { token: string; channelName: string; uid: number }, callType: CallType) => {
+      const engine = engineRef.current;
+      if (!engine) return;
+
+      engine.enableAudio();
+      if (callType === 'VIDEO') {
+        engine.enableVideo();
+        engine.startPreview();
+      }
+
+      engine.joinChannel(agora.token, agora.channelName, agora.uid, {
+        channelProfile: ChannelProfileType.ChannelProfileCommunication,
+        clientRoleType: ClientRoleType.ClientRoleBroadcaster,
+        publishMicrophoneTrack: true,
+        publishCameraTrack: callType === 'VIDEO',
+        autoSubscribeAudio: true,
+        autoSubscribeVideo: callType === 'VIDEO',
+      });
+
+      setLocalUid(agora.uid);
+    },
+    []
+  );
 
   // Reset call state
   const resetCallState = useCallback(() => {
-    setCallState(initialCallState);
-    setLocalStream(null);
-    setRemoteStream(null);
-
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
+    const engine = engineRef.current;
+    if (engine) {
+      try {
+        engine.leaveChannel();
+        engine.disableAudio();
+        engine.disableVideo();
+      } catch {
+        // Engine may not be in a channel
+      }
     }
+
+    setCallState(initialCallState);
+    setRemoteUid(null);
+    setLocalUid(null);
 
     if (callTimeoutRef.current) {
       clearTimeout(callTimeoutRef.current);
@@ -82,7 +187,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribeIncomingCall = socketService.on('incoming_call', (data: any) => {
       if (callState.status !== 'idle') {
-        // Already in a call, decline
         socketService.declineCall(data.callId);
         return;
       }
@@ -103,7 +207,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         isVideoEnabled: data.type === 'VIDEO',
       });
 
-      // Auto-decline after 30 seconds if not answered
       callTimeoutRef.current = setTimeout(() => {
         if (callState.status === 'ringing') {
           socketService.declineCall(data.callId);
@@ -118,6 +221,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           ...prev,
           status: 'connecting',
         }));
+        if (data.agora) {
+          // Caller side: join Agora channel with received credentials
+          joinAgoraChannel(data.agora, callState.type);
+        }
       }
     });
 
@@ -148,46 +255,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    // WebRTC signaling events
-    const unsubscribeCallOffer = socketService.on('call_offer', async (data: any) => {
-      if (data.callId === callState.callId && peerConnectionRef.current) {
-        try {
-          await peerConnectionRef.current.setRemoteDescription(
-            new RTCSessionDescription(data.offer)
-          );
-          const answer = await peerConnectionRef.current.createAnswer();
-          await peerConnectionRef.current.setLocalDescription(answer);
-          socketService.sendCallAnswer(data.callId, answer);
-        } catch (error) {
-          console.error('Error handling call offer:', error);
-        }
-      }
-    });
-
-    const unsubscribeCallAnswer = socketService.on('call_answer', async (data: any) => {
-      if (data.callId === callState.callId && peerConnectionRef.current) {
-        try {
-          await peerConnectionRef.current.setRemoteDescription(
-            new RTCSessionDescription(data.answer)
-          );
-        } catch (error) {
-          console.error('Error handling call answer:', error);
-        }
-      }
-    });
-
-    const unsubscribeIceCandidate = socketService.on('call_ice_candidate', async (data: any) => {
-      if (data.callId === callState.callId && peerConnectionRef.current) {
-        try {
-          await peerConnectionRef.current.addIceCandidate(
-            new RTCIceCandidate(data.candidate)
-          );
-        } catch (error) {
-          console.error('Error adding ICE candidate:', error);
-        }
-      }
-    });
-
     return () => {
       unsubscribeIncomingCall();
       unsubscribeCallAccepted();
@@ -195,11 +262,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       unsubscribeCallBusy();
       unsubscribeCallEnded();
       unsubscribeCallMissed();
-      unsubscribeCallOffer();
-      unsubscribeCallAnswer();
-      unsubscribeIceCandidate();
     };
-  }, [callState.callId, callState.status, callState.participant, resetCallState]);
+  }, [callState.callId, callState.status, callState.type, callState.participant, resetCallState, joinAgoraChannel]);
 
   // Initiate a call
   const initiateCall = useCallback(
@@ -229,7 +293,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             callId: result.callId,
           }));
 
-          // Auto-end call after 60 seconds if not answered
           callTimeoutRef.current = setTimeout(async () => {
             if (callState.status === 'ringing') {
               await socketService.endCall(result.callId);
@@ -266,12 +329,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
       const result = await socketService.acceptCall(callState.callId);
 
-      if (result.success) {
-        setCallState((prev) => ({
-          ...prev,
-          status: 'connected',
-          startTime: new Date(),
-        }));
+      if (result.success && result.agora) {
+        // Receiver side: join Agora channel with returned credentials
+        joinAgoraChannel(result.agora, callState.type);
       } else {
         throw new Error(result.error || 'Failed to accept call');
       }
@@ -280,7 +340,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'Failed to accept call.');
       resetCallState();
     }
-  }, [callState.callId, resetCallState]);
+  }, [callState.callId, callState.type, resetCallState, joinAgoraChannel]);
 
   // Decline incoming call
   const declineCall = useCallback(async () => {
@@ -315,42 +375,38 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Toggle mute
   const toggleMute = useCallback(() => {
+    const newMuted = !callState.isMuted;
+    engineRef.current?.muteLocalAudioStream(newMuted);
     setCallState((prev) => ({
       ...prev,
-      isMuted: !prev.isMuted,
+      isMuted: newMuted,
     }));
-
-    if (localStream) {
-      const audioTracks = localStream.getAudioTracks();
-      audioTracks.forEach((track: any) => {
-        track.enabled = callState.isMuted; // Toggle (opposite of current state)
-      });
-    }
-  }, [localStream, callState.isMuted]);
+  }, [callState.isMuted]);
 
   // Toggle speaker
   const toggleSpeaker = useCallback(() => {
+    const newSpeaker = !callState.isSpeakerOn;
+    engineRef.current?.setEnableSpeakerphone(newSpeaker);
     setCallState((prev) => ({
       ...prev,
-      isSpeakerOn: !prev.isSpeakerOn,
+      isSpeakerOn: newSpeaker,
     }));
-    // Note: Speaker toggle requires InCallManager which needs native module
-  }, []);
+  }, [callState.isSpeakerOn]);
 
   // Toggle video
   const toggleVideo = useCallback(() => {
+    const newEnabled = !callState.isVideoEnabled;
+    engineRef.current?.muteLocalVideoStream(!newEnabled);
     setCallState((prev) => ({
       ...prev,
-      isVideoEnabled: !prev.isVideoEnabled,
+      isVideoEnabled: newEnabled,
     }));
+  }, [callState.isVideoEnabled]);
 
-    if (localStream) {
-      const videoTracks = localStream.getVideoTracks();
-      videoTracks.forEach((track: any) => {
-        track.enabled = !callState.isVideoEnabled; // Toggle (opposite of current state)
-      });
-    }
-  }, [localStream, callState.isVideoEnabled]);
+  // Switch camera
+  const switchCamera = useCallback(() => {
+    engineRef.current?.switchCamera();
+  }, []);
 
   return (
     <CallContext.Provider
@@ -363,8 +419,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         toggleMute,
         toggleSpeaker,
         toggleVideo,
-        localStream,
-        remoteStream,
+        switchCamera,
+        remoteUid,
+        localUid,
       }}>
       {children}
     </CallContext.Provider>

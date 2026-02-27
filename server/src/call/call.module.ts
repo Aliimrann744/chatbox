@@ -4,11 +4,13 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CallController } from './call.controller';
 import { CallService } from './call.service';
 import { CallGateway } from './call.gateway';
+import { AgoraService } from './agora.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
   imports: [
     PrismaModule,
+    ConfigModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
@@ -21,7 +23,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     }),
   ],
   controllers: [CallController],
-  providers: [CallService, CallGateway],
-  exports: [CallService, CallGateway],
+  providers: [CallService, CallGateway, AgoraService],
+  exports: [CallService, CallGateway, AgoraService],
 })
 export class CallModule {}

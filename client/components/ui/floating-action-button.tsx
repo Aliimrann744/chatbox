@@ -19,7 +19,7 @@ export function FloatingActionButton({ onPress, icon = 'plus', size = 56 }: Floa
     <Pressable onPress={onPress}style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: colors.primary,
+          backgroundColor: colors.accent,
           width: size,
           height: size,
           borderRadius: size / 2,

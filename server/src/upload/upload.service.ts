@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
+import { createReadStream, unlink } from 'fs';
 import { Readable } from 'stream';
 
 @Injectable()
@@ -28,8 +29,20 @@ export class UploadService {
           resolve(result);
         },
       );
-      Readable.from(file.buffer).pipe(stream);
+
+      if (file.path) {
+        // Disk storage (upload controller) — file is on disk
+        createReadStream(file.path).pipe(stream);
+      } else {
+        // Memory storage (auth controller) — file is in buffer
+        Readable.from(file.buffer).pipe(stream);
+      }
     });
+
+    // Clean up temp file if it was written to disk
+    if (file.path) {
+      unlink(file.path, () => {});
+    }
 
     return {
       url: result.secure_url,

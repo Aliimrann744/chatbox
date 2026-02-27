@@ -3,25 +3,51 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Call } from '@/constants/mock-data';
+import { Call } from '@/services/api';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface CallListItemProps {
   call: Call;
+  onCallPress?: (call: Call) => void;
 }
 
-export function CallListItem({ call }: CallListItemProps) {
+function formatRelativeDate(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const callDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  if (callDate.getTime() === today.getTime()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (callDate.getTime() === yesterday.getTime()) {
+    return 'Yesterday';
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+}
+
+function formatDuration(seconds?: number): string {
+  if (!seconds || seconds <= 0) return '';
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+export function CallListItem({ call, onCallPress }: CallListItemProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
+  const isMissed = call.status === 'MISSED' || call.status === 'DECLINED';
+
   const getCallIcon = () => {
-    if (call.type === 'missed') {
+    if (isMissed) {
       return {
         name: 'phone.fill.arrow.down.left' as const,
         color: '#e74c3c',
       };
-    } else if (call.type === 'incoming') {
+    } else if (call.direction === 'incoming') {
       return {
         name: 'phone.fill.arrow.down.left' as const,
         color: colors.online,
@@ -35,6 +61,8 @@ export function CallListItem({ call }: CallListItemProps) {
   };
 
   const callIcon = getCallIcon();
+  const durationStr = formatDuration(call.duration);
+  const dateStr = formatRelativeDate(call.startedAt);
 
   return (
     <Pressable
@@ -44,31 +72,33 @@ export function CallListItem({ call }: CallListItemProps) {
           backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
         },
       ]}>
-      <Avatar uri={call.user.avatar} size={50} />
+      <Avatar uri={call.otherUser.avatar || ""} size={50} />
 
       <View style={styles.content}>
         <Text
           style={[
             styles.name,
-            { color: call.type === 'missed' ? '#e74c3c' : colors.text },
+            { color: isMissed ? '#e74c3c' : colors.text },
           ]}
           numberOfLines={1}>
-          {call.user.name}
+          {call.otherUser.name}
         </Text>
         <View style={styles.callInfo}>
           <IconSymbol name={callIcon.name} size={14} color={callIcon.color} />
           <Text style={[styles.timestamp, { color: colors.textSecondary }]}>
-            {call.timestamp}
-            {call.duration && ` (${call.duration})`}
+            {dateStr}
+            {durationStr ? ` (${durationStr})` : ''}
           </Text>
         </View>
       </View>
 
-      <Pressable style={styles.callButton}>
+      <Pressable
+        style={styles.callButton}
+        onPress={() => onCallPress?.(call)}>
         <IconSymbol
-          name={call.callType === 'video' ? 'video.fill' : 'phone.fill'}
+          name={call.type === 'VIDEO' ? 'video.fill' : 'phone.fill'}
           size={22}
-          color="#fff"
+          color={colors.accent}
         />
       </Pressable>
     </Pressable>

@@ -38,4 +38,25 @@ export const MAPPING: Record<string, ComponentProps<typeof MaterialIcons>['name'
   'phone.arrow.down.left': 'phone-in-talk',
   'phone.fill.arrow.up.right': 'call-made',
   'phone.fill.arrow.down.left': 'call-received',
+
+  // Updates & UI icons
+  'circle.dashed': 'motion-photos-on',
+  'envelope.fill': 'email',
+  'speaker.slash.fill': 'volume-off',
+  'pin.fill': 'push-pin',
+  'xmark.circle.fill': 'cancel',
+  'checkmark.circle.fill': 'check-circle',
+  'checkmark.circle': 'check-circle-outline',
+  'person.2': 'group',
+  'message': 'chat-bubble-outline',
+  'video': 'videocam',
+
+  // Call control icons
+  'phone.down.fill': 'call-end',
+  'mic.slash.fill': 'mic-off',
+  'speaker.wave.3.fill': 'volume-up',
+  'speaker.fill': 'volume-down',
+  'video.slash.fill': 'videocam-off',
+  'camera.rotate.fill': 'flip-camera-ios',
+  'exclamationmark.circle': 'error-outline',
 };

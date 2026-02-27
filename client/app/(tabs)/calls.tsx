@@ -1,23 +1,64 @@
-import React from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 
 import { CallListItem } from '@/components/chat/call-list-item';
 import { FloatingActionButton } from '@/components/ui/floating-action-button';
-import { mockCalls } from '@/constants/mock-data';
+import { callApi, Call } from '@/services/api';
+import { useCall } from '@/contexts/call-context';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function CallsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { initiateCall } = useCall();
 
-  const renderCall = ({ item }: { item: typeof mockCalls[0] }) => (
-    <CallListItem call={item} />
-  );
+  const [calls, setCalls] = useState<Call[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const fetchCalls = useCallback(async () => {
+    try {
+      const response = await callApi.getCallHistory();
+      setCalls(response.calls);
+    } catch (error) {
+      console.error('Failed to fetch call history:', error);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCalls();
+  }, [fetchCalls]);
+
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    fetchCalls();
+  }, [fetchCalls]);
+
+  const handleCallPress = useCallback(async (call: Call) => {
+    await initiateCall(call.otherUser.id, call.otherUser.name, call.otherUser.avatar, call.type);
+    router.push('/call/active');
+  }, [initiateCall]);
 
   const handleNewCall = () => {
-    // TODO: Navigate to new call screen
+    // TODO: Navigate to contacts to select who to call
   };
+
+  const renderCall = ({ item }: { item: Call }) => (
+    <CallListItem call={item} onCallPress={handleCallPress} />
+  );
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -30,11 +71,13 @@ export default function CallsScreen() {
 
       {/* Call List */}
       <FlatList
-        data={mockCalls}
+        data={calls}
         keyExtractor={(item) => item.id}
         renderItem={renderCall}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
+        refreshing={isRefreshing}
+        onRefresh={handleRefresh}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
@@ -53,6 +96,10 @@ export default function CallsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sectionHeader: {
     paddingHorizontal: 16,

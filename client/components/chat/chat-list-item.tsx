@@ -46,7 +46,7 @@ export function ChatListItem({ chat }: ChatListItemProps) {
     const { status } = chat.lastMessage;
 
     if (status === 'READ') {
-      return <IconSymbol name="checkmark.circle.fill" size={16} color={colors.primary} style={styles.statusIcon} />;
+      return <IconSymbol name="checkmark.circle.fill" size={16} color={colors.readReceipt} style={styles.statusIcon} />;
     } else if (status === 'DELIVERED') {
       return <IconSymbol name="checkmark.circle" size={16} color={colors.textSecondary} style={styles.statusIcon} />;
     } else if (status === 'SENT') {
@@ -136,7 +136,7 @@ export function ChatListItem({ chat }: ChatListItemProps) {
           <Text
             style={[
               styles.time,
-              { color: chat.unreadCount > 0 ? colors.primary : colors.textSecondary },
+              { color: chat.unreadCount > 0 ? colors.accent : colors.textSecondary },
             ]}>
             {chat.lastMessage ? formatTime(chat.lastMessage.createdAt) : ''}
           </Text>
@@ -153,7 +153,7 @@ export function ChatListItem({ chat }: ChatListItemProps) {
           </View>
 
           {chat.unreadCount > 0 && (
-            <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
+            <View style={[styles.unreadBadge, { backgroundColor: colors.accent }]}>
               <Text style={styles.unreadCount}>
                 {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
               </Text>
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
     width: 55,
     height: 55,
     borderRadius: 27.5,
-    backgroundColor: '#080053',
+    backgroundColor: '#075E54',
     justifyContent: 'center',
     alignItems: 'center',
   },

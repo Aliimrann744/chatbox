@@ -110,11 +110,7 @@ export default function IncomingCallScreen() {
               styles.avatarWrapper,
               { transform: [{ scale: pulseAnim }] },
             ]}>
-            <Avatar
-              uri={callState.participant?.avatar}
-              size={120}
-              showOnlineStatus={false}
-            />
+            <Avatar uri={callState.participant?.avatar || ""} size={120} showOnlineStatus={false} />
           </Animated.View>
         </View>
 

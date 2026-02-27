@@ -123,7 +123,7 @@ function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
       case 'FAILED':
         return <IconSymbol name="exclamationmark.circle" size={14} color="#FF3B30" />;
       case 'READ':
-        return <IconSymbol name="checkmark.circle.fill" size={14} color={colors.primary} />;
+        return <IconSymbol name="checkmark.circle.fill" size={14} color={colors.readReceipt} />;
       case 'DELIVERED':
         return <IconSymbol name="checkmark.circle" size={14} color={colors.textSecondary} />;
       case 'SENT':
@@ -323,7 +323,7 @@ function MessageInput({ value, onChange, onSend, onAttachment, onVoiceStart, onV
 
         <Pressable
           onPress={isRecording ? onVoiceStop : value.trim() ? onSend : onVoiceStart}
-          style={[styles.sendButton, { backgroundColor: isRecording ? '#25D366' : '#007a64' }]}
+          style={[styles.sendButton, { backgroundColor: isRecording ? colors.accent : colors.primary }]}
         >
           <Ionicons
             name={isRecording ? "stop-circle" : value.trim() ? "send" : "mic"}
@@ -350,7 +350,7 @@ function MessageInput({ value, onChange, onSend, onAttachment, onVoiceStart, onV
         />
       </View>
 
-      <Pressable onPress={value.trim() ? onSend : onVoiceStart} style={[styles.sendButton, { backgroundColor: '#007a64' }]}>
+      <Pressable onPress={value.trim() ? onSend : onVoiceStart} style={[styles.sendButton, { backgroundColor: colors.primary }]}>
         <Ionicons name={value.trim() ? "send" : "mic"} size={24} color="#fff" />
       </Pressable>
     </View>

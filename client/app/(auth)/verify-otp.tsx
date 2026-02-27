@@ -130,7 +130,7 @@ export default function VerifyOtpScreen() {
               ? "We've sent a 6-digit verification code to"
               : "We've sent a 6-digit verification code via WhatsApp to"}
           </Text>
-          <Text style={[styles.phoneDisplay, { color: "#ffffff" }]}>
+          <Text style={[styles.phoneDisplay, { color: colors.accent }]}>
             {isEmailMode ? email : `${countryCode} ${phone}`}
           </Text>
         </View>
@@ -166,13 +166,13 @@ export default function VerifyOtpScreen() {
         <View style={styles.timerContainer}>
           {canResend ? (
             <Pressable onPress={handleResend} disabled={resendLoading}>
-              <Text style={[styles.resendText, { color: "#ffffff" }]}>
-                Resend Code {resendLoading ? <ActivityIndicator color="#ffffff" /> : ""}
+              <Text style={[styles.resendText, { color: colors.accent }]}>
+                Resend Code {resendLoading ? <ActivityIndicator color={colors.accent} /> : ""}
               </Text>
             </Pressable>
           ) : (
             <Text style={[styles.timerText, { color: colors.textSecondary }]}>
-              Resend code in <Text style={{ color: "#ffffff" }}>{resendTimer}s</Text>
+              Resend code in <Text style={{ color: colors.accent }}>{resendTimer}s</Text>
             </Text>
           )}
         </View>

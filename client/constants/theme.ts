@@ -1,14 +1,15 @@
 /**
  * Theme configuration for Chatbox - WhatsApp-like chat application
- * Primary color: #04003a (deep navy blue)
+ * Primary color: #075E54 (dark teal - WhatsApp)
  */
 
 import { Platform } from 'react-native';
 
 // Primary brand color
-const primaryColor = '#04003a';
-const primaryColorLight = '#1a1a5e';
+const primaryColor = '#075E54';
+const primaryColorLight = '#128C7E';
 const accentColor = '#25D366'; // WhatsApp green for accents
+const readReceiptColor = '#53bdeb'; // WhatsApp read receipt blue
 
 export const Colors = {
   light: {
@@ -18,8 +19,8 @@ export const Colors = {
     backgroundSecondary: '#f0f2f5',
     tint: primaryColor,
     icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: primaryColor,
+    tabIconDefault: '#9E9E9E',
+    tabIconSelected: accentColor,
     primary: primaryColor,
     primaryLight: primaryColorLight,
     accent: accentColor,
@@ -31,16 +32,17 @@ export const Colors = {
     online: '#25D366',
     headerBackground: primaryColor,
     headerText: '#ffffff',
+    readReceipt: readReceiptColor,
   },
   dark: {
     text: '#ECEDEE',
-    textSecondary: '#9BA1A6',
+    textSecondary: '#8696A0',
     background: '#0b141a',
     backgroundSecondary: '#1f2c34',
     tint: '#ffffff',
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: '#ffffff',
+    icon: '#8696A0',
+    tabIconDefault: '#8696A0',
+    tabIconSelected: accentColor,
     primary: primaryColor,
     primaryLight: primaryColorLight,
     accent: accentColor,
@@ -48,10 +50,11 @@ export const Colors = {
     cardBackground: '#1f2c34',
     inputBackground: '#2a3942',
     messageOutgoing: '#005c4b',
-    messageIncoming: '#4e4e4e',
+    messageIncoming: '#1F2C34',
     online: '#25D366',
-    headerBackground: primaryColor,
+    headerBackground: '#1F2C34',
     headerText: '#ffffff',
+    readReceipt: readReceiptColor,
   },
 };
 
