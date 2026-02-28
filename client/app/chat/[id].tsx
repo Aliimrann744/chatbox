@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator, Image } from 'react-native';
+import { Dimensions, FlatList, ImageBackground, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator, Image } from 'react-native';
+import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/avatar';
@@ -18,7 +19,7 @@ import { pickImage, pickVideo, pickDocument, takePhoto, PickedMedia, getMessageT
 import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-picker';
 import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
 
-function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
+function MessageBubble({ message, isMe, onImagePress, onVideoPress }: { message: Message; isMe: boolean; onImagePress?: (url: string) => void; onVideoPress?: (url: string) => void }) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
@@ -28,11 +29,13 @@ function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
         return (
           <View style={styles.mediaContainer}>
             {message.mediaUrl ? (
-              <Image
-                source={{ uri: message.mediaUrl }}
-                style={styles.imagePreview}
-                resizeMode="cover"
-              />
+              <Pressable onPress={() => onImagePress?.(message.mediaUrl!)}>
+                <Image
+                  source={{ uri: message.mediaUrl }}
+                  style={styles.imagePreview}
+                  resizeMode="cover"
+                />
+              </Pressable>
             ) : (
               <>
                 <IconSymbol name="photo" size={48} color={colors.textSecondary} />
@@ -44,23 +47,41 @@ function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
       case 'VIDEO':
         return (
           <View style={styles.mediaContainer}>
-            {message.thumbnail ? (
+            <Pressable onPress={() => message.mediaUrl && onVideoPress?.(message.mediaUrl)}>
               <View style={styles.videoContainer}>
-                <Image
-                  source={{ uri: message.thumbnail }}
-                  style={styles.imagePreview}
-                  resizeMode="cover"
-                />
+                {message.thumbnail ? (
+                  <Image
+                    source={{ uri: message.thumbnail }}
+                    style={styles.imagePreview}
+                    resizeMode="cover"
+                  />
+                ) : message.mediaUrl ? (
+                  <Video
+                    source={{ uri: message.mediaUrl }}
+                    style={styles.imagePreview}
+                    resizeMode={ResizeMode.COVER}
+                    shouldPlay={false}
+                    isMuted
+                  />
+                ) : (
+                  <View style={[styles.imagePreview, styles.videoPlaceholder]}>
+                    <Ionicons name="videocam" size={40} color="rgba(255,255,255,0.7)" />
+                  </View>
+                )}
                 <View style={styles.videoPlayOverlay}>
-                  <IconSymbol name="play.fill" size={32} color="#ffffff" />
+                  <View style={styles.videoPlayButton}>
+                    <Ionicons name="play" size={28} color="#ffffff" />
+                  </View>
                 </View>
+                {message.mediaDuration ? (
+                  <View style={styles.videoDurationBadge}>
+                    <Text style={styles.videoDurationText}>
+                      {Math.floor(message.mediaDuration / 60)}:{(message.mediaDuration % 60).toString().padStart(2, '0')}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
-            ) : (
-              <>
-                <IconSymbol name="video" size={48} color={colors.textSecondary} />
-                <Text style={[styles.mediaText, { color: colors.textSecondary }]}>Video</Text>
-              </>
-            )}
+            </Pressable>
           </View>
         );
       case 'AUDIO':
@@ -167,9 +188,9 @@ function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall }: { chat: any
   const statusText = getStatusText(isTyping, chat);
 
   return (
-    <View style={[styles.header, { backgroundColor: colors.primary, paddingTop: insets.top + 8 }]}>
+    <View style={[styles.header, { backgroundColor: colors.primary, paddingTop: insets.top + 2 }]}>
       <Pressable onPress={onBack} style={styles.headerBackButton} hitSlop={8}>
-        <IconSymbol name="chevron.left" size={36} style={[{ padding: 0 }]} color={colors.headerText} />
+        <IconSymbol name="chevron.left" size={28} color={colors.headerText} />
       </Pressable>
 
       <Pressable style={styles.headerUserInfo}>
@@ -201,11 +222,11 @@ function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall }: { chat: any
       </Pressable>
 
       <View style={styles.headerActions}>
-        <Pressable onPress={onVideoCall} style={styles.headerActionButton} hitSlop={6}>
-          <IconSymbol name="video.fill" size={20} color={colors.headerText} />
+        <Pressable onPress={onVideoCall} style={styles.headerActionButton} hitSlop={8}>
+          <Ionicons name="videocam" size={22} color={colors.headerText} />
         </Pressable>
-        <Pressable onPress={onCall} style={styles.headerActionButton} hitSlop={6}>
-          <IconSymbol name="phone.fill" size={20} color={colors.headerText} />
+        <Pressable onPress={onCall} style={styles.headerActionButton} hitSlop={8}>
+          <Ionicons name="call" size={20} color={colors.headerText} />
         </Pressable>
       </View>
     </View>
@@ -374,6 +395,8 @@ export default function ChatDetailScreen() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
   // Get the other participant for PRIVATE chats
   const otherMember = chat?.members?.find((m) => m.user.id !== user?.id);
@@ -607,7 +630,7 @@ export default function ChatDetailScreen() {
       case 'location':
         const location = await getCurrentLocation();
         if (location) {
-          await sendLocationMessage(location);
+          sendLocationMessage(location);
         }
         return;
       default:
@@ -616,7 +639,7 @@ export default function ChatDetailScreen() {
     }
 
     if (media) {
-      await sendMediaMessage(media);
+      sendMediaMessage(media);
     }
   };
 
@@ -819,7 +842,7 @@ export default function ChatDetailScreen() {
   };
 
   const renderMessage = ({ item }: { item: Message }) => (
-    <MessageBubble message={item} isMe={item.senderId === user?.id} />
+    <MessageBubble message={item} isMe={item.senderId === user?.id} onImagePress={setPreviewImageUrl} onVideoPress={setPreviewVideoUrl} />
   );
 
   if (loading) {
@@ -833,7 +856,7 @@ export default function ChatDetailScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.backgroundSecondary }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}>
       {/* Custom Header */}
       <ChatHeader
@@ -852,28 +875,34 @@ export default function ChatDetailScreen() {
         onVideoCall={handleVideoCall}
       />
 
-      {/* Messages List */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={renderMessage}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.messagesContent}
+      {/* Messages List with WhatsApp background */}
+      <ImageBackground
+        source={require('@/assets/images/chat-background.jpg')}
         style={styles.messagesList}
-        onEndReached={loadMoreMessages}
-        onEndReachedThreshold={0.5}
-        ListHeaderComponent={
-          loadingMore ? (
-            <ActivityIndicator size="small" color={colors.primary} style={styles.loadingMore} />
-          ) : null
-        }
-        onContentSizeChange={() => {
-          if (messages.length > 0 && page === 1) {
-            flatListRef.current?.scrollToEnd({ animated: false });
+        resizeMode="cover"
+      >
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={renderMessage}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.messagesContent}
+          style={styles.messagesListInner}
+          onEndReached={loadMoreMessages}
+          onEndReachedThreshold={0.5}
+          ListHeaderComponent={
+            loadingMore ? (
+              <ActivityIndicator size="small" color={colors.primary} style={styles.loadingMore} />
+            ) : null
           }
-        }}
-      />
+          onContentSizeChange={() => {
+            if (messages.length > 0 && page === 1) {
+              flatListRef.current?.scrollToEnd({ animated: false });
+            }
+          }}
+        />
+      </ImageBackground>
 
       <MessageInput
         value={messageText}
@@ -895,6 +924,42 @@ export default function ChatDetailScreen() {
         onClose={() => setShowAttachmentMenu(false)}
         onSelect={handleAttachmentSelect}
       />
+
+      {/* Image Preview Modal */}
+      {previewImageUrl && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setPreviewImageUrl(null)}>
+          <View style={styles.imagePreviewOverlay}>
+            <Pressable style={styles.imagePreviewClose} onPress={() => setPreviewImageUrl(null)}>
+              <Ionicons name="close" size={28} color="#ffffff" />
+            </Pressable>
+            <Image
+              source={{ uri: previewImageUrl }}
+              style={styles.imagePreviewFull}
+              resizeMode="contain"
+            />
+          </View>
+        </Modal>
+      )}
+
+      {/* Video Player Modal */}
+      {previewVideoUrl && (
+        <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={() => setPreviewVideoUrl(null)}>
+          <View style={styles.videoPlayerOverlay}>
+            <Video
+              source={{ uri: previewVideoUrl }}
+              style={styles.videoPlayerFull}
+              useNativeControls
+              resizeMode={ResizeMode.CONTAIN}
+              shouldPlay
+            />
+            <View style={styles.videoPlayerHeader}>
+              <Pressable onPress={() => setPreviewVideoUrl(null)} style={styles.videoPlayerCloseBtn}>
+                <Ionicons name="close" size={28} color="#ffffff" />
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -910,7 +975,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: 10,
+    paddingBottom: 6,
     paddingHorizontal: 2,
     elevation: 4,
     shadowColor: '#000',
@@ -919,16 +984,16 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
   },
   headerBackButton: {
-    padding: 6,
+    padding: 2,
   },
   headerUserInfo: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 2,
+    marginLeft: 0,
   },
   headerTextContainer: {
-    marginLeft: 10,
+    marginLeft: 8,
     flex: 1,
   },
   headerUsername: {
@@ -939,18 +1004,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 1,
   },
-  headerAvatart: {
-    width: 50,
-    height: 50,
-  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    marginRight: 4,
   },
   headerActionButton: {
-    padding: 10,
+    padding: 8,
   },
   messagesList: {
+    flex: 1,
+  },
+  messagesListInner: {
     flex: 1,
   },
   messagesContent: {
@@ -1006,8 +1072,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 2,
   },
   messageBubbleBorder: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#e0e0e0',
+    borderWidth: 0.5,
+    borderColor: '#d4d4d4',
   },
   messageText: {
     fontSize: 16,
@@ -1040,6 +1106,10 @@ const styles = StyleSheet.create({
   },
   videoContainer: {
     position: 'relative',
+    width: 220,
+    height: 220,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   videoPlayOverlay: {
     position: 'absolute',
@@ -1173,5 +1243,70 @@ const styles = StyleSheet.create({
   },
   attachmentLabel: {
     fontSize: 13,
+  },
+  videoPlayButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePreviewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePreviewClose: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    padding: 8,
+  },
+  imagePreviewFull: {
+    width: Dimensions.get('window').width - 32,
+    height: Dimensions.get('window').height - 160,
+  },
+  videoPlaceholder: {
+    backgroundColor: '#1a1a2e',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoDurationBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  videoDurationText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  videoPlayerOverlay: {
+    flex: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoPlayerHeader: {
+    position: 'absolute',
+    top: 40,
+    right: 16,
+    zIndex: 10,
+  },
+  videoPlayerCloseBtn: {
+    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+  },
+  videoPlayerFull: {
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height - 120,
   },
 });

@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HapticTab } from '@/components/haptic-tab';
 import { ChatIcon } from '@/components/ui/chat-icon';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { UpdatesIcon } from '@/components/ui/updates-icon';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -56,7 +57,7 @@ export default function TabLayout() {
         options={{
           title: 'Updates',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={24} name="circle.dashed" color={color} />
+            <UpdatesIcon size={24} color={color} />
           ),
         }}
       />

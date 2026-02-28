@@ -140,7 +140,7 @@ export default function SettingsScreen() {
 
       {/* App Info */}
       <View style={styles.appInfo}>
-        <Text style={[styles.appName, { color: colors.textSecondary }]}>Chatbox</Text>
+        <Text style={[styles.appName, { color: colors.textSecondary }]}>WhatsApp</Text>
         <Text style={[styles.appVersion, { color: colors.textSecondary }]}>
           Version 1.0.0
         </Text>

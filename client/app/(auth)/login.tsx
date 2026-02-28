@@ -92,7 +92,7 @@ export default function LoginScreen() {
         showsVerticalScrollIndicator={false}>
         {/* Logo */}
         <View style={styles.logoContainer}>
-          <Text style={[styles.appName, { color: colors.text }]}>Chatbox</Text>
+          <Text style={[styles.appName, { color: colors.text }]}>WhatsApp</Text>
           <Text style={[styles.tagline, { color: colors.textSecondary }]}>
             Connect with friends and family
           </Text>

@@ -47,7 +47,7 @@ export const mockUsers: User[] = [
     name: 'Alice Johnson',
     avatar: 'https://i.pravatar.cc/150?img=1',
     phone: '+1 234 567 8901',
-    status: 'Hey there! I am using Chatbox',
+    status: 'Hey there! I am using WhatsApp',
     isOnline: true,
   },
   {

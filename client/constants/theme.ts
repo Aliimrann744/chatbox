@@ -50,7 +50,7 @@ export const Colors = {
     cardBackground: '#1f2c34',
     inputBackground: '#2a3942',
     messageOutgoing: '#005c4b',
-    messageIncoming: '#1F2C34',
+    messageIncoming: '#263340',
     online: '#25D366',
     headerBackground: '#1F2C34',
     headerText: '#ffffff',

@@ -6,6 +6,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Call } from '@/services/api';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Ionicons } from '@expo/vector-icons';
 
 interface CallListItemProps {
   call: Call;
@@ -92,14 +93,8 @@ export function CallListItem({ call, onCallPress }: CallListItemProps) {
         </View>
       </View>
 
-      <Pressable
-        style={styles.callButton}
-        onPress={() => onCallPress?.(call)}>
-        <IconSymbol
-          name={call.type === 'VIDEO' ? 'video.fill' : 'phone.fill'}
-          size={22}
-          color={colors.accent}
-        />
+      <Pressable style={styles.callButton} onPress={() => onCallPress?.(call)} hitSlop={8}>
+        <Ionicons name={call.type === 'VIDEO' ? 'videocam' : 'call'} size={22} color={colors.accent} />
       </Pressable>
     </Pressable>
   );

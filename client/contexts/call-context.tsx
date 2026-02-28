@@ -71,6 +71,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const engineRef = useRef<IRtcEngine | null>(null);
   const callTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Refs to avoid stale closures in socket listeners
+  const callStateRef = useRef(callState);
+  callStateRef.current = callState;
+
   // Initialize Agora engine on mount
   useEffect(() => {
     if (!isAgoraAvailable || !AGORA_APP_ID) {
@@ -119,6 +123,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         });
 
         engineRef.current = engine;
+        console.log('Agora engine initialized successfully');
       } catch (error) {
         console.error('Failed to initialize Agora engine:', error);
       }
@@ -138,7 +143,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const joinAgoraChannel = useCallback(
     (agora: { token: string; channelName: string; uid: number }, callType: CallType) => {
       const engine = engineRef.current;
-      if (!engine) return;
+      if (!engine) {
+        console.error('Agora engine not initialized, cannot join channel');
+        return;
+      }
+
+      console.log('Agora: Joining channel', agora.channelName, 'with uid', agora.uid, 'type', callType);
 
       engine.enableAudio();
       if (callType === 'VIDEO') {
@@ -183,10 +193,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Handle incoming call events
+  // Socket event listeners — registered ONCE, use refs for fresh state
   useEffect(() => {
     const unsubscribeIncomingCall = socketService.on('incoming_call', (data: any) => {
-      if (callState.status !== 'idle') {
+      if (callStateRef.current.status !== 'idle') {
         socketService.declineCall(data.callId);
         return;
       }
@@ -208,49 +218,50 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
 
       callTimeoutRef.current = setTimeout(() => {
-        if (callState.status === 'ringing') {
+        if (callStateRef.current.status === 'ringing') {
           socketService.declineCall(data.callId);
           resetCallState();
         }
       }, 30000);
     });
 
-    const unsubscribeCallAccepted = socketService.on('call_accepted', async (data: any) => {
-      if (data.callId === callState.callId) {
+    const unsubscribeCallAccepted = socketService.on('call_accepted', (data: any) => {
+      const current = callStateRef.current;
+      console.log('call_accepted received:', data.callId, 'current callId:', current.callId, 'has agora:', !!data.agora);
+
+      if (data.callId === current.callId && data.agora) {
         setCallState((prev) => ({
           ...prev,
           status: 'connecting',
         }));
-        if (data.agora) {
-          // Caller side: join Agora channel with received credentials
-          joinAgoraChannel(data.agora, callState.type);
-        }
+        // Caller side: join Agora channel
+        joinAgoraChannel(data.agora, current.type);
       }
     });
 
     const unsubscribeCallDeclined = socketService.on('call_declined', (data: any) => {
-      if (data.callId === callState.callId) {
+      if (data.callId === callStateRef.current.callId) {
         Alert.alert('Call Declined', 'The user declined your call.');
         resetCallState();
       }
     });
 
     const unsubscribeCallBusy = socketService.on('call_busy', (data: any) => {
-      if (data.callId === callState.callId) {
+      if (data.callId === callStateRef.current.callId) {
         Alert.alert('User Busy', 'The user is currently on another call.');
         resetCallState();
       }
     });
 
     const unsubscribeCallEnded = socketService.on('call_ended', (data: any) => {
-      if (data.callId === callState.callId) {
+      if (data.callId === callStateRef.current.callId) {
         resetCallState();
       }
     });
 
     const unsubscribeCallMissed = socketService.on('call_missed', (data: any) => {
-      if (data.callId === callState.callId) {
-        Alert.alert('Missed Call', `You missed a call from ${callState.participant?.name}`);
+      if (data.callId === callStateRef.current.callId) {
+        Alert.alert('Missed Call', `You missed a call from ${callStateRef.current.participant?.name}`);
         resetCallState();
       }
     });
@@ -263,7 +274,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       unsubscribeCallEnded();
       unsubscribeCallMissed();
     };
-  }, [callState.callId, callState.status, callState.type, callState.participant, resetCallState, joinAgoraChannel]);
+  }, [resetCallState, joinAgoraChannel]);
 
   // Initiate a call
   const initiateCall = useCallback(
@@ -294,7 +305,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           }));
 
           callTimeoutRef.current = setTimeout(async () => {
-            if (callState.status === 'ringing') {
+            if (callStateRef.current.status === 'ringing') {
               await socketService.endCall(result.callId);
               resetCallState();
               Alert.alert('No Answer', 'The user did not answer your call.');
@@ -309,12 +320,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         resetCallState();
       }
     },
-    [callState.status, resetCallState]
+    [resetCallState]
   );
 
   // Accept incoming call
   const acceptCall = useCallback(async () => {
-    if (!callState.callId) return;
+    const currentCallId = callStateRef.current.callId;
+    const currentType = callStateRef.current.type;
+    if (!currentCallId) return;
 
     try {
       if (callTimeoutRef.current) {
@@ -327,11 +340,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         status: 'connecting',
       }));
 
-      const result = await socketService.acceptCall(callState.callId);
+      const result = await socketService.acceptCall(currentCallId);
+      console.log('acceptCall result:', result.success, 'has agora:', !!result.agora);
 
       if (result.success && result.agora) {
-        // Receiver side: join Agora channel with returned credentials
-        joinAgoraChannel(result.agora, callState.type);
+        // Receiver side: join Agora channel
+        joinAgoraChannel(result.agora, currentType);
       } else {
         throw new Error(result.error || 'Failed to accept call');
       }
@@ -340,11 +354,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'Failed to accept call.');
       resetCallState();
     }
-  }, [callState.callId, callState.type, resetCallState, joinAgoraChannel]);
+  }, [resetCallState, joinAgoraChannel]);
 
   // Decline incoming call
   const declineCall = useCallback(async () => {
-    if (!callState.callId) return;
+    const currentCallId = callStateRef.current.callId;
+    if (!currentCallId) return;
 
     try {
       if (callTimeoutRef.current) {
@@ -352,56 +367,57 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         callTimeoutRef.current = null;
       }
 
-      await socketService.declineCall(callState.callId);
+      await socketService.declineCall(currentCallId);
       resetCallState();
     } catch (error) {
       console.error('Error declining call:', error);
       resetCallState();
     }
-  }, [callState.callId, resetCallState]);
+  }, [resetCallState]);
 
   // End call
   const endCall = useCallback(async () => {
-    if (!callState.callId) return;
+    const currentCallId = callStateRef.current.callId;
+    if (!currentCallId) return;
 
     try {
-      await socketService.endCall(callState.callId);
+      await socketService.endCall(currentCallId);
       resetCallState();
     } catch (error) {
       console.error('Error ending call:', error);
       resetCallState();
     }
-  }, [callState.callId, resetCallState]);
+  }, [resetCallState]);
 
   // Toggle mute
   const toggleMute = useCallback(() => {
-    const newMuted = !callState.isMuted;
+    const newMuted = !callStateRef.current.isMuted;
     engineRef.current?.muteLocalAudioStream(newMuted);
     setCallState((prev) => ({
       ...prev,
       isMuted: newMuted,
     }));
-  }, [callState.isMuted]);
+  }, []);
 
   // Toggle speaker
   const toggleSpeaker = useCallback(() => {
-    const newSpeaker = !callState.isSpeakerOn;
+    const newSpeaker = !callStateRef.current.isSpeakerOn;
     engineRef.current?.setEnableSpeakerphone(newSpeaker);
     setCallState((prev) => ({
       ...prev,
       isSpeakerOn: newSpeaker,
     }));
-  }, [callState.isSpeakerOn]);
+  }, []);
 
   // Toggle video
   const toggleVideo = useCallback(() => {
-    const newEnabled = !callState.isVideoEnabled;
+    const newEnabled = !callStateRef.current.isVideoEnabled;
     engineRef.current?.muteLocalVideoStream(!newEnabled);
     setCallState((prev) => ({
       ...prev,
       isVideoEnabled: newEnabled,
     }));
-  }, [callState.isVideoEnabled]);
+  }, []);
 
   // Switch camera
   const switchCamera = useCallback(() => {

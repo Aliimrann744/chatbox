@@ -121,7 +121,7 @@ export function ChatListItem({ chat }: ChatListItemProps) {
         },
       ]}>
       {chat?.avatar ? (
-        <Avatar uri={chat.avatar} size={55} showOnlineStatus={chat.type === 'PRIVATE'} isOnline={chat.isOnline} />
+        <Avatar uri={chat.avatar} size={45} showOnlineStatus={chat.type === 'PRIVATE'} isOnline={chat.isOnline} />
       ) : ( 
         <InitialsAvatar name={chat?.name} />
       )}

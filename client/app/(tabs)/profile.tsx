@@ -71,7 +71,7 @@ export default function ProfileScreen() {
   const displayUser = user || {
     name: 'Guest User',
     phone: '',
-    about: 'Hey there! I am using Chatbox',
+    about: 'Hey there! I am using WhatsApp',
     avatar: null,
   };
 
@@ -188,7 +188,7 @@ export default function ProfileScreen() {
         <ProfileItem
           icon="doc.fill"
           title="About"
-          value={displayUser.about || 'Hey there! I am using Chatbox'}
+          value={displayUser.about || 'Hey there! I am using WhatsApp'}
           onPress={() => openEditModal('about')}
         />
       </View>
@@ -234,7 +234,7 @@ export default function ProfileScreen() {
       {/* App Version */}
       <View style={styles.appInfo}>
         <Text style={[styles.appVersion, { color: colors.textSecondary }]}>
-          Chatbox v1.0.0
+          WhatsApp v1.0.0
         </Text>
       </View>
 

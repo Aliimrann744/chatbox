@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
 import { CallListItem } from '@/components/chat/call-list-item';
 import { FloatingActionButton } from '@/components/ui/floating-action-button';
@@ -30,9 +30,11 @@ export default function CallsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchCalls();
-  }, [fetchCalls]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchCalls();
+    }, [fetchCalls])
+  );
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
