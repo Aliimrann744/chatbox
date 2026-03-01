@@ -20,6 +20,7 @@ export default function AuthLayout() {
           paddingBottom: insets.bottom,
         },
       }}>
+      <Stack.Screen name="continue" options={{ gestureEnabled: false }} />
       <Stack.Screen name="login" />
       <Stack.Screen name="verify-otp" />
       <Stack.Screen name="loading" options={{ gestureEnabled: false }} />

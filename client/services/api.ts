@@ -53,11 +53,7 @@ function waitForRefresh(): Promise<boolean> {
 }
 
 // Request helper with retry protection
-async function request<T>(
-  endpoint: string,
-  options: RequestInit = {},
-  _isRetry = false
-): Promise<T> {
+async function request<T>(endpoint: string, options: RequestInit = {}, _isRetry = false): Promise<T> {
   const accessToken = await storage.getItem(TOKEN_KEY);
 
   const headers: HeadersInit = {

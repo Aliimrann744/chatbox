@@ -128,7 +128,10 @@ class SocketService {
       this.callSocket.disconnect();
       this.callSocket = null;
     }
-    this.listeners.clear();
+    // Note: Do NOT clear listeners here. They are managed by subscribers
+    // (CallProvider, etc.) via the unsubscribe functions returned by on().
+    // Clearing them here would permanently lose listeners after any
+    // disconnect/reconnect cycle (e.g., token refresh, auth state change).
   }
 
   private async getToken(): Promise<string | null> {
@@ -196,6 +199,15 @@ class SocketService {
 
     this.callSocket.on('connect', () => {
       console.log('Call socket connected');
+      this.emit('call_connected', null);
+    });
+
+    this.callSocket.on('disconnect', (reason) => {
+      console.log('Call socket disconnected:', reason);
+    });
+
+    this.callSocket.on('connect_error', (error) => {
+      console.error('Call socket connection error:', error.message);
     });
 
     this.callSocket.on('incoming_call', (data) => {

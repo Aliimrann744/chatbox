@@ -51,6 +51,10 @@ export const MAPPING: Record<string, ComponentProps<typeof MaterialIcons>['name'
   'message': 'chat-bubble-outline',
   'video': 'videocam',
 
+  // QR code
+  'qrcode.viewfinder': 'qr-code-scanner',
+  'qrcode': 'qr-code',
+
   // Call control icons
   'phone.down.fill': 'call-end',
   'mic.slash.fill': 'mic-off',

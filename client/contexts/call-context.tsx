@@ -304,6 +304,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             callId: result.callId,
           }));
 
+          // Notify caller immediately if receiver is offline
+          if (result.receiverOnline === false) {
+            setTimeout(async () => {
+              await socketService.endCall(result.callId);
+              resetCallState();
+              Alert.alert('User Offline', `${receiverName} is not available right now. Try again later.`);
+            }, 1500); // Brief delay so UI shows "Calling..." before alert
+            return;
+          }
+
           callTimeoutRef.current = setTimeout(async () => {
             if (callStateRef.current.status === 'ringing') {
               await socketService.endCall(result.callId);

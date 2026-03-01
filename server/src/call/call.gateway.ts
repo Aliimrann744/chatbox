@@ -107,6 +107,7 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Check if receiver is online
       const receiverSocketId = this.connectedUsers.get(data.receiverId);
+      const receiverOnline = !!receiverSocketId;
 
       if (receiverSocketId) {
         // Send incoming call notification to receiver
@@ -115,12 +116,17 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
           caller: call.caller,
           type: data.type,
         });
+      } else {
+        console.log(
+          `Call: Receiver ${data.receiverId} is offline, cannot deliver incoming_call`,
+        );
       }
 
-      // Return call info to caller
+      // Return call info to caller (including receiver online status)
       return {
         success: true,
         callId: call.id,
+        receiverOnline,
         call,
       };
     } catch (error) {

@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "WhatsApp",
-    "slug": "WhatsApp",
+    "slug": "Chatbox",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -18,10 +18,8 @@
     "android": {
       "package": "com.chatbox.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#25D366"
       },
       "permissions": [
         "RECORD_AUDIO",

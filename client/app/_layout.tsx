@@ -56,12 +56,12 @@ function RootLayoutNav() {
     const inAuthGroup = segments[0] === '(auth)';
 
     if (!isAuthenticated && !inAuthGroup) {
-      // Redirect to login if not authenticated
-      router.replace('/(auth)/login');
+      // Redirect to continue/welcome page if not authenticated
+      router.replace('/(auth)/continue');
     } else if (isAuthenticated && inAuthGroup) {
       // Allow staying on verify-otp (mid-navigation), loading, and setup-profile screens when authenticated
       const currentScreen = segments[1];
-      if (currentScreen !== 'verify-otp' && currentScreen !== 'loading' && currentScreen !== 'setup-profile') {
+      if (currentScreen !== 'continue' && currentScreen !== 'verify-otp' && currentScreen !== 'loading' && currentScreen !== 'setup-profile') {
         router.replace('/(tabs)');
       }
     }

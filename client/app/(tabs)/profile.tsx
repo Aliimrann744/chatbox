@@ -170,6 +170,19 @@ export default function ProfileScreen() {
         </Text>
       </View>
 
+      {/* QR Code */}
+      <View style={[styles.section, { backgroundColor: colors.background }]}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.actionItem,
+            { backgroundColor: pressed ? colors.backgroundSecondary : colors.background },
+          ]}>
+          <IconSymbol name="qrcode" size={22} color="#ffffff" style={styles.itemIcon} />
+          <Text style={[styles.actionText, { color: colors.text }]}>QR Code</Text>
+          <IconSymbol name="chevron.right" size={18} color={colors.textSecondary} />
+        </Pressable>
+      </View>
+
       {/* Profile Info */}
       <View style={[styles.section, { backgroundColor: colors.background }]}>
         <ProfileItem

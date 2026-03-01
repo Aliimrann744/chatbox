@@ -3,7 +3,6 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform, Alert } from 'react-native';
 import { router } from 'expo-router';
-
 import { settingsApi } from '@/services/api';
 
 // Configure notification behavior
@@ -140,9 +139,7 @@ class NotificationService {
   }
 
   // Handle notification received in foreground
-  private handleNotificationReceived = (
-    notification: Notifications.Notification
-  ): void => {
+  private handleNotificationReceived = (notification: Notifications.Notification): void => {
     const data = notification.request.content.data as NotificationData;
     console.log('Notification received:', data);
 
@@ -151,11 +148,8 @@ class NotificationService {
   };
 
   // Handle notification tap
-  private handleNotificationResponse = (
-    response: Notifications.NotificationResponse
-  ): void => {
-    const data = response.notification.request.content
-      .data as NotificationData;
+  private handleNotificationResponse = (response: Notifications.NotificationResponse): void => {
+    const data = response.notification.request.content.data as NotificationData;
     console.log('Notification tapped:', data);
 
     this.navigateToNotification(data);
@@ -192,19 +186,10 @@ class NotificationService {
   }
 
   // Schedule a local notification (for testing)
-  async scheduleLocalNotification(
-    title: string,
-    body: string,
-    data?: NotificationData
-  ): Promise<string> {
+  async scheduleLocalNotification(title: string, body: string, data?: NotificationData): Promise<string> {
     const id = await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        data,
-        sound: true,
-      },
-      trigger: null, // Immediate
+      content: { title, body, data, sound: true },
+      trigger: null,
     });
     return id;
   }

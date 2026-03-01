@@ -7,7 +7,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AudioPlayer } from '@/components/chat/audio-player';
-import { InlineVoiceRecorder } from '@/components/chat/voice-recorder';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useVoiceRecorder } from '@/hooks/use-voice-recorder';
@@ -312,45 +311,26 @@ function MessageInput({ value, onChange, onSend, onAttachment, onVoiceStart, onV
     }
   };
 
-  // Show voice recorder when recording
+  // Show voice recorder when recording — WhatsApp style
   if (isRecording) {
     return (
       <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: insets.bottom + 6 }]}>
-        <View style={[styles.inputRow, { backgroundColor: colors.inputBackground }]}>
-          
-          <Pressable onPress={onAttachment} style={styles.inputIconButton}>
-            <IconSymbol name="plus" size={24} color="#fff" />
-          </Pressable>
+        {/* Delete button */}
+        <Pressable onPress={onVoiceCancel} style={styles.voiceDeleteButton}>
+          <Ionicons name="trash" size={22} color="#FF3B30" />
+        </Pressable>
 
-          {isRecording ? (
-            <InlineVoiceRecorder 
-              isRecording={isRecording} 
-              duration={recordingDuration} 
-              onStop={onVoiceStop} 
-              onCancel={onVoiceCancel} 
-            />
-          ) : (
-            <TextInput
-              style={[styles.textInput, { color: colors.text }]} 
-              placeholder="Type a message..."
-              placeholderTextColor={colors.textSecondary} 
-              value={value} 
-              onChangeText={handleTextChange}
-              multiline 
-              maxLength={1000}
-            />
-          )}
+        {/* Recording indicator */}
+        <View style={[styles.voiceRecordingRow, { backgroundColor: colors.inputBackground }]}>
+          <View style={styles.voiceRecordingDot} />
+          <Text style={[styles.voiceRecordingTime, { color: colors.text }]}>
+            {Math.floor(recordingDuration / 60000)}:{Math.floor((recordingDuration % 60000) / 1000).toString().padStart(2, '0')}
+          </Text>
         </View>
 
-        <Pressable
-          onPress={isRecording ? onVoiceStop : value.trim() ? onSend : onVoiceStart}
-          style={[styles.sendButton, { backgroundColor: isRecording ? colors.accent : colors.primary }]}
-        >
-          <Ionicons
-            name={isRecording ? "stop-circle" : value.trim() ? "send" : "mic"}
-            size={24}
-            color="#fff"
-          />
+        {/* Send button */}
+        <Pressable onPress={onVoiceStop} style={[styles.sendButton, { backgroundColor: colors.primary }]}>
+          <Ionicons name="send" size={20} color="#fff" />
         </Pressable>
       </View>
     );
@@ -1308,5 +1288,32 @@ const styles = StyleSheet.create({
   videoPlayerFull: {
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height - 120,
+  },
+  voiceDeleteButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  voiceRecordingRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 6,
+  },
+  voiceRecordingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF3B30',
+    marginRight: 10,
+  },
+  voiceRecordingTime: {
+    fontSize: 16,
+    fontWeight: '500',
   },
 });
