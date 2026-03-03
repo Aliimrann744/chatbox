@@ -121,8 +121,8 @@ export function ChatListItem({ chat }: ChatListItemProps) {
         },
       ]}>
       {chat?.avatar ? (
-        <Avatar uri={chat.avatar} size={45} showOnlineStatus={chat.type === 'PRIVATE'} isOnline={chat.isOnline} />
-      ) : ( 
+        <Avatar uri={chat.avatar} size={52} showOnlineStatus={chat.type === 'PRIVATE'} isOnline={chat.isOnline} />
+      ) : (
         <InitialsAvatar name={chat?.name} />
       )}
 
@@ -201,21 +201,20 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   initialsAvatar: {
-    width: 55,
-    height: 55,
-    borderRadius: 27.5,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: '#075E54',
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   initialsText: {
     color: '#ffffff',
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '600',
   },
   name: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
     flex: 1,
     marginRight: 8,

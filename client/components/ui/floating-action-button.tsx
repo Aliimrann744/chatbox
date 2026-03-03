@@ -11,22 +11,22 @@ interface FloatingActionButtonProps {
   size?: number;
 }
 
-export function FloatingActionButton({ onPress, icon = 'plus', size = 56 }: FloatingActionButtonProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+export function FloatingActionButton({ onPress, icon = 'plus', size = 46 }: FloatingActionButtonProps) {
 
   return (
-    <Pressable onPress={onPress}style={({ pressed }) => [
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: colors.accent,
+          backgroundColor: "#139047",
           width: size,
           height: size,
-          borderRadius: size / 2,
+          borderRadius: 12,
           opacity: pressed ? 0.8 : 1,
         },
       ]}>
-      <IconSymbol name={icon} size={28} color="#ffffff" />
+      <IconSymbol name={icon} size={22} color="#ffffff" />
     </Pressable>
   );
 }

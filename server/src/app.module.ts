@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -10,12 +11,14 @@ import { ContactModule } from './contact/contact.module';
 import { CallModule } from './call/call.module';
 import { GroupModule } from './group/group.module';
 import { SettingsModule } from './settings/settings.module';
+import { StatusModule } from './status/status.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     UploadModule,
@@ -24,6 +27,7 @@ import { SettingsModule } from './settings/settings.module';
     CallModule,
     GroupModule,
     SettingsModule,
+    StatusModule,
   ],
   controllers: [AppController],
   providers: [AppService],

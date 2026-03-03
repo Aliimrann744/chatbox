@@ -1,29 +1,41 @@
 import { router } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
-import { FlatList, StyleSheet, Text, TextInput, View, RefreshControl, ActivityIndicator } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 import { ChatListItem } from '@/components/chat/chat-list-item';
 import { FloatingActionButton } from '@/components/ui/floating-action-button';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { chatApi, Chat } from '@/services/api';
 import socketService from '@/services/socket';
 
-type ListItem =
-  | { type: 'header'; title: string; id: string }
-  | { type: 'chat'; data: Chat };
-
+type FilterType = 'All' | 'Unread' | 'Favorites' | 'Groups';
+const FILTERS: FilterType[] = ['All', 'Unread', 'Favorites', 'Groups'];
 export default function ChatsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<FilterType>('All');
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
 
-  // Fetch chats from API
   const fetchChats = useCallback(async () => {
     try {
       const data = await chatApi.getChats();
@@ -36,21 +48,18 @@ export default function ChatsScreen() {
     }
   }, []);
 
-  // Initial load
+  // Initial load + socket listeners
   useEffect(() => {
     fetchChats();
 
-    // Listen for new messages to update chat list
     const unsubscribeNewMessage = socketService.on('new_message', (message: any) => {
       setChats((prevChats) => {
         const chatIndex = prevChats.findIndex((c) => c.id === message.chatId);
         if (chatIndex === -1) {
-          // New chat, refresh the list
           fetchChats();
           return prevChats;
         }
 
-        // Update the chat with new message
         const updatedChats = [...prevChats];
         updatedChats[chatIndex] = {
           ...updatedChats[chatIndex],
@@ -59,7 +68,6 @@ export default function ChatsScreen() {
           updatedAt: message.createdAt,
         };
 
-        // Sort by updatedAt
         updatedChats.sort((a, b) => {
           if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
           return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
@@ -69,25 +77,19 @@ export default function ChatsScreen() {
       });
     });
 
-    // Listen for online status changes
     const unsubscribeOnlineStatus = socketService.on('online_status', (data: any) => {
       setChats((prevChats) =>
         prevChats.map((chat) => {
-          // For private chats, update the online status
           if (chat.type === 'PRIVATE') {
             const otherMember = chat.members?.find(
-              (m) => m.user.id !== data.userId
+              (m) => m.user.id !== data.userId,
             );
             if (otherMember?.user.id === data.userId) {
-              return {
-                ...chat,
-                isOnline: data.isOnline,
-                lastSeen: data.lastSeen,
-              };
+              return { ...chat, isOnline: data.isOnline, lastSeen: data.lastSeen };
             }
           }
           return chat;
-        })
+        }),
       );
     });
 
@@ -97,44 +99,60 @@ export default function ChatsScreen() {
     };
   }, [fetchChats]);
 
-  // Re-fetch chats when tab comes into focus (catches new chats created from new-chat screen)
+  // Re-fetch on tab focus
   useFocusEffect(
     useCallback(() => {
       fetchChats();
-    }, [fetchChats])
+    }, [fetchChats]),
   );
 
-  // Refresh handler
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchChats();
   }, [fetchChats]);
 
-  // Filter chats based on search
-  const filteredChats = chats.filter((chat) => (chat.name || '').toLowerCase().includes(searchQuery.toLowerCase()));
-  const pinnedChats = filteredChats.filter((chat) => chat.isPinned);
-  const regularChats = filteredChats.filter((chat) => !chat.isPinned);
+  // ─── Filtering ────────────────────────────────────────────────────────────
 
-  const listData: ListItem[] = [
-    ...(pinnedChats.length > 0 ? [{ type: 'header' as const, title: 'Pinned', id: 'header-pinned' }] : []),
-    ...pinnedChats.map((chat) => ({ type: 'chat' as const, data: chat })),
-    ...(regularChats.length > 0 && pinnedChats.length > 0
-      ? [{ type: 'header' as const, title: 'All Chats', id: 'header-all' }]
-      : []),
-    ...regularChats.map((chat) => ({ type: 'chat' as const, data: chat })),
-  ];
+  const filteredChats = (() => {
+    let result = chats;
 
-  const renderSectionHeader = (title: string) => (
-    <View style={[styles.sectionHeader, { backgroundColor: colors.backgroundSecondary }]}>
-      <Text style={[styles.sectionHeaderText, { color: colors.textSecondary }]}>
-        {title}
-      </Text>
-    </View>
-  );
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((c) => (c.name || '').toLowerCase().includes(q));
+    }
 
-  const handleNewChat = () => {
-    router.push('/new-chat');
+    switch (activeFilter) {
+      case 'Unread':
+        result = result.filter((c) => c.unreadCount > 0);
+        break;
+      case 'Favorites':
+        result = result.filter((c) => c.isPinned);
+        break;
+      case 'Groups':
+        result = result.filter((c) => c.type === 'GROUP');
+        break;
+    }
+
+    return result;
+  })();
+
+  // ─── Handlers ─────────────────────────────────────────────────────────────
+
+  const handleNewChat = () => router.push('/new-chat');
+
+  const handleMenuOption = (option: string) => {
+    setShowMenu(false);
+    switch (option) {
+      case 'new-group':
+        router.push('/new-chat');
+        break;
+      case 'settings':
+        router.push('/(tabs)/profile');
+        break;
+    }
   };
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -146,13 +164,29 @@ export default function ChatsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Search Bar */}
-      <View style={[styles.searchContainer, { backgroundColor: colors.backgroundSecondary }]}>
+      {/* ─── Custom Header ──────────────────────────────────────────────────── */}
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>WhatsApp</Text>
+        <View style={styles.headerIcons}>
+          <Pressable style={styles.headerIconButton} hitSlop={8}>
+            <Ionicons name="camera-outline" size={24} color={colors.icon} />
+          </Pressable>
+          <Pressable
+            style={styles.headerIconButton}
+            hitSlop={8}
+            onPress={() => setShowMenu(true)}>
+            <Ionicons name="ellipsis-vertical" size={20} color={colors.icon} />
+          </Pressable>
+        </View>
+      </View>
+
+      {/* ─── Search Bar ─────────────────────────────────────────────────────── */}
+      <View style={styles.searchContainer}>
         <View style={[styles.searchBar, { backgroundColor: colors.inputBackground }]}>
-          <IconSymbol name="magnifyingglass" size={20} color={colors.textSecondary} />
+          <Ionicons name="search" size={18} color={colors.textSecondary} />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search chats..."
+            placeholder="Ask Meta AI or Search"
             placeholderTextColor={colors.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -160,12 +194,26 @@ export default function ChatsScreen() {
         </View>
       </View>
 
-      {/* Chat List */}
-      {chats.length === 0 ? (
-        <View style={[styles.emptyContainer]}>
-          <IconSymbol name="message" size={64} color={colors.textSecondary} />
+      {/* <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersRow}> */}
+      <View style={styles.filtersRow}>
+        {FILTERS?.map((filter) => (
+          <Pressable key={filter} onPress={() => setActiveFilter(filter)} style={[styles.filterChip, { backgroundColor: activeFilter === filter ? "#139047" : colors.inputBackground }]}>
+            <Text style={[styles.filterChipText, { color: activeFilter === filter ? '#ffffff' : colors.text }]}>
+              {filter}
+            </Text>
+          </Pressable>
+        ))}
+        <Pressable style={[styles.filterAddButton, { backgroundColor: colors.inputBackground }]}>
+          <Ionicons name="add" size={18} color={colors.text} />
+        </Pressable>
+      </View>
+      {/* </ScrollView> */}
+
+      {filteredChats.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="chatbubbles-outline" size={64} color={colors.textSecondary} />
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            No chats yet
+            {activeFilter !== 'All' ? `No ${activeFilter.toLowerCase()} chats` : 'No chats yet'}
           </Text>
           <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
             Start a conversation by tapping the button below
@@ -173,14 +221,9 @@ export default function ChatsScreen() {
         </View>
       ) : (
         <FlatList
-          data={listData}
-          keyExtractor={(item) => item.type === 'header' ? item.id : `chat-${item.data.id}`}
-          renderItem={({ item }) => {
-            if (item.type === 'header') {
-              return renderSectionHeader(item.title);
-            }
-            return <ChatListItem chat={item.data} />;
-          }}
+          data={filteredChats}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <ChatListItem chat={item} />}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           refreshControl={
@@ -193,11 +236,32 @@ export default function ChatsScreen() {
         />
       )}
 
-      {/* Floating Action Button */}
       <FloatingActionButton onPress={handleNewChat} icon="message.fill" />
+      <Modal visible={showMenu} transparent animationType="fade">
+        <Pressable style={styles.menuOverlay} onPress={() => setShowMenu(false)}>
+          <View
+            style={[
+              styles.menuDropdown,
+              { backgroundColor: colors.cardBackground, top: insets.top + 8 },
+            ]}>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => handleMenuOption('new-group')}>
+              <Text style={[styles.menuItemText, { color: colors.text }]}>New group</Text>
+            </Pressable>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => handleMenuOption('settings')}>
+              <Text style={[styles.menuItemText, { color: colors.text }]}>Settings</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
+
+// ─── Styles ─────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
@@ -207,41 +271,83 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
+  // ─── Header ──────────────────────────────────────────────────────────────
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  headerIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerIconButton: {
+    padding: 8,
+  },
+
+  // ─── Search ──────────────────────────────────────────────────────────────
   searchContainer: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 6,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 24,
     gap: 10,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     padding: 0,
   },
+
+  filtersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 32,
+    height: 32,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  filterAddButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
   listContent: {
     paddingBottom: 100,
   },
-  sectionHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  sectionHeaderText: {
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
+
+  // ─── Empty State ─────────────────────────────────────────────────────────
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
+    // paddingHorizontal: 32,
   },
   emptyText: {
     fontSize: 18,
@@ -251,6 +357,30 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 6,
+  },
+
+  // ─── Menu ────────────────────────────────────────────────────────────────
+  menuOverlay: {
+    flex: 1,
+  },
+  menuDropdown: {
+    position: 'absolute',
+    right: 12,
+    borderRadius: 8,
+    paddingVertical: 4,
+    minWidth: 200,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  menuItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  menuItemText: {
+    fontSize: 15,
   },
 });

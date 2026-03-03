@@ -47,6 +47,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Chats',
+          headerShown: false,
           tabBarIcon: ({ color }) => (
             <ChatIcon size={24} color={color} />
           ),
@@ -62,21 +63,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="contacts"
+        options={{
+          title: 'Communities',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={24} name="person.2.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="calls"
         options={{
           title: 'Calls',
           tabBarIcon: ({ color }) => (
             <IconSymbol size={24} name="phone.fill" color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="contacts"
-        options={{
-          href: null,
-          title: 'Contacts',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={24} name="person.2.fill" color={color} />
           ),
         }}
       />
@@ -93,6 +93,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
+          href: null,
           title: 'Profile',
           tabBarIcon: ({ color }) => (
             <IconSymbol size={24} name="person.fill" color={color} />
@@ -101,4 +102,4 @@ export default function TabLayout() {
       />
     </Tabs>
   );
-};
+}

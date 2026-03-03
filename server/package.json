@@ -30,6 +30,7 @@
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/platform-socket.io": "^10.4.22",
+    "@nestjs/schedule": "^6.1.1",
     "@nestjs/websockets": "^10.4.22",
     "@prisma/client": "^5.7.1",
     "agora-token": "^2.0.5",

@@ -62,6 +62,34 @@ const initialCallState: CallState = {
 
 const CallContext = createContext<CallContextType | undefined>(undefined);
 
+// Request camera permission on demand (right before video call)
+const ensureCameraPermission = async (): Promise<boolean> => {
+  if (Platform.OS === 'android') {
+    try {
+      const alreadyGranted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+      );
+      if (alreadyGranted) return true;
+
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+      );
+      if (result === PermissionsAndroid.RESULTS.GRANTED) return true;
+
+      Alert.alert(
+        'Camera Permission Required',
+        'Camera permission is needed for video calls. Please enable it in your device settings.',
+      );
+      return false;
+    } catch (err) {
+      console.warn('Camera permission check error:', err);
+      return false;
+    }
+  }
+  // iOS: handled by Info.plist NSCameraUsageDescription — system prompts automatically
+  return true;
+};
+
 export function CallProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [callState, setCallState] = useState<CallState>(initialCallState);
@@ -84,15 +112,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     const initEngine = async () => {
-      // Request Android permissions
+      // Request microphone permission at startup (needed for all calls)
       if (Platform.OS === 'android') {
         try {
-          await PermissionsAndroid.requestMultiple([
+          const result = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-            PermissionsAndroid.PERMISSIONS.CAMERA,
-          ]);
+          );
+          console.log('Audio permission:', result);
         } catch (err) {
-          console.warn('Permission request error:', err);
+          console.warn('Audio permission request error:', err);
         }
       }
 
@@ -120,6 +148,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           onError: (err, msg) => {
             console.error('Agora error:', err, msg);
           },
+          onLocalVideoStateChanged: (_source, state, error) => {
+            console.log('Agora: Local video state changed:', state, 'error:', error);
+          },
+          onRemoteVideoStateChanged: (_connection, uid, state, reason) => {
+            console.log('Agora: Remote video state changed:', uid, state, 'reason:', reason);
+          },
         });
 
         engineRef.current = engine;
@@ -141,7 +175,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Join Agora channel helper
   const joinAgoraChannel = useCallback(
-    (agora: { token: string; channelName: string; uid: number }, callType: CallType) => {
+    async (agora: { token: string; channelName: string; uid: number }, callType: CallType) => {
       const engine = engineRef.current;
       if (!engine) {
         console.error('Agora engine not initialized, cannot join channel');
@@ -151,16 +185,30 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       console.log('Agora: Joining channel', agora.channelName, 'with uid', agora.uid, 'type', callType);
 
       engine.enableAudio();
+
+      let videoEnabled = false;
       if (callType === 'VIDEO') {
-        engine.enableVideo();
-        engine.startPreview();
+        // Request camera permission right before enabling video
+        const hasCameraPermission = await ensureCameraPermission();
+        if (hasCameraPermission) {
+          try {
+            engine.enableVideo();
+            engine.startPreview();
+            videoEnabled = true;
+            console.log('Agora: Video enabled and preview started');
+          } catch (err) {
+            console.error('Agora: Failed to enable video:', err);
+          }
+        } else {
+          console.warn('Agora: Camera permission denied, joining as audio-only');
+        }
       }
 
       engine.joinChannel(agora.token, agora.channelName, agora.uid, {
         channelProfile: ChannelProfileType.ChannelProfileCommunication,
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
         publishMicrophoneTrack: true,
-        publishCameraTrack: callType === 'VIDEO',
+        publishCameraTrack: videoEnabled,
         autoSubscribeAudio: true,
         autoSubscribeVideo: callType === 'VIDEO',
       });
@@ -420,8 +468,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Toggle video
-  const toggleVideo = useCallback(() => {
+  const toggleVideo = useCallback(async () => {
     const newEnabled = !callStateRef.current.isVideoEnabled;
+    if (newEnabled) {
+      // When re-enabling video, ensure camera permission is granted
+      const hasPermission = await ensureCameraPermission();
+      if (!hasPermission) return;
+
+      try {
+        engineRef.current?.enableVideo();
+        engineRef.current?.startPreview();
+      } catch (err) {
+        console.error('Agora: Failed to re-enable video:', err);
+        return;
+      }
+    }
     engineRef.current?.muteLocalVideoStream(!newEnabled);
     setCallState((prev) => ({
       ...prev,

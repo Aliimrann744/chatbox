@@ -178,6 +178,37 @@ export async function pickDocument(): Promise<PickedMedia | null> {
   }
 }
 
+// Pick multiple media (images and videos) from gallery
+export async function pickMultipleMedia(): Promise<PickedMedia[]> {
+  const hasPermission = await requestMediaLibraryPermission();
+  if (!hasPermission) return [];
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.All,
+    allowsMultipleSelection: true,
+    quality: 0.8,
+    videoMaxDuration: 30,
+    selectionLimit: 10,
+  });
+
+  if (result.canceled || !result.assets.length) return [];
+
+  return result.assets.map((asset) => {
+    const isVideo = asset.type === 'video';
+    const fileName = asset.uri.split('/').pop() || (isVideo ? 'video.mp4' : 'image.jpg');
+    return {
+      uri: asset.uri,
+      type: isVideo ? ('video' as const) : ('image' as const),
+      mimeType: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
+      name: fileName,
+      size: asset.fileSize,
+      duration: asset.duration,
+      width: asset.width,
+      height: asset.height,
+    };
+  });
+}
+
 // Get media type from mime type
 export function getMessageTypeFromMimeType(mimeType: string): 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT' {
   if (mimeType.startsWith('image/')) return 'IMAGE';

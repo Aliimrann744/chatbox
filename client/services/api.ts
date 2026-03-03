@@ -669,4 +669,71 @@ export interface PrivacySettings {
   readReceiptsEnabled: boolean;
 }
 
+export interface Status {
+  id: string;
+  userId: string;
+  type: 'IMAGE' | 'VIDEO';
+  mediaUrl: string;
+  thumbnail?: string;
+  caption?: string;
+  expiresAt: string;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+    avatar?: string;
+  };
+  viewCount: number;
+  views?: StatusViewInfo[];
+  isViewed?: boolean;
+}
+
+export interface StatusViewInfo {
+  id: string;
+  viewerId: string;
+  viewedAt: string;
+  viewer: {
+    id: string;
+    name: string;
+    avatar?: string;
+  };
+}
+
+export interface ContactStatusGroup {
+  user: {
+    id: string;
+    name: string;
+    avatar?: string;
+  };
+  statuses: Status[];
+  hasUnviewed: boolean;
+  latestAt: string;
+}
+
+// Status API
+export const statusApi = {
+  async createStatus(data: { type: string; mediaUrl: string; thumbnail?: string; caption?: string }) {
+    return request<Status>('/status', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getMyStatuses() {
+    return request<Status[]>('/status/me');
+  },
+
+  async getContactStatuses() {
+    return request<ContactStatusGroup[]>('/status/contacts');
+  },
+
+  async viewStatus(statusId: string) {
+    return request<{ viewCount: number }>(`/status/${statusId}/view`, { method: 'POST' });
+  },
+
+  async deleteStatus(statusId: string) {
+    return request(`/status/${statusId}`, { method: 'DELETE' });
+  },
+};
+
 export { storage, API_BASE_URL };

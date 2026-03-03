@@ -113,6 +113,20 @@ function RootLayoutNav() {
             presentation: 'fullScreenModal',
           }}
         />
+        <Stack.Screen
+          name="status/create"
+          options={{
+            headerShown: false,
+            presentation: 'fullScreenModal',
+          }}
+        />
+        <Stack.Screen
+          name="status/viewer"
+          options={{
+            headerShown: false,
+            presentation: 'fullScreenModal',
+          }}
+        />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <IncomingCallListener />

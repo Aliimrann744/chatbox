@@ -55,6 +55,8 @@ model User {
   blockedBy       BlockedUser[]   @relation("Blocked")
   groupsCreated   Chat[]          @relation("GroupCreator")
   readReceipts    MessageReadReceipt[]
+  statuses        Status[]        @relation("UserStatuses")
+  statusViews     StatusView[]    @relation("StatusViews")
 
   @@index([phone])
   @@index([email])
@@ -284,4 +286,44 @@ enum CallStatus {
   DECLINED
   BUSY
   ENDED
+}
+
+// ==================== STATUS ====================
+model Status {
+  id          String       @id @default(cuid())
+  userId      String
+  type        StatusType   @default(IMAGE)
+  mediaUrl    String
+  thumbnail   String?
+  caption     String?      @db.Text
+
+  expiresAt   DateTime
+  createdAt   DateTime     @default(now())
+
+  user        User         @relation("UserStatuses", fields: [userId], references: [id], onDelete: Cascade)
+  views       StatusView[]
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("statuses")
+}
+
+model StatusView {
+  id          String   @id @default(cuid())
+  statusId    String
+  viewerId    String
+  viewedAt    DateTime @default(now())
+
+  status      Status   @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  viewer      User     @relation("StatusViews", fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([statusId, viewerId])
+  @@index([statusId])
+  @@index([viewerId])
+  @@map("status_views")
+}
+
+enum StatusType {
+  IMAGE
+  VIDEO
 }
