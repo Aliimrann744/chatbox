@@ -6,10 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class StatusService {
   constructor(private prisma: PrismaService) {}
 
-  async createStatus(
-    userId: string,
-    data: { type: 'IMAGE' | 'VIDEO'; mediaUrl: string; thumbnail?: string; caption?: string },
-  ) {
+  async createStatus(userId: string, data: { type: 'IMAGE' | 'VIDEO'; mediaUrl: string; thumbnail?: string; caption?: string }) {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     return this.prisma.status.create({
@@ -61,13 +58,12 @@ export class StatusService {
   }
 
   async getContactStatuses(userId: string) {
-    // Get contacts: users that the current user has added
+    // Get users who added ME as their contact — their statuses are visible to me
     const contacts = await this.prisma.contact.findMany({
-      where: { userId },
-      select: { contactId: true },
+      where: { contactId: userId }, select: { userId: true },
     });
 
-    const contactIds = contacts.map((c) => c.contactId);
+    const contactIds = contacts.map((c) => c.userId);
     if (contactIds.length === 0) return [];
 
     // Get non-expired statuses from contacts

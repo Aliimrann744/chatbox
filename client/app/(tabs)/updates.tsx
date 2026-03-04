@@ -1,15 +1,8 @@
 import React, { useCallback, useState } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-
+import { UpdatesIcon } from '@/components/ui/updates-icon';
 import { Avatar } from '@/components/ui/avatar';
 import { FloatingActionButton } from '@/components/ui/floating-action-button';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -228,7 +221,7 @@ export default function UpdatesScreen() {
               Recent updates
             </Text>
             <View style={styles.emptyState}>
-              <IconSymbol name="circle.dashed" size={64} color={colors.textSecondary} />
+              <UpdatesIcon size={50} color={colors.textSecondary} />
               <Text style={[styles.emptyTitle, { color: colors.text }]}>No recent updates</Text>
               <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
                 Status updates from your contacts will appear here

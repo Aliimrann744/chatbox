@@ -1,17 +1,6 @@
 import { router } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Modal,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -209,7 +198,7 @@ export default function ChatsScreen() {
       </View>
       {/* </ScrollView> */}
 
-      {filteredChats.length === 0 ? (
+      {filteredChats?.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="chatbubbles-outline" size={64} color={colors.textSecondary} />
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
@@ -220,19 +209,9 @@ export default function ChatsScreen() {
           </Text>
         </View>
       ) : (
-        <FlatList
-          data={filteredChats}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <ChatListItem chat={item} />}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.primary}
-            />
-          }
+        <FlatList data={filteredChats} keyExtractor={(item) => item.id} renderItem={({ item }) => <ChatListItem chat={item} />} 
+          showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         />
       )}
 
@@ -315,10 +294,8 @@ const styles = StyleSheet.create({
   filtersRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: 32,
-    height: 32,
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingVertical: 12,
     gap: 8,
   },
   filterChip: {
