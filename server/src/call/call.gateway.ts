@@ -11,7 +11,6 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { CallService } from './call.service';
-import { AgoraService } from './agora.service';
 import { CallType, CallStatus } from '@prisma/client';
 
 @WebSocketGateway({
@@ -34,8 +33,27 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private jwtService: JwtService,
     private configService: ConfigService,
     private callService: CallService,
-    private agoraService: AgoraService,
   ) {}
+
+  // ==================== ICE SERVERS ====================
+
+  private getIceServers() {
+    const iceServers: any[] = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+    ];
+
+    const turnUrl = this.configService.get<string>('TURN_SERVER_URL');
+    if (turnUrl) {
+      iceServers.push({
+        urls: turnUrl,
+        username: this.configService.get<string>('TURN_USERNAME') || '',
+        credential: this.configService.get<string>('TURN_CREDENTIAL') || '',
+      });
+    }
+
+    return iceServers;
+  }
 
   // ==================== CONNECTION HANDLING ====================
 
@@ -143,45 +161,21 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     try {
       const call = await this.callService.acceptCall(data.callId);
+      const iceServers = this.getIceServers();
 
-      // Generate Agora tokens for both participants
-      const channelName = data.callId;
-      const callerUid = this.agoraService.userIdToUid(call.callerId);
-      const receiverUid = this.agoraService.userIdToUid(call.receiverId);
-      const appId = this.agoraService.getAppId();
-
-      const callerToken = this.agoraService.generateRtcToken(
-        channelName,
-        callerUid,
-      );
-      const receiverToken = this.agoraService.generateRtcToken(
-        channelName,
-        receiverUid,
-      );
-
-      // Notify caller that call was accepted (with Agora credentials)
+      // Notify caller that call was accepted (with ICE server config)
       const callerSocketId = this.connectedUsers.get(call.callerId);
       if (callerSocketId) {
         this.server.to(callerSocketId).emit('call_accepted', {
           callId: data.callId,
-          agora: {
-            appId,
-            token: callerToken,
-            channelName,
-            uid: callerUid,
-          },
+          iceServers,
         });
       }
 
-      // Return Agora credentials to receiver (the accepting client)
+      // Return ICE server config to receiver (the accepting client)
       return {
         success: true,
-        agora: {
-          appId,
-          token: receiverToken,
-          channelName,
-          uid: receiverUid,
-        },
+        iceServers,
       };
     } catch (error) {
       return { success: false, error: error.message };

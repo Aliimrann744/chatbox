@@ -1,16 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Alert, PermissionsAndroid, Platform } from 'react-native';
 import {
-  createAgoraRtcEngine,
-  ChannelProfileType,
-  ClientRoleType,
-  isAgoraAvailable,
-} from '@/utils/agora';
-import type { IRtcEngine } from '@/utils/agora';
+  createPeerConnection,
+  createOffer,
+  handleOffer,
+  handleAnswer,
+  addIceCandidate,
+  closePeerConnection,
+  InCallManager,
+} from '@/utils/webrtc';
 import socketService from '@/services/socket';
 import { useAuth } from '@/contexts/auth-context';
-
-const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
 
 export type CallType = 'VOICE' | 'VIDEO';
 export type CallStatus = 'idle' | 'ringing' | 'connecting' | 'connected' | 'ended';
@@ -44,8 +44,8 @@ interface CallContextType {
   toggleSpeaker: () => void;
   toggleVideo: () => void;
   switchCamera: () => void;
-  remoteUid: number | null;
-  localUid: number | null;
+  localStream: any | null;
+  remoteStream: any | null;
 }
 
 const initialCallState: CallState = {
@@ -66,20 +66,11 @@ const CallContext = createContext<CallContextType | undefined>(undefined);
 const ensureCameraPermission = async (): Promise<boolean> => {
   if (Platform.OS === 'android') {
     try {
-      const alreadyGranted = await PermissionsAndroid.check(
-        PermissionsAndroid.PERMISSIONS.CAMERA,
-      );
+      const alreadyGranted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA,);
       if (alreadyGranted) return true;
-
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.CAMERA,
-      );
+      const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA,);
       if (result === PermissionsAndroid.RESULTS.GRANTED) return true;
-
-      Alert.alert(
-        'Camera Permission Required',
-        'Camera permission is needed for video calls. Please enable it in your device settings.',
-      );
+      Alert.alert('Camera Permission Required', 'Camera permission is needed for video calls. Please enable it in your device settings.');
       return false;
     } catch (err) {
       console.warn('Camera permission check error:', err);
@@ -93,147 +84,107 @@ const ensureCameraPermission = async (): Promise<boolean> => {
 export function CallProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [callState, setCallState] = useState<CallState>(initialCallState);
-  const [remoteUid, setRemoteUid] = useState<number | null>(null);
-  const [localUid, setLocalUid] = useState<number | null>(null);
+  const [localStream, setLocalStream] = useState<any | null>(null);
+  const [remoteStream, setRemoteStream] = useState<any | null>(null);
 
-  const engineRef = useRef<IRtcEngine | null>(null);
+  const pcRef = useRef<any>(null);
+  const localStreamRef = useRef<any | null>(null);
+  const iceServersRef = useRef<any[]>([]);
+  const pendingCandidatesRef = useRef<any[]>([]);
   const callTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refs to avoid stale closures in socket listeners
   const callStateRef = useRef(callState);
   callStateRef.current = callState;
 
-  // Initialize Agora engine on mount
+  // Request microphone permission on mount
   useEffect(() => {
-    if (!isAgoraAvailable || !AGORA_APP_ID) {
-      if (!isAgoraAvailable) console.warn('Agora SDK not available on this platform. Call signaling only.');
-      else console.warn('Agora App ID not configured. Calls will not work.');
-      return;
+    if (Platform.OS === 'android') {
+      PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      ).then((result) => {
+        console.log('Audio permission:', result);
+      }).catch((err) => {
+        console.warn('Audio permission request error:', err);
+      });
+    }
+  }, []);
+
+  // Setup peer connection with media
+  const setupPeerConnection = useCallback(async (callType: CallType) => {
+    if (callType === 'VIDEO') {
+      await ensureCameraPermission();
     }
 
-    const initEngine = async () => {
-      // Request microphone permission at startup (needed for all calls)
-      if (Platform.OS === 'android') {
-        try {
-          const result = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-          );
-          console.log('Audio permission:', result);
-        } catch (err) {
-          console.warn('Audio permission request error:', err);
-        }
-      }
-
-      try {
-        const engine = createAgoraRtcEngine();
-        engine.initialize({ appId: AGORA_APP_ID });
-
-        engine.registerEventHandler({
-          onJoinChannelSuccess: (_connection, elapsed) => {
-            console.log('Agora: Joined channel successfully', elapsed);
+    const { pc, localStreamPromise } = createPeerConnection(
+      iceServersRef.current,
+      callType,
+      {
+        onRemoteStream: (stream) => {
+          console.log('WebRTC: Remote stream received');
+          setRemoteStream(stream);
+        },
+        onIceCandidate: (candidate) => {
+          const callId = callStateRef.current.callId;
+          if (callId) {
+            socketService.sendIceCandidate(callId, candidate);
+          }
+        },
+        onConnectionStateChange: (state) => {
+          console.log('WebRTC: Connection state:', state);
+          if (state === 'connected') {
             setCallState((prev) => ({
               ...prev,
               status: 'connected',
               startTime: new Date(),
             }));
-          },
-          onUserJoined: (_connection, uid) => {
-            console.log('Agora: Remote user joined', uid);
-            setRemoteUid(uid);
-          },
-          onUserOffline: (_connection, uid) => {
-            console.log('Agora: Remote user offline', uid);
-            setRemoteUid(null);
-          },
-          onError: (err, msg) => {
-            console.error('Agora error:', err, msg);
-          },
-          onLocalVideoStateChanged: (_source, state, error) => {
-            console.log('Agora: Local video state changed:', state, 'error:', error);
-          },
-          onRemoteVideoStateChanged: (_connection, uid, state, reason) => {
-            console.log('Agora: Remote video state changed:', uid, state, 'reason:', reason);
-          },
-        });
+          } else if (state === 'failed' || state === 'disconnected') {
+            console.warn('WebRTC: Connection', state);
+          }
+        },
+      },
+    );
 
-        engineRef.current = engine;
-        console.log('Agora engine initialized successfully');
-      } catch (error) {
-        console.error('Failed to initialize Agora engine:', error);
-      }
-    };
+    pcRef.current = pc;
 
-    initEngine();
+    const stream = await localStreamPromise;
+    localStreamRef.current = stream;
+    setLocalStream(stream);
 
-    return () => {
-      if (engineRef.current) {
-        engineRef.current.release();
-        engineRef.current = null;
-      }
-    };
+    // Drain any buffered ICE candidates
+    drainPendingCandidates();
+
+    return pc;
   }, []);
 
-  // Join Agora channel helper
-  const joinAgoraChannel = useCallback(
-    async (agora: { token: string; channelName: string; uid: number }, callType: CallType) => {
-      const engine = engineRef.current;
-      if (!engine) {
-        console.error('Agora engine not initialized, cannot join channel');
-        return;
+  const drainPendingCandidates = useCallback(() => {
+    const pc = pcRef.current;
+    if (!pc || !pc.remoteDescription) return;
+
+    const candidates = pendingCandidatesRef.current;
+    pendingCandidatesRef.current = [];
+
+    candidates.forEach(async (candidate: any) => {
+      try {
+        await addIceCandidate(pc, candidate);
+      } catch (err) {
+        console.warn('WebRTC: Failed to add buffered ICE candidate:', err);
       }
-
-      console.log('Agora: Joining channel', agora.channelName, 'with uid', agora.uid, 'type', callType);
-
-      engine.enableAudio();
-
-      let videoEnabled = false;
-      if (callType === 'VIDEO') {
-        // Request camera permission right before enabling video
-        const hasCameraPermission = await ensureCameraPermission();
-        if (hasCameraPermission) {
-          try {
-            engine.enableVideo();
-            engine.startPreview();
-            videoEnabled = true;
-            console.log('Agora: Video enabled and preview started');
-          } catch (err) {
-            console.error('Agora: Failed to enable video:', err);
-          }
-        } else {
-          console.warn('Agora: Camera permission denied, joining as audio-only');
-        }
-      }
-
-      engine.joinChannel(agora.token, agora.channelName, agora.uid, {
-        channelProfile: ChannelProfileType.ChannelProfileCommunication,
-        clientRoleType: ClientRoleType.ClientRoleBroadcaster,
-        publishMicrophoneTrack: true,
-        publishCameraTrack: videoEnabled,
-        autoSubscribeAudio: true,
-        autoSubscribeVideo: callType === 'VIDEO',
-      });
-
-      setLocalUid(agora.uid);
-    },
-    []
-  );
+    });
+  }, []);
 
   // Reset call state
   const resetCallState = useCallback(() => {
-    const engine = engineRef.current;
-    if (engine) {
-      try {
-        engine.leaveChannel();
-        engine.disableAudio();
-        engine.disableVideo();
-      } catch {
-        // Engine may not be in a channel
-      }
-    }
+    closePeerConnection(pcRef.current, localStreamRef.current);
+    pcRef.current = null;
+    localStreamRef.current = null;
+    pendingCandidatesRef.current = [];
+
+    InCallManager.stop();
 
     setCallState(initialCallState);
-    setRemoteUid(null);
-    setLocalUid(null);
+    setLocalStream(null);
+    setRemoteStream(null);
 
     if (callTimeoutRef.current) {
       clearTimeout(callTimeoutRef.current);
@@ -273,17 +224,80 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }, 30000);
     });
 
-    const unsubscribeCallAccepted = socketService.on('call_accepted', (data: any) => {
+    // Caller receives this when receiver accepts
+    const unsubscribeCallAccepted = socketService.on('call_accepted', async (data: any) => {
       const current = callStateRef.current;
-      console.log('call_accepted received:', data.callId, 'current callId:', current.callId, 'has agora:', !!data.agora);
+      console.log('call_accepted received:', data.callId, 'current callId:', current.callId);
 
-      if (data.callId === current.callId && data.agora) {
-        setCallState((prev) => ({
-          ...prev,
-          status: 'connecting',
-        }));
-        // Caller side: join Agora channel
-        joinAgoraChannel(data.agora, current.type);
+      if (data.callId !== current.callId) return;
+
+      iceServersRef.current = data.iceServers || [];
+
+      setCallState((prev) => ({
+        ...prev,
+        status: 'connecting',
+      }));
+
+      try {
+        // Caller creates PC and sends offer
+        const pc = await setupPeerConnection(current.type);
+        const offer = await createOffer(pc);
+        socketService.sendCallOffer(data.callId, offer);
+
+        InCallManager.start({ media: current.type === 'VIDEO' ? 'video' : 'audio' });
+      } catch (err) {
+        console.error('WebRTC: Failed to create offer:', err);
+        resetCallState();
+      }
+    });
+
+    // Receiver gets the caller's offer
+    const unsubscribeCallOffer = socketService.on('call_offer', async (data: any) => {
+      const current = callStateRef.current;
+      if (data.callId !== current.callId) return;
+
+      try {
+        const pc = await setupPeerConnection(current.type);
+        const answer = await handleOffer(pc, data.offer);
+        socketService.sendCallAnswer(data.callId, answer);
+
+        // Drain candidates now that remoteDescription is set
+        drainPendingCandidates();
+      } catch (err) {
+        console.error('WebRTC: Failed to handle offer:', err);
+        resetCallState();
+      }
+    });
+
+    // Caller gets the receiver's answer
+    const unsubscribeCallAnswer = socketService.on('call_answer', async (data: any) => {
+      const current = callStateRef.current;
+      if (data.callId !== current.callId) return;
+
+      try {
+        await handleAnswer(pcRef.current, data.answer);
+        // Drain candidates now that remoteDescription is set
+        drainPendingCandidates();
+      } catch (err) {
+        console.error('WebRTC: Failed to handle answer:', err);
+      }
+    });
+
+    // Both sides receive ICE candidates
+    const unsubscribeIceCandidate = socketService.on('call_ice_candidate', async (data: any) => {
+      const current = callStateRef.current;
+      if (data.callId !== current.callId) return;
+
+      const pc = pcRef.current;
+      if (pc && pc.remoteDescription) {
+        try {
+          await addIceCandidate(pc, data.candidate);
+        } catch (err) {
+          console.warn('WebRTC: Failed to add ICE candidate:', err);
+        }
+      } else {
+        // Buffer for later
+        pendingCandidatesRef.current.push(data.candidate);
       }
     });
 
@@ -317,12 +331,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return () => {
       unsubscribeIncomingCall();
       unsubscribeCallAccepted();
+      unsubscribeCallOffer();
+      unsubscribeCallAnswer();
+      unsubscribeIceCandidate();
       unsubscribeCallDeclined();
       unsubscribeCallBusy();
       unsubscribeCallEnded();
       unsubscribeCallMissed();
     };
-  }, [resetCallState, joinAgoraChannel]);
+  }, [resetCallState, setupPeerConnection, drainPendingCandidates]);
 
   // Initiate a call
   const initiateCall = useCallback(
@@ -358,7 +375,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               await socketService.endCall(result.callId);
               resetCallState();
               Alert.alert('User Offline', `${receiverName} is not available right now. Try again later.`);
-            }, 1500); // Brief delay so UI shows "Calling..." before alert
+            }, 1500);
             return;
           }
 
@@ -384,7 +401,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Accept incoming call
   const acceptCall = useCallback(async () => {
     const currentCallId = callStateRef.current.callId;
-    const currentType = callStateRef.current.type;
     if (!currentCallId) return;
 
     try {
@@ -399,11 +415,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }));
 
       const result = await socketService.acceptCall(currentCallId);
-      console.log('acceptCall result:', result.success, 'has agora:', !!result.agora);
+      console.log('acceptCall result:', result.success, 'has iceServers:', !!result.iceServers);
 
-      if (result.success && result.agora) {
-        // Receiver side: join Agora channel
-        joinAgoraChannel(result.agora, currentType);
+      if (result.success && result.iceServers) {
+        // Store ICE servers — PC will be created when we receive the caller's offer
+        iceServersRef.current = result.iceServers;
+
+        InCallManager.start({
+          media: callStateRef.current.type === 'VIDEO' ? 'video' : 'audio',
+        });
       } else {
         throw new Error(result.error || 'Failed to accept call');
       }
@@ -412,7 +432,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'Failed to accept call.');
       resetCallState();
     }
-  }, [resetCallState, joinAgoraChannel]);
+  }, [resetCallState]);
 
   // Decline incoming call
   const declineCall = useCallback(async () => {
@@ -449,8 +469,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Toggle mute
   const toggleMute = useCallback(() => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+
     const newMuted = !callStateRef.current.isMuted;
-    engineRef.current?.muteLocalAudioStream(newMuted);
+    const audioTrack = stream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !newMuted;
+    }
     setCallState((prev) => ({
       ...prev,
       isMuted: newMuted,
@@ -460,7 +486,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Toggle speaker
   const toggleSpeaker = useCallback(() => {
     const newSpeaker = !callStateRef.current.isSpeakerOn;
-    engineRef.current?.setEnableSpeakerphone(newSpeaker);
+    InCallManager.setSpeakerphoneOn(newSpeaker);
     setCallState((prev) => ({
       ...prev,
       isSpeakerOn: newSpeaker,
@@ -469,21 +495,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Toggle video
   const toggleVideo = useCallback(async () => {
-    const newEnabled = !callStateRef.current.isVideoEnabled;
-    if (newEnabled) {
-      // When re-enabling video, ensure camera permission is granted
-      const hasPermission = await ensureCameraPermission();
-      if (!hasPermission) return;
+    const stream = localStreamRef.current;
+    if (!stream) return;
 
-      try {
-        engineRef.current?.enableVideo();
-        engineRef.current?.startPreview();
-      } catch (err) {
-        console.error('Agora: Failed to re-enable video:', err);
-        return;
-      }
+    const newEnabled = !callStateRef.current.isVideoEnabled;
+    const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.enabled = newEnabled;
     }
-    engineRef.current?.muteLocalVideoStream(!newEnabled);
     setCallState((prev) => ({
       ...prev,
       isVideoEnabled: newEnabled,
@@ -492,7 +511,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Switch camera
   const switchCamera = useCallback(() => {
-    engineRef.current?.switchCamera();
+    const stream = localStreamRef.current;
+    if (!stream) return;
+
+    const videoTrack = stream.getVideoTracks()[0] as any;
+    if (videoTrack && videoTrack._switchCamera) {
+      videoTrack._switchCamera();
+    }
   }, []);
 
   return (
@@ -507,8 +532,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         toggleSpeaker,
         toggleVideo,
         switchCamera,
-        remoteUid,
-        localUid,
+        localStream,
+        remoteStream,
       }}>
       {children}
     </CallContext.Provider>

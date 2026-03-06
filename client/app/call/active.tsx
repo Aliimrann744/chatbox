@@ -8,18 +8,18 @@ import {
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
+import { RTCView } from '@/utils/webrtc';
 
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useCall } from '@/contexts/call-context';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { RtcSurfaceView } from '@/utils/agora';
 
 export default function ActiveCallScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { callState, endCall, toggleMute, toggleSpeaker, toggleVideo, switchCamera, remoteUid, localUid } = useCall();
+  const { callState, endCall, toggleMute, toggleSpeaker, toggleVideo, switchCamera, localStream, remoteStream } = useCall();
 
   const [duration, setDuration] = useState(0);
   const [showControls, setShowControls] = useState(true);
@@ -110,8 +110,12 @@ export default function ActiveCallScreen() {
           <View style={styles.videoContainer}>
             {/* Remote video */}
             <View style={styles.remoteVideo}>
-              {remoteUid !== null ? (
-                <RtcSurfaceView canvas={{ uid: remoteUid }} style={{ flex: 1 }} />
+              {remoteStream ? (
+                <RTCView
+                  streamURL={remoteStream.toURL()}
+                  objectFit="cover"
+                  style={{ flex: 1 }}
+                />
               ) : (
                 <>
                   <Avatar uri={callState.participant?.avatar || ""} size={160} showOnlineStatus={false} />
@@ -122,8 +126,14 @@ export default function ActiveCallScreen() {
 
             {/* Local video PiP */}
             <View style={styles.localVideo}>
-              {callState.isVideoEnabled && localUid !== null ? (
-                <RtcSurfaceView canvas={{ uid: 0 }} style={{ flex: 1, borderRadius: 12 }} zOrderMediaOverlay={true} />
+              {callState.isVideoEnabled && localStream ? (
+                <RTCView
+                  streamURL={localStream.toURL()}
+                  objectFit="cover"
+                  mirror={true}
+                  zOrder={1}
+                  style={{ flex: 1, borderRadius: 12 }}
+                />
               ) : (
                 <IconSymbol name="person.fill" size={40} color="#ffffff" />
               )}

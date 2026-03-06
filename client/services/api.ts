@@ -58,6 +58,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}, _isRetry 
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': '1',
     ...options.headers,
   };
 
@@ -115,7 +116,7 @@ async function refreshToken(): Promise<boolean> {
 
     const response = await fetch(`${API_BASE_URL}/auth/refresh-token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
       body: JSON.stringify({ refreshToken: refresh }),
     });
 
@@ -191,6 +192,7 @@ export const authApi = {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': '1',
             Authorization: `Bearer ${token}`,
           },
         });
@@ -229,6 +231,7 @@ export const authApi = {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${token}`,
+        'ngrok-skip-browser-warning': '1',
       },
       body: formData,
     });
@@ -454,7 +457,7 @@ async function authenticatedUpload(
 
   let response = await fetch(url, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': '1' },
     body: await buildFormData(),
   });
 
@@ -465,7 +468,7 @@ async function authenticatedUpload(
       token = await storage.getItem(TOKEN_KEY);
       response = await fetch(url, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': '1' },
         body: await buildFormData(),
       });
     }
