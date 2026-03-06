@@ -575,13 +575,25 @@ export default function ChatDetailScreen() {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
 
-    // Send via WebSocket
-    socketService.sendMessage({
-      chatId,
-      type: 'TEXT',
-      content: messageText.trim(),
-      tempId,
-    });
+    // Prefer WebSocket, fall back to REST API
+    if (socketService.isConnected) {
+      socketService.sendMessage({
+        chatId,
+        type: 'TEXT',
+        content: messageText.trim(),
+        tempId,
+      });
+    } else {
+      chatApi.sendMessage(chatId, { type: 'TEXT', content: messageText.trim() }).then((saved) => {
+        setMessages((prev) =>
+          prev.map((msg) => msg.id === tempId ? { ...saved, status: 'SENT' } : msg)
+        );
+      }).catch(() => {
+        setMessages((prev) =>
+          prev.map((msg) => msg.id === tempId ? { ...msg, status: 'FAILED' } : msg)
+        );
+      });
+    }
 
     // Stop typing indicator
     socketService.stopTyping(chatId);
@@ -713,17 +725,26 @@ export default function ChatDetailScreen() {
         'messages'
       );
 
-      // Send message via WebSocket
-      socketService.sendMessage({
-        chatId,
+      const messagePayload = {
         type: messageType,
         mediaUrl: uploadResult.url,
         mediaType: media.mimeType,
         mediaDuration: media.duration ? Math.floor(media.duration / 1000) : undefined,
         fileName: media.name,
         fileSize: media.size,
-        tempId,
-      });
+      };
+
+      // Prefer WebSocket, fall back to REST API if socket is disconnected
+      if (socketService.isConnected) {
+        socketService.sendMessage({ chatId, ...messagePayload, tempId });
+      } else {
+        const saved = await chatApi.sendMessage(chatId, messagePayload);
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === tempId ? { ...saved, status: 'SENT' } : msg
+          )
+        );
+      }
     } catch (error) {
       console.error('Error uploading media:', error);
       // Mark message as failed
@@ -785,15 +806,23 @@ export default function ChatDetailScreen() {
           'voice'
         );
 
-        // Send message via WebSocket
-        socketService.sendMessage({
-          chatId,
-          type: 'AUDIO',
+        const messagePayload = {
+          type: 'AUDIO' as const,
           mediaUrl: uploadResult.url,
           mediaType: 'audio/mp4',
           mediaDuration: durationSeconds,
-          tempId,
-        });
+        };
+
+        if (socketService.isConnected) {
+          socketService.sendMessage({ chatId, ...messagePayload, tempId });
+        } else {
+          const saved = await chatApi.sendMessage(chatId, messagePayload);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === tempId ? { ...saved, status: 'SENT' } : msg
+            )
+          );
+        }
       } catch (error) {
         console.error('Error uploading voice message:', error);
         setMessages((prev) =>

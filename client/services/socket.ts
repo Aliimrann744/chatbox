@@ -1,7 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import { API_BASE_URL } from '@/services/api';
+import { API_BASE_URL, ensureFreshToken } from '@/services/api';
 
 // Strip /api suffix for socket connections — Socket.IO namespaces don't use the REST prefix
 const SOCKET_URL = API_BASE_URL.replace(/\/api\/?$/, '');
@@ -68,6 +68,7 @@ class SocketService {
   private chatSocket: Socket | null = null;
   private callSocket: Socket | null = null;
   private listeners: Map<string, Set<Function>> = new Map();
+  private isRefreshingToken = false;
 
   // ==================== CONNECTION ====================
 
@@ -156,6 +157,15 @@ class SocketService {
       this.emit('chat_disconnected', null);
     });
 
+    this.chatSocket.on('connect_error', async () => {
+      // Refresh token once so the next reconnection attempt uses a fresh token
+      if (!this.isRefreshingToken) {
+        this.isRefreshingToken = true;
+        try { await ensureFreshToken(); } catch {}
+        this.isRefreshingToken = false;
+      }
+    });
+
     this.chatSocket.on('connected', (data) => {
       console.log('Chat authenticated:', data);
     });
@@ -206,8 +216,12 @@ class SocketService {
       console.log('Call socket disconnected:', reason);
     });
 
-    this.callSocket.on('connect_error', (error) => {
-      console.error('Call socket connection error:', error.message);
+    this.callSocket.on('connect_error', async () => {
+      if (!this.isRefreshingToken) {
+        this.isRefreshingToken = true;
+        try { await ensureFreshToken(); } catch {}
+        this.isRefreshingToken = false;
+      }
     });
 
     this.callSocket.on('incoming_call', (data) => {
@@ -266,7 +280,15 @@ class SocketService {
     isForwarded?: boolean;
     tempId: string;
   }) {
-    if (!this.chatSocket) return;
+    if (!this.chatSocket) {
+      console.warn('Socket not initialized, cannot send message');
+      this.emit('message_error', { tempId: data.tempId, error: 'Socket not connected' });
+      return;
+    }
+    // If disconnected, trigger reconnect — socket.io will buffer & send when connected
+    if (!this.chatSocket.connected) {
+      this.chatSocket.connect();
+    }
     this.chatSocket.emit('send_message', data);
   }
 

@@ -2,8 +2,8 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
 // const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000/api';
-const API_BASE_URL = 'https://6af7-144-48-133-159.ngrok-free.app/api';
-// const API_BASE_URL = 'http://localhost:4000/api';
+// const API_BASE_URL = 'https://6af7-144-48-133-159.ngrok-free.app/api';
+const API_BASE_URL = 'http://localhost:4000/api';
 const TOKEN_KEY = 'accessToken';
 const REFRESH_TOKEN_KEY = 'refreshToken';
 
@@ -89,6 +89,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}, _isRetry 
   }
 
   return data;
+}
+
+// Exposed for socket service to refresh token on connect_error
+export async function ensureFreshToken(): Promise<boolean> {
+  return refreshToken();
 }
 
 // Refresh token with mutex
@@ -440,49 +445,56 @@ async function appendFileToFormData(formData: FormData, fieldName: string, file:
   }
 }
 
+// Helper: authenticated FormData upload with automatic 401 retry
+async function authenticatedUpload(
+  url: string,
+  buildFormData: () => Promise<FormData>,
+): Promise<{ url: string; filename: string }> {
+  let token = await storage.getItem(TOKEN_KEY);
+
+  let response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: await buildFormData(),
+  });
+
+  // Retry once after refreshing token
+  if (response.status === 401) {
+    const refreshed = await refreshToken();
+    if (refreshed) {
+      token = await storage.getItem(TOKEN_KEY);
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: await buildFormData(),
+      });
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error('Upload failed');
+  }
+
+  return response.json() as Promise<{ url: string; filename: string }>;
+}
+
 // Upload API
 export const uploadApi = {
   async uploadFile(file: { uri: string; type: string; name: string }, folder?: string) {
-    const token = await storage.getItem(TOKEN_KEY);
-    const formData = new FormData();
-    await appendFileToFormData(formData, 'file', file);
-    if (folder) {
-      formData.append('folder', folder);
-    }
-
-    const response = await fetch(`${API_BASE_URL}/upload`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
+    return authenticatedUpload(`${API_BASE_URL}/upload`, async () => {
+      const formData = new FormData();
+      await appendFileToFormData(formData, 'file', file);
+      if (folder) formData.append('folder', folder);
+      return formData;
     });
-
-    if (!response.ok) {
-      throw new Error('Upload failed');
-    }
-
-    return response.json() as Promise<{ url: string; filename: string }>;
   },
 
   async uploadAvatar(file: { uri: string; type: string; name: string }) {
-    const token = await storage.getItem(TOKEN_KEY);
-    const formData = new FormData();
-    await appendFileToFormData(formData, 'file', file);
-
-    const response = await fetch(`${API_BASE_URL}/upload/avatar`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
+    return authenticatedUpload(`${API_BASE_URL}/upload/avatar`, async () => {
+      const formData = new FormData();
+      await appendFileToFormData(formData, 'file', file);
+      return formData;
     });
-
-    if (!response.ok) {
-      throw new Error('Upload failed');
-    }
-
-    return response.json() as Promise<{ url: string; filename: string }>;
   },
 };
 

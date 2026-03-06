@@ -1,60 +1,75 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
-import { createReadStream, unlink } from 'fs';
-import { Readable } from 'stream';
+import { rename, writeFile, unlink, mkdirSync } from 'fs';
+import { join, extname } from 'path';
+import { promisify } from 'util';
+import { randomBytes } from 'crypto';
+
+const renameAsync = promisify(rename);
+const writeFileAsync = promisify(writeFile);
+const unlinkAsync = promisify(unlink);
+
+const mimeToExt: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'video/mp4': '.mp4',
+  'video/quicktime': '.mov',
+  'video/x-matroska': '.mkv',
+  'audio/mpeg': '.mp3',
+  'audio/mp4': '.m4a',
+  'audio/wav': '.wav',
+  'audio/ogg': '.ogg',
+  'audio/x-m4a': '.m4a',
+  'application/pdf': '.pdf',
+  'application/msword': '.doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+};
 
 @Injectable()
 export class UploadService {
+  private baseUrl: string;
+  private uploadsRoot: string;
+
   constructor(private configService: ConfigService) {
-    cloudinary.config({
-      cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
-      api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
-      api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
-    });
+    this.baseUrl = this.configService.get<string>('BASE_URL') || 'http://localhost:4000';
+    this.uploadsRoot = join(process.cwd(), 'uploads');
   }
 
   async uploadFile(file: Express.Multer.File, folder: string = 'general'): Promise<{ url: string; filename: string }> {
     if (!file) throw new BadRequestException('No file provided');
 
-    const result = await new Promise<UploadApiResponse>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          folder: `chatbox/${folder}`,
-          resource_type: 'auto',
-          timeout: 60000,
-        },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve(result);
-        },
-      );
+    const ext = extname(file.originalname) || mimeToExt[file.mimetype] || '';
+    const uniqueName = `${Date.now()}-${randomBytes(8).toString('hex')}${ext}`;
+    const targetDir = join(this.uploadsRoot, folder);
+    const targetPath = join(targetDir, uniqueName);
 
-      if (file.path) {
-        // Disk storage (upload controller) — file is on disk
-        createReadStream(file.path).pipe(stream);
-      } else {
-        // Memory storage (auth controller) — file is in buffer
-        Readable.from(file.buffer).pipe(stream);
-      }
-    });
+    // Ensure target directory exists
+    mkdirSync(targetDir, { recursive: true });
 
-    // Clean up temp file if it was written to disk
     if (file.path) {
-      unlink(file.path, () => {});
+      // Disk storage (upload controller) — move temp file to uploads
+      await renameAsync(file.path, targetPath);
+    } else if (file.buffer) {
+      // Memory storage (auth controller) — write buffer to disk
+      await writeFileAsync(targetPath, file.buffer);
+    } else {
+      throw new BadRequestException('File has no path or buffer');
     }
 
     return {
-      url: result.secure_url,
-      filename: result.public_id,
+      url: `${this.baseUrl}/uploads/${folder}/${uniqueName}`,
+      filename: `${folder}/${uniqueName}`,
     };
   }
 
-  async deleteFile(publicId: string): Promise<void> {
+  async deleteFile(filePath: string): Promise<void> {
     try {
-      await cloudinary.uploader.destroy(publicId);
+      const fullPath = join(this.uploadsRoot, filePath);
+      await unlinkAsync(fullPath);
     } catch (error) {
-      console.error('Failed to delete file from Cloudinary:', error);
+      console.error('Failed to delete file:', error);
     }
   }
 }

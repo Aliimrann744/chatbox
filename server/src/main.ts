@@ -1,6 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { join } from 'path';
+import * as express from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -11,6 +13,9 @@ async function bootstrap() {
     res.setHeader('ngrok-skip-browser-warning', 'true');
     next();
   });
+
+  // Serve uploaded files as static assets (before global prefix)
+  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
 
   // Enable CORS
   app.enableCors({

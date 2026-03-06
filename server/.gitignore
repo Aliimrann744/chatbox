@@ -400,3 +400,7 @@ dist
 .serverless/**/*.zip
 
 /generated/prisma
+
+# Uploaded files & temp
+uploads/
+tmp/
