@@ -20,6 +20,8 @@ model User {
   name            String    @default("")
   about           String    @default("Hey there! I am using Chatbox")
   avatar          String?
+  googleId        String?   @unique
+  facebookId      String?   @unique
 
   // Verification
   isVerified      Boolean   @default(false)

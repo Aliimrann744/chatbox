@@ -7,6 +7,8 @@ import { UploadService } from '../upload/upload.service';
 import { MailService } from './mail.service';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
+import { FacebookLoginDto } from './dto/facebook-login.dto';
 
 @Injectable()
 export class AuthService {
@@ -226,5 +228,97 @@ export class AuthService {
     });
 
     return updated;
+  }
+
+  private async findOrCreateSocialUser(opts: {
+    providerField: 'googleId' | 'facebookId';
+    providerId: string;
+    email?: string;
+    name?: string;
+    avatar?: string;
+  }) {
+    const { providerField, providerId, email, name, avatar } = opts;
+
+    // 1. Find by provider ID
+    let user = await this.prisma.user.findUnique({ where: { [providerField]: providerId } as any });
+
+    // 2. Find by email (link existing account)
+    if (!user && email) {
+      user = await this.prisma.user.findUnique({ where: { email } });
+      if (user) {
+        await this.prisma.user.update({ where: { id: user.id }, data: { [providerField]: providerId } });
+        user = { ...user, [providerField]: providerId };
+      }
+    }
+
+    // 3. Create new user
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          [providerField]: providerId,
+          email: email || undefined,
+          name: name || '',
+          avatar: avatar || undefined,
+          isVerified: true,
+        },
+      });
+    }
+
+    const isNewUser = user.name === '';
+    const tokens = await this.generateTokens(user.id, user.email || user.phone || providerId);
+
+    return {
+      message: 'Login successful',
+      ...tokens,
+      isNewUser,
+      user: { id: user.id, name: user.name, phone: user.phone, email: user.email, avatar: user.avatar, about: user.about },
+    };
+  }
+
+  async googleLogin(dto: GoogleLoginDto) {
+    const { idToken } = dto;
+
+    const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+    if (!response.ok) {
+      throw new UnauthorizedException('Invalid Google ID token');
+    }
+
+    const payload = await response.json();
+    const googleClientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
+    if (googleClientId && payload.aud !== googleClientId) {
+      throw new UnauthorizedException('Google token audience mismatch');
+    }
+
+    return this.findOrCreateSocialUser({
+      providerField: 'googleId',
+      providerId: payload.sub,
+      email: payload.email,
+      name: payload.name,
+      avatar: payload.picture,
+    });
+  }
+
+  async facebookLogin(dto: FacebookLoginDto) {
+    const { accessToken } = dto;
+
+    const response = await fetch(
+      `https://graph.facebook.com/me?access_token=${accessToken}&fields=id,name,email,picture.type(large)`,
+    );
+    if (!response.ok) {
+      throw new UnauthorizedException('Invalid Facebook access token');
+    }
+
+    const fbUser = await response.json();
+    if (!fbUser.id) {
+      throw new UnauthorizedException('Invalid Facebook access token');
+    }
+
+    return this.findOrCreateSocialUser({
+      providerField: 'facebookId',
+      providerId: fbUser.id,
+      email: fbUser.email,
+      name: fbUser.name,
+      avatar: fbUser.picture?.data?.url,
+    });
   }
 }

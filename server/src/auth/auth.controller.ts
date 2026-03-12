@@ -17,6 +17,8 @@ import { AuthService } from './auth.service';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
+import { FacebookLoginDto } from './dto/facebook-login.dto';
 import { Public } from './decorators/public.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
@@ -36,6 +38,20 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
     return this.authService.verifyOtp(verifyOtpDto);
+  }
+
+  @Public()
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  async googleLogin(@Body() googleLoginDto: GoogleLoginDto) {
+    return this.authService.googleLogin(googleLoginDto);
+  }
+
+  @Public()
+  @Post('facebook')
+  @HttpCode(HttpStatus.OK)
+  async facebookLogin(@Body() facebookLoginDto: FacebookLoginDto) {
+    return this.authService.facebookLogin(facebookLoginDto);
   }
 
   @Public()

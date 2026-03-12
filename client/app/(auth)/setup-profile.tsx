@@ -23,7 +23,7 @@ import { authApi } from '@/services/api';
 
 export default function SetupProfileScreen() {
   const { loginMode } = useLocalSearchParams<{ loginMode?: string }>();
-  const isEmailSignup = loginMode === 'email';
+  const isEmailSignup = loginMode === 'email' || loginMode === 'social';
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { refreshUser } = useAuth();

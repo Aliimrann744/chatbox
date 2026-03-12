@@ -20,7 +20,12 @@
     },
     "production": {
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "enableProguardInReleaseBuilds": true,
+        "enableShrinkResourcesInReleaseBuilds": true
+      },
+      "env": {
+        "EXPO_NO_DEV_CLIENT": "1"
       }
     }
   },

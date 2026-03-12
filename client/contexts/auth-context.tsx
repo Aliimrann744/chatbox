@@ -11,6 +11,8 @@ interface AuthState {
 interface AuthContextType extends AuthState {
   sendOtp: (params: { phone?: string; countryCode?: string; email?: string }) => Promise<void>;
   verifyOtp: (params: { phone?: string; email?: string }, otp: string) => Promise<{ isNewUser: boolean }>;
+  googleLogin: () => Promise<{ isNewUser: boolean }>;
+  facebookLogin: () => Promise<{ isNewUser: boolean }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -83,6 +85,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { isNewUser: response.isNewUser };
   }, []);
 
+  const googleLogin = useCallback(async () => {
+    const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+    GoogleSignin.configure({
+      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    });
+    const signInResult = await GoogleSignin.signIn();
+    const idToken = signInResult?.data?.idToken;
+    if (!idToken) throw new Error('Google sign-in failed: no ID token');
+    const response = await authApi.googleLogin({ idToken });
+    setState({ user: response.user, isLoading: false, isAuthenticated: true });
+    return { isNewUser: response.isNewUser };
+  }, []);
+
+  const facebookLogin = useCallback(async () => {
+    const { LoginManager, AccessToken } = require('react-native-fbsdk-next');
+    const result = await LoginManager.logInWithPermissions(['public_profile', 'email']);
+    if (result.isCancelled) throw new Error('Facebook login cancelled');
+    const tokenData = await AccessToken.getCurrentAccessToken();
+    if (!tokenData?.accessToken) throw new Error('Facebook login failed: no access token');
+    const response = await authApi.facebookLogin({ accessToken: tokenData.accessToken });
+    setState({ user: response.user, isLoading: false, isAuthenticated: true });
+    return { isNewUser: response.isNewUser };
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
@@ -113,6 +139,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ...state,
     sendOtp,
     verifyOtp,
+    googleLogin,
+    facebookLogin,
     logout,
     refreshUser,
   };

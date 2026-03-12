@@ -1,9 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-// const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000/api';
-// const API_BASE_URL = 'https://6af7-144-48-133-159.ngrok-free.app/api';
-const API_BASE_URL = 'http://localhost:4000/api';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://whatsappbizz.online/api';
 const TOKEN_KEY = 'accessToken';
 const REFRESH_TOKEN_KEY = 'refreshToken';
 
@@ -171,6 +169,42 @@ export const authApi = {
     });
 
     // Store tokens
+    await storage.setItem(TOKEN_KEY, response.accessToken);
+    await storage.setItem(REFRESH_TOKEN_KEY, response.refreshToken);
+
+    return response;
+  },
+
+  async googleLogin(data: { idToken: string }) {
+    const response = await request<{
+      message: string;
+      user: User;
+      accessToken: string;
+      refreshToken: string;
+      isNewUser: boolean;
+    }>('/auth/google', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    await storage.setItem(TOKEN_KEY, response.accessToken);
+    await storage.setItem(REFRESH_TOKEN_KEY, response.refreshToken);
+
+    return response;
+  },
+
+  async facebookLogin(data: { accessToken: string }) {
+    const response = await request<{
+      message: string;
+      user: User;
+      accessToken: string;
+      refreshToken: string;
+      isNewUser: boolean;
+    }>('/auth/facebook', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
     await storage.setItem(TOKEN_KEY, response.accessToken);
     await storage.setItem(REFRESH_TOKEN_KEY, response.refreshToken);
 

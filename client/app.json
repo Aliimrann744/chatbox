@@ -12,8 +12,10 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "WhatsApp needs microphone access for voice and video calls",
-        "NSCameraUsageDescription": "WhatsApp needs camera access for video calls"
-      }
+        "NSCameraUsageDescription": "WhatsApp needs camera access for video calls",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.chatbox.app"
     },
     "android": {
       "package": "com.chatbox.app",
@@ -46,7 +48,17 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      ["@react-native-google-signin/google-signin"],
+      ["react-native-fbsdk-next", {
+        "appID": "YOUR_FACEBOOK_APP_ID",
+        "clientToken": "YOUR_FACEBOOK_CLIENT_TOKEN",
+        "displayName": "WhatsApp",
+        "scheme": "fbYOUR_FACEBOOK_APP_ID",
+        "advertiserIDCollectionEnabled": false,
+        "autoLogAppEventsEnabled": false,
+        "isAutoInitEnabled": true
+      }]
     ],
     "experiments": {
       "typedRoutes": true,

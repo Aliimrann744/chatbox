@@ -100,7 +100,7 @@ export default function LoginScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
-  const { sendOtp } = useAuth();
+  const { sendOtp, googleLogin, facebookLogin } = useAuth();
 
   // State
   const [inputMode, setInputMode] = useState<InputMode>('phone');
@@ -109,6 +109,7 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
 
   // Modals
   const [showCountryPicker, setShowCountryPicker] = useState(false);
@@ -178,6 +179,44 @@ export default function LoginScreen() {
       Alert.alert('Error', error.message || 'Failed to send OTP');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // ─── Social Login ──────────────────────────────────────────────────────
+
+  const handleGoogleLogin = async () => {
+    setSocialLoading('google');
+    try {
+      const { isNewUser } = await googleLogin();
+      if (isNewUser) {
+        router.replace({ pathname: '/(auth)/setup-profile', params: { loginMode: 'social' } });
+      } else {
+        router.replace('/(tabs)');
+      }
+    } catch (error: any) {
+      if (!error.message?.includes('cancelled') && !error.message?.includes('canceled')) {
+        Alert.alert('Error', error.message || 'Google login failed');
+      }
+    } finally {
+      setSocialLoading(null);
+    }
+  };
+
+  const handleFacebookLogin = async () => {
+    setSocialLoading('facebook');
+    try {
+      const { isNewUser } = await facebookLogin();
+      if (isNewUser) {
+        router.replace({ pathname: '/(auth)/setup-profile', params: { loginMode: 'social' } });
+      } else {
+        router.replace('/(tabs)');
+      }
+    } catch (error: any) {
+      if (!error.message?.includes('cancelled') && !error.message?.includes('canceled')) {
+        Alert.alert('Error', error.message || 'Facebook login failed');
+      }
+    } finally {
+      setSocialLoading(null);
     }
   };
 
@@ -275,6 +314,42 @@ export default function LoginScreen() {
               "We'll send you a verification code to your email address."
             )}
           </Text>
+
+          {/* Social Login Buttons */}
+          <Pressable
+            style={[styles.socialButton, { backgroundColor: '#ffffff', borderColor: '#dadce0', borderWidth: 1 }]}
+            onPress={handleGoogleLogin}
+            disabled={socialLoading !== null}>
+            {socialLoading === 'google' ? (
+              <ActivityIndicator color="#333" />
+            ) : (
+              <>
+                <Text style={{ fontSize: 20 }}>G</Text>
+                <Text style={[styles.socialButtonText, { color: '#1f1f1f' }]}>Continue with Google</Text>
+              </>
+            )}
+          </Pressable>
+
+          <Pressable
+            style={[styles.socialButton, { backgroundColor: '#1877F2' }]}
+            onPress={handleFacebookLogin}
+            disabled={socialLoading !== null}>
+            {socialLoading === 'facebook' ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Ionicons name="logo-facebook" size={20} color="#ffffff" />
+                <Text style={[styles.socialButtonText, { color: '#ffffff' }]}>Continue with Facebook</Text>
+              </>
+            )}
+          </Pressable>
+
+          {/* OR Divider */}
+          <View style={styles.orDivider}>
+            <View style={[styles.orLine, { backgroundColor: colors.border }]} />
+            <Text style={[styles.orText, { color: colors.textSecondary }]}>OR</Text>
+            <View style={[styles.orLine, { backgroundColor: colors.border }]} />
+          </View>
 
           {inputMode === 'phone' ? (
             <>
@@ -530,6 +605,35 @@ const styles = StyleSheet.create({
   linkText: {
     color: '#569af4',
     fontWeight: '500',
+  },
+
+  // ─── Social Buttons ─────────────────────────────────────────────────────
+  socialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 48,
+    borderRadius: 24,
+    marginBottom: 12,
+    gap: 10,
+  },
+  socialButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  orDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+    gap: 12,
+  },
+  orLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+  orText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   // ─── Country Picker Row ─────────────────────────────────────────────────

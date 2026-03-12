@@ -33,7 +33,7 @@ export class UploadService {
   private uploadsRoot: string;
 
   constructor(private configService: ConfigService) {
-    this.baseUrl = this.configService.get<string>('BASE_URL') || 'http://localhost:4000';
+    this.baseUrl = this.configService.get<string>('BASE_URL');
     this.uploadsRoot = join(process.cwd(), 'uploads');
   }
 

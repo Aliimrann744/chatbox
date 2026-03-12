@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PrivacySetting } from '@prisma/client';
 import { DeviceContact } from './dto/sync-contacts.dto';
@@ -12,14 +7,8 @@ import { DeviceContact } from './dto/sync-contacts.dto';
 export class ContactService {
   constructor(private prisma: PrismaService) {}
 
-  // ==================== CONTACT SYNC ====================
-
-  async syncContacts(
-    userId: string,
-    phoneNumbers?: string[],
-    contacts?: DeviceContact[],
-  ) {
-    // Build a map: every possible phone variation → device name
+  async syncContacts(userId: string, phoneNumbers?: string[], contacts?: DeviceContact[]) {
+    console.log("phoneNumbers", phoneNumbers);
     const phoneToName = new Map<string, string>();
     if (contacts && contacts.length > 0) {
       contacts.forEach((c) => {
@@ -49,23 +38,14 @@ export class ContactService {
 
     // Find registered users matching any phone variation
     const registeredUsers = await this.prisma.user.findMany({
-      where: {
-        phone: { in: [...allVariations] },
-        isVerified: true,
-        id: { not: userId },
-      },
-      select: {
-        id: true,
-        phone: true,
-        name: true,
-      },
+      where: { phone: { in: [...allVariations] }, isVerified: true, id: { not: userId } },
+      select: { id: true, phone: true, name: true },
     });
 
     // Auto-add contacts: filter blocked, then create/update
-    await Promise.all(
-      registeredUsers.map(async (user) => {
-        const isBlocked = await this.isBlocked(userId, user.id);
-        if (isBlocked) return;
+    await Promise.all(registeredUsers.map(async (user) => {
+      const isBlocked = await this.isBlocked(userId, user.id);
+      if (isBlocked) return;
 
         // Look up device name using variations of the user's stored phone
         const userVariations = this.getPhoneVariations(user.phone);
@@ -77,28 +57,14 @@ export class ContactService {
           }
         }
 
-        const existingContact = await this.prisma.contact.findUnique({
-          where: {
-            userId_contactId: {
-              userId,
-              contactId: user.id,
-            },
-          },
-        });
-
+        const existingContact = await this.prisma.contact.findUnique({ where: { userId_contactId: { userId, contactId: user.id }}});
+        console.log("existingContact", existingContact);
         if (!existingContact) {
-          await this.prisma.contact.create({
-            data: {
-              userId,
-              contactId: user.id,
-              nickname: deviceName,
-            },
-          });
+          console.log("create contact");
+          await this.prisma.contact.create({ data: { userId, contactId: user.id, nickname: deviceName }});
         } else if (deviceName && existingContact.nickname !== deviceName) {
-          await this.prisma.contact.update({
-            where: { id: existingContact.id },
-            data: { nickname: deviceName },
-          });
+          console.log("updated contact");
+          await this.prisma.contact.update({ where: { id: existingContact.id }, data: { nickname: deviceName }});
         }
       }),
     );
