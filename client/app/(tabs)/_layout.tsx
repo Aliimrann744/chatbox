@@ -65,7 +65,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="contacts"
         options={{
-          title: 'Communities',
+          title: 'Contacts',
           tabBarIcon: ({ color }) => (
             <IconSymbol size={24} name="person.2.fill" color={color} />
           ),

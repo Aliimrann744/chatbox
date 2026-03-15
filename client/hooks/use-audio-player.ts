@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { Platform } from 'react-native';
 import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 
 export interface PlaybackState {
   isLoading: boolean;
@@ -14,6 +16,51 @@ export interface AudioPlayerResult {
   pause: () => Promise<void>;
   stop: () => Promise<void>;
   seek: (position: number) => Promise<void>;
+}
+
+// Simple in-memory map of remote URI → local cached path
+const localCacheMap = new Map<string, string>();
+
+async function getCachedUri(uri: string): Promise<string> {
+  // Local files don't need caching
+  if (!uri.startsWith('http')) return uri;
+
+  // File caching only works on native
+  if (Platform.OS === 'web') return uri;
+
+  // Already resolved this session
+  if (localCacheMap.has(uri)) return localCacheMap.get(uri)!;
+
+  try {
+    const cacheDir = `${(FileSystem as any).cacheDirectory}voice_cache/`;
+    const dirInfo = await FileSystem.getInfoAsync(cacheDir);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+    }
+
+    // Create a stable filename from the URL
+    const hash = uri.split('/').pop() || `audio_${Date.now()}`;
+    const localPath = `${cacheDir}${hash}`;
+
+    const fileInfo = await FileSystem.getInfoAsync(localPath);
+    if (fileInfo.exists) {
+      localCacheMap.set(uri, localPath);
+      return localPath;
+    }
+
+    // Download in background — return remote URI for now, cache for next play
+    FileSystem.downloadAsync(uri, localPath)
+      .then(() => {
+        localCacheMap.set(uri, localPath);
+      })
+      .catch(() => {
+        // Silent fail — will use remote URI
+      });
+
+    return uri;
+  } catch {
+    return uri;
+  }
 }
 
 export function useAudioPlayer(): AudioPlayerResult {
@@ -77,10 +124,14 @@ export function useAudioPlayer(): AudioPlayerResult {
       if (!soundRef.current || currentUriRef.current !== uri) {
         setPlayback((prev) => ({ ...prev, isLoading: true }));
 
+        // Try cached local file first
+        const resolvedUri = await getCachedUri(uri);
+
         const { sound } = await Audio.Sound.createAsync(
-          { uri },
-          { shouldPlay: true },
-          onPlaybackStatusUpdate
+          { uri: resolvedUri, overrideFileExtensionAndroid: 'mp4' },
+          { shouldPlay: true, progressUpdateIntervalMillis: 100 },
+          onPlaybackStatusUpdate,
+          false
         );
 
         soundRef.current = sound;

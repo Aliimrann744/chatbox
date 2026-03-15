@@ -86,7 +86,7 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
           styles.cancelButton,
           pressed && styles.buttonPressed,
         ]}>
-        <IconSymbol name="xmark" size={24} color={colors.error} />
+        <IconSymbol name="xmark" size={24} color={'#e74c3c'} />
       </Pressable>
 
       {/* Recording indicator and duration */}
@@ -170,7 +170,7 @@ export function InlineVoiceRecorder({
     <View style={styles.inlineContainer}>
       {/* Cancel button */}
       <Pressable onPress={onCancel} style={styles.inlineCancelButton}>
-        <IconSymbol name="trash.fill" size={20} color={colors.error} />
+        <IconSymbol name="trash.fill" size={20} color={'#e74c3c'} />
       </Pressable>
 
       {/* Recording info */}

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { authApi, User, setOnAuthFailure } from '@/services/api';
 import socketService from '@/services/socket';
+import { cache, CacheKeys } from '@/services/cache';
 
 interface AuthState {
   user: User | null;
@@ -53,20 +54,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Load cached user immediately so UI doesn't flash empty
+      const cachedUser = cache.get<User>(CacheKeys.USER_PROFILE);
+      if (cachedUser) {
+        setState({ user: cachedUser, isLoading: false, isAuthenticated: true });
+      }
+
       // Token exists — try to load user profile
       // If access token is expired, request() will auto-refresh it
       try {
         const user = await authApi.getMe();
+        cache.set(CacheKeys.USER_PROFILE, user);
         setState({ user, isLoading: false, isAuthenticated: true });
       } catch (error: any) {
         // Check if tokens were cleared by a definitive refresh failure
         const stillHasToken = await authApi.isAuthenticated();
         if (stillHasToken) {
           // Network error or temporary server issue — stay authenticated
-          // User profile will load when connectivity returns
-          setState({ user: null, isLoading: false, isAuthenticated: true });
+          // Use cached user if available, otherwise null
+          setState({ user: cachedUser, isLoading: false, isAuthenticated: true });
         } else {
           // Refresh token was rejected — tokens were cleared, need fresh login
+          cache.delete(CacheKeys.USER_PROFILE);
           setState({ user: null, isLoading: false, isAuthenticated: false });
         }
       }
@@ -81,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const verifyOtp = useCallback(async (params: { phone?: string; email?: string }, otp: string) => {
     const response = await authApi.verifyOtp({ ...params, otp });
+    cache.set(CacheKeys.USER_PROFILE, response.user);
     setState({ user: response.user, isLoading: false, isAuthenticated: true });
     return { isNewUser: response.isNewUser };
   }, []);
@@ -94,6 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const idToken = signInResult?.data?.idToken;
     if (!idToken) throw new Error('Google sign-in failed: no ID token');
     const response = await authApi.googleLogin({ idToken });
+    cache.set(CacheKeys.USER_PROFILE, response.user);
     setState({ user: response.user, isLoading: false, isAuthenticated: true });
     return { isNewUser: response.isNewUser };
   }, []);
@@ -105,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const tokenData = await AccessToken.getCurrentAccessToken();
     if (!tokenData?.accessToken) throw new Error('Facebook login failed: no access token');
     const response = await authApi.facebookLogin({ accessToken: tokenData.accessToken });
+    cache.set(CacheKeys.USER_PROFILE, response.user);
     setState({ user: response.user, isLoading: false, isAuthenticated: true });
     return { isNewUser: response.isNewUser };
   }, []);
@@ -116,12 +128,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Ignore server errors — tokens are already cleared by authApi.logout's finally block
     }
     socketService.disconnect();
+    cache.clearAll();
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
 
   const refreshUser = useCallback(async () => {
     try {
       const user = await authApi.getMe();
+      cache.set(CacheKeys.USER_PROFILE, user);
       setState((prev) => ({ ...prev, user }));
     } catch (error) {
       // Don't immediately logout — request() already attempted token refresh.

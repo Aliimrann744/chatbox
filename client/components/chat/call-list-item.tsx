@@ -7,6 +7,7 @@ import { Call } from '@/services/api';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
+import { getInitials } from '@/utils/helpers';
 
 interface CallListItemProps {
   call: Call;
@@ -73,7 +74,15 @@ export function CallListItem({ call, onCallPress }: CallListItemProps) {
           backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
         },
       ]}>
-      <Avatar uri={call.otherUser.avatar || ""} size={50} />
+      {call.otherUser.avatar ? (
+        <Avatar uri={call.otherUser.avatar} size={50} />
+      ) : (
+        <View style={styles.avatarFallback}>
+          <Text style={styles.avatarInitials}>
+            {getInitials(call.otherUser.name) || 'U'}
+          </Text>
+        </View>
+      )}
 
       <View style={styles.content}>
         <Text
@@ -126,5 +135,18 @@ const styles = StyleSheet.create({
   },
   callButton: {
     padding: 8,
+  },
+  avatarFallback: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitials: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#374151',
   },
 });

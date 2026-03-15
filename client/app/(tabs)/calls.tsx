@@ -8,20 +8,23 @@ import { callApi, Call } from '@/services/api';
 import { useCall } from '@/contexts/call-context';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { cache, CacheKeys } from '@/services/cache';
 
 export default function CallsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { initiateCall } = useCall();
 
-  const [calls, setCalls] = useState<Call[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [initialCache] = useState(() => cache.get<Call[]>(CacheKeys.CALLS));
+  const [calls, setCalls] = useState<Call[]>(initialCache || []);
+  const [isLoading, setIsLoading] = useState(!initialCache);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchCalls = useCallback(async () => {
     try {
       const response = await callApi.getCallHistory();
       setCalls(response.calls);
+      cache.set(CacheKeys.CALLS, response.calls);
     } catch (error) {
       console.error('Failed to fetch call history:', error);
     } finally {

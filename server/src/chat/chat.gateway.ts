@@ -174,25 +174,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     try {
       // Mark all messages as read
-      const readMessages = await this.chatService.markMessagesAsRead(
-        data.chatId,
-        userId,
-      );
+      const readMessages = await this.chatService.markMessagesAsRead(data.chatId, userId);
 
       // Notify senders about read status
-      const senderIds = [...new Set(readMessages.map((m) => m.senderId))];
+      const senderIds: any = [...new Set(readMessages.map((m: { id: string; senderId: string }) => m.senderId))];
 
       for (const senderId of senderIds) {
         const senderSocketId = this.connectedUsers.get(senderId);
         if (senderSocketId) {
-          const senderMessages = readMessages
-            .filter((m) => m.senderId === senderId)
-            .map((m) => m.id);
+          const senderMessages = readMessages.filter((m) => m.senderId === senderId).map((m) => m.id);
 
           this.server.to(senderSocketId).emit('messages_read', {
-            chatId: data.chatId,
-            messageIds: senderMessages,
-            readBy: userId,
+            chatId: data.chatId, messageIds: senderMessages, readBy: userId,
           });
         }
       }

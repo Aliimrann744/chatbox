@@ -11,6 +11,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { chatApi, Chat } from '@/services/api';
 import socketService from '@/services/socket';
+import { cache, CacheKeys } from '@/services/cache';
 
 type FilterType = 'All' | 'Unread' | 'Favorites' | 'Groups';
 const FILTERS: FilterType[] = ['All', 'Unread', 'Favorites', 'Groups'];
@@ -20,8 +21,9 @@ export default function ChatsScreen() {
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('All');
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialCache] = useState(() => cache.get<Chat[]>(CacheKeys.CHATS));
+  const [chats, setChats] = useState<Chat[]>(initialCache || []);
+  const [loading, setLoading] = useState(!initialCache);
   const [refreshing, setRefreshing] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
@@ -29,6 +31,7 @@ export default function ChatsScreen() {
     try {
       const data = await chatApi.getChats();
       setChats(data);
+      cache.set(CacheKeys.CHATS, data);
     } catch (error) {
       console.error('Error fetching chats:', error);
     } finally {
@@ -36,6 +39,13 @@ export default function ChatsScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  // Persist chat list updates to cache
+  useEffect(() => {
+    if (chats.length > 0) {
+      cache.set(CacheKeys.CHATS, chats);
+    }
+  }, [chats]);
 
   // Initial load + socket listeners
   useEffect(() => {

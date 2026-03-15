@@ -83,7 +83,7 @@ export default function BlockedUsersScreen() {
 
   const renderBlockedUser = ({ item }: { item: BlockedUser }) => (
     <View style={[styles.userItem, { backgroundColor: colors.background }]}>
-      <Avatar uri={item.user.avatar} size={50} />
+      <Avatar uri={item.user.avatar || ''} size={50} />
       <View style={styles.userInfo}>
         <Text style={[styles.userName, { color: colors.text }]}>
           {item.user.name}
@@ -94,8 +94,8 @@ export default function BlockedUsersScreen() {
       </View>
       <Pressable
         onPress={() => handleUnblock(item)}
-        style={[styles.unblockButton, { borderColor: colors.error }]}>
-        <Text style={[styles.unblockText, { color: colors.error }]}>
+        style={[styles.unblockButton, { borderColor: '#e74c3c' }]}>
+        <Text style={[styles.unblockText, { color: '#e74c3c' }]}>
           Unblock
         </Text>
       </Pressable>

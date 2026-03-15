@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Dimensions, FlatList, ImageBackground, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator, Image } from 'react-native';
+import { Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
+import { Image } from 'expo-image';
 import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +18,7 @@ import { useCall } from '@/contexts/call-context';
 import { pickImage, pickVideo, pickDocument, takePhoto, PickedMedia, getMessageTypeFromMimeType } from '@/utils/media-picker';
 import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-picker';
 import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
+import { cache, CacheKeys } from '@/services/cache';
 
 function MessageBubble({ message, isMe, onImagePress, onVideoPress }: { message: Message; isMe: boolean; onImagePress?: (url: string) => void; onVideoPress?: (url: string) => void }) {
   const colorScheme = useColorScheme() ?? 'light';
@@ -32,7 +34,7 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress }: { message:
                 <Image
                   source={{ uri: message.mediaUrl }}
                   style={styles.imagePreview}
-                  resizeMode="cover"
+                  contentFit="cover"
                 />
               </Pressable>
             ) : (
@@ -52,7 +54,7 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress }: { message:
                   <Image
                     source={{ uri: message.thumbnail }}
                     style={styles.imagePreview}
-                    resizeMode="cover"
+                    contentFit="cover"
                   />
                 ) : message.mediaUrl ? (
                   <Video
@@ -272,11 +274,12 @@ function AttachmentMenu({ visible, onClose, onSelect }: { visible: boolean; onCl
   );
 }
 
-function MessageInput({ value, onChange, onSend, onAttachment, onVoiceStart, onVoiceStop, onVoiceCancel, isRecording, recordingDuration, onTypingStart, onTypingStop }: {
+function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoiceStart, onVoiceStop, onVoiceCancel, isRecording, recordingDuration, onTypingStart, onTypingStop }: {
   value: string;
   onChange: (text: string) => void;
   onSend: () => void;
   onAttachment: () => void;
+  onSelect: (type: string) => void;
   onVoiceStart: () => void;
   onVoiceStop: () => void;
   onVoiceCancel: () => void;
@@ -289,6 +292,15 @@ function MessageInput({ value, onChange, onSend, onAttachment, onVoiceStart, onV
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const typingTimeoutRef = useRef<NodeJS.Timeout | null | any>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
+  const bottomPadding = keyboardVisible ? 6 : insets.bottom + 6;
 
   const handleTextChange = (text: string) => {
     onChange(text);
@@ -314,7 +326,7 @@ function MessageInput({ value, onChange, onSend, onAttachment, onVoiceStart, onV
   // Show voice recorder when recording — WhatsApp style
   if (isRecording) {
     return (
-      <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: insets.bottom + 6 }]}>
+      <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: bottomPadding }]}>
         {/* Delete button */}
         <Pressable onPress={onVoiceCancel} style={styles.voiceDeleteButton}>
           <Ionicons name="trash" size={22} color="#FF3B30" />
@@ -337,18 +349,23 @@ function MessageInput({ value, onChange, onSend, onAttachment, onVoiceStart, onV
   }
 
   return (
-    <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: insets.bottom + 6 }]}>
+    <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: bottomPadding }]}>
       <View style={[styles.inputRow, { backgroundColor: colors.inputBackground }]}>
-        
-        <Pressable onPress={onAttachment} style={styles.inputIconButton}>
-          <IconSymbol name="plus" size={24} color="#fff" />
-        </Pressable>
-
         <TextInput
           style={[styles.textInput, { color: colors.text }]} placeholder="Type a message..."
           placeholderTextColor={colors.textSecondary} value={value} onChangeText={handleTextChange}
           multiline maxLength={1000}
         />
+
+        <Pressable onPress={onAttachment} style={styles.inputIconButton}>
+          <Ionicons name="attach" size={24} color={colors.textSecondary} />
+        </Pressable>
+
+        {!value.trim() && (
+          <Pressable onPress={() => onSelect('camera')} style={styles.inputIconButton}>
+            <Ionicons name="camera" size={22} color={colors.textSecondary} />
+          </Pressable>
+        )}
       </View>
 
       <Pressable onPress={value.trim() ? onSend : onVoiceStart} style={[styles.sendButton, { backgroundColor: colors.primary }]}>
@@ -365,11 +382,13 @@ export default function ChatDetailScreen() {
   const { user } = useAuth();
   const { initiateCall } = useCall();
 
-  const [chat, setChat] = useState<Chat | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [cachedChat] = useState(() => chatId ? cache.get<Chat>(CacheKeys.chatDetail(chatId)) : null);
+  const [cachedMessages] = useState(() => chatId ? cache.get<Message[]>(CacheKeys.messages(chatId)) : null);
+  const [chat, setChat] = useState<Chat | null>(cachedChat);
+  const [messages, setMessages] = useState<Message[]>(cachedMessages || []);
   const [messageText, setMessageText] = useState('');
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedMessages);
   const [loadingMore, setLoadingMore] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [page, setPage] = useState(1);
@@ -377,6 +396,7 @@ export default function ChatDetailScreen() {
   const [isUploading, setIsUploading] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
+  const [pendingMedia, setPendingMedia] = useState<PickedMedia | null>(null);
   const flatListRef = useRef<FlatList>(null);
   // Get the other participant for PRIVATE chats
   const otherMember = chat?.members?.find((m) => m.user.id !== user?.id);
@@ -399,6 +419,10 @@ export default function ChatDetailScreen() {
       setMessages(messagesData.messages);
       setHasMore(messagesData.pagination.hasMore);
       setPage(1);
+
+      // Cache results
+      cache.set(CacheKeys.chatDetail(chatId), chatData);
+      cache.set(CacheKeys.messages(chatId), messagesData.messages);
 
       // Mark messages as read
       chatApi.markAsRead(chatId);
@@ -631,7 +655,7 @@ export default function ChatDetailScreen() {
     }
 
     if (media) {
-      sendMediaMessage(media);
+      setPendingMedia(media);
     }
   };
 
@@ -865,7 +889,7 @@ export default function ChatDetailScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.backgroundSecondary }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}>
       {/* Custom Header */}
       <ChatHeader
@@ -918,6 +942,7 @@ export default function ChatDetailScreen() {
         onChange={setMessageText}
         onSend={handleSend}
         onAttachment={handleAttachment}
+        onSelect={handleAttachmentSelect}
         onVoiceStart={handleVoiceStart}
         onVoiceStop={handleVoiceStop}
         onVoiceCancel={handleVoiceCancel}
@@ -944,7 +969,7 @@ export default function ChatDetailScreen() {
             <Image
               source={{ uri: previewImageUrl }}
               style={styles.imagePreviewFull}
-              resizeMode="contain"
+              contentFit="contain"
             />
           </View>
         </Modal>
@@ -964,6 +989,35 @@ export default function ChatDetailScreen() {
             <View style={styles.videoPlayerHeader}>
               <Pressable onPress={() => setPreviewVideoUrl(null)} style={styles.videoPlayerCloseBtn}>
                 <Ionicons name="close" size={28} color="#ffffff" />
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Media Preview Modal (before sending) */}
+      {pendingMedia && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setPendingMedia(null)}>
+          <View style={styles.mediaPreviewOverlay}>
+            <Pressable style={styles.mediaPreviewClose} onPress={() => setPendingMedia(null)}>
+              <Ionicons name="close" size={28} color="#ffffff" />
+            </Pressable>
+            <Image
+              source={{ uri: pendingMedia.uri }}
+              style={styles.mediaPreviewImage}
+              contentFit="contain"
+            />
+            <View style={styles.mediaPreviewFooter}>
+              <Text style={styles.mediaPreviewRecipient} numberOfLines={1}>
+                {otherUser?.name || chat?.name || 'Recipient'}
+              </Text>
+              <Pressable
+                style={[styles.mediaPreviewSendBtn, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  sendMediaMessage(pendingMedia);
+                  setPendingMedia(null);
+                }}>
+                <Ionicons name="send" size={22} color="#fff" />
               </Pressable>
             </View>
           </View>
@@ -1226,6 +1280,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
     justifyContent: 'flex-end',
+    zIndex: 10,
   },
   attachmentMenu: {
     borderTopLeftRadius: 20,
@@ -1344,5 +1399,45 @@ const styles = StyleSheet.create({
   voiceRecordingTime: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  mediaPreviewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaPreviewClose: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    zIndex: 10,
+    padding: 8,
+  },
+  mediaPreviewImage: {
+    width: Dimensions.get('window').width - 32,
+    height: Dimensions.get('window').height - 200,
+  },
+  mediaPreviewFooter: {
+    position: 'absolute',
+    bottom: 40,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  mediaPreviewRecipient: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '500',
+    flex: 1,
+  },
+  mediaPreviewSendBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 12,
   },
 });

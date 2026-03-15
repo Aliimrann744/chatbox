@@ -27,7 +27,7 @@ export function useVoiceRecorder(): VoiceRecorderResult {
   });
 
   const recordingRef = useRef<Audio.Recording | null>(null);
-  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {

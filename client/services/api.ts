@@ -1,9 +1,6 @@
+import { API_BASE_URL, REFRESH_TOKEN_KEY, TOKEN_KEY } from '@/constants/constant';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://whatsappbizz.online/api';
-const TOKEN_KEY = 'accessToken';
-const REFRESH_TOKEN_KEY = 'refreshToken';
 
 const storage = {
   async getItem(key: string): Promise<string | null> {

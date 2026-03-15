@@ -11,6 +11,7 @@ import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { statusApi, Status, ContactStatusGroup } from '@/services/api';
+import { cache, CacheKeys } from '@/services/cache';
 
 export default function UpdatesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -18,9 +19,11 @@ export default function UpdatesScreen() {
   const { user } = useAuth();
   const router = useRouter();
 
-  const [myStatuses, setMyStatuses] = useState<Status[]>([]);
-  const [contactGroups, setContactGroups] = useState<ContactStatusGroup[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [cachedStatuses] = useState(() => cache.get<Status[]>(CacheKeys.MY_STATUSES));
+  const [cachedGroups] = useState(() => cache.get<ContactStatusGroup[]>(CacheKeys.CONTACT_STATUSES));
+  const [myStatuses, setMyStatuses] = useState<Status[]>(cachedStatuses || []);
+  const [contactGroups, setContactGroups] = useState<ContactStatusGroup[]>(cachedGroups || []);
+  const [loading, setLoading] = useState(!cachedStatuses && !cachedGroups);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -31,6 +34,8 @@ export default function UpdatesScreen() {
       ]);
       setMyStatuses(mine);
       setContactGroups(contacts);
+      cache.set(CacheKeys.MY_STATUSES, mine);
+      cache.set(CacheKeys.CONTACT_STATUSES, contacts);
     } catch (error) {
       console.error('Failed to fetch statuses:', error);
     } finally {

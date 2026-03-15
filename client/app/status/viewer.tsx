@@ -12,6 +12,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Video, ResizeMode } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
 
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -21,7 +22,7 @@ import { statusApi, Status, StatusViewInfo } from '@/services/api';
 import { useAuth } from '@/contexts/auth-context';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const STATUS_DURATION = 5000; // 5s for images
+const STATUS_DURATION = 5000;
 
 export default function StatusViewerScreen() {
   const router = useRouter();
@@ -47,8 +48,13 @@ export default function StatusViewerScreen() {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressRef = useRef(0);
+  const isPausedRef = useRef(false);
 
   const isOwnStatus = params.userId === currentUser?.id;
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
   useEffect(() => {
     try {
@@ -80,43 +86,12 @@ export default function StatusViewerScreen() {
     }
   }, [currentStatus]);
 
-  // Progress timer
-  const startTimer = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    progressRef.current = 0;
-    setProgress(0);
-
-    const isVideo = currentStatus?.type === 'VIDEO';
-    const duration = isVideo ? 10000 : STATUS_DURATION;
-    const interval = 50;
-
-    timerRef.current = setInterval(() => {
-      if (isPaused) return;
-      progressRef.current += interval / duration;
-      setProgress(progressRef.current);
-
-      if (progressRef.current >= 1) {
-        goNext();
-      }
-    }, interval);
-  }, [currentIndex, statusList, isPaused, currentGroupIndex, allGroups]);
-
-  useEffect(() => {
-    if (statusList.length > 0) {
-      startTimer();
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [currentIndex, statusList, startTimer]);
-
-  const goNext = () => {
+  const goNext = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
 
     if (currentIndex < statusList.length - 1) {
       setCurrentIndex((prev) => prev + 1);
     } else if (allGroups.length > 0 && currentGroupIndex < allGroups.length - 1) {
-      // Move to next user's statuses
       const nextGroupIdx = currentGroupIndex + 1;
       setCurrentGroupIndex(nextGroupIdx);
       setStatusList(allGroups[nextGroupIdx].statuses);
@@ -124,9 +99,9 @@ export default function StatusViewerScreen() {
     } else {
       router.back();
     }
-  };
+  }, [currentIndex, statusList.length, allGroups, currentGroupIndex]);
 
-  const goPrev = () => {
+  const goPrev = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
 
     if (currentIndex > 0) {
@@ -138,9 +113,40 @@ export default function StatusViewerScreen() {
       setStatusList(prevStatuses);
       setCurrentIndex(prevStatuses.length - 1);
     }
-  };
+  }, [currentIndex, allGroups, currentGroupIndex]);
+
+  // Progress timer
+  useEffect(() => {
+    if (statusList.length === 0 || !currentStatus) return;
+
+    if (timerRef.current) clearInterval(timerRef.current);
+    progressRef.current = 0;
+    setProgress(0);
+
+    const isVideo = currentStatus.type === 'VIDEO';
+    const duration = isVideo ? 10000 : STATUS_DURATION;
+    const interval = 50;
+
+    timerRef.current = setInterval(() => {
+      if (isPausedRef.current) return;
+      progressRef.current += interval / duration;
+      setProgress(progressRef.current);
+
+      if (progressRef.current >= 1) {
+        goNext();
+      }
+    }, interval);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [currentIndex, statusList, currentStatus, goNext]);
 
   const handlePress = (e: any) => {
+    if (showViewers) {
+      setShowViewers(false);
+      return;
+    }
     const x = e.nativeEvent.locationX;
     if (x < SCREEN_WIDTH / 3) {
       goPrev();
@@ -159,6 +165,9 @@ export default function StatusViewerScreen() {
     return `${Math.floor(hrs / 24)}d ago`;
   };
 
+  const canGoPrev = currentIndex > 0 || (allGroups.length > 0 && currentGroupIndex > 0);
+  const canGoNext = currentIndex < statusList.length - 1 || (allGroups.length > 0 && currentGroupIndex < allGroups.length - 1);
+
   if (!currentStatus) {
     return (
       <View style={[styles.container, { backgroundColor: '#000' }]}>
@@ -169,12 +178,13 @@ export default function StatusViewerScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: '#000' }]}>
-      {/* Tap Zones */}
+      {/* Tap Zone */}
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={handlePress}
         onLongPress={() => setIsPaused(true)}
-        onPressOut={() => setIsPaused(false)}>
+        onPressOut={() => setIsPaused(false)}
+      >
         {/* Media */}
         {currentStatus.type === 'VIDEO' ? (
           <Video
@@ -234,32 +244,53 @@ export default function StatusViewerScreen() {
         </View>
       </View>
 
-      {/* Caption */}
-      {currentStatus.caption ? (
-        <View style={[styles.captionContainer, { paddingBottom: insets.bottom + 16 }]}>
-          <Text style={styles.captionText}>{currentStatus.caption}</Text>
-        </View>
-      ) : null}
-
-      {/* View Count (own statuses) */}
-      {isOwnStatus && (
-        <Pressable
-          style={[styles.viewCountBar, { paddingBottom: insets.bottom + 16 }]}
-          onPress={() => setShowViewers(!showViewers)}>
-          <IconSymbol name="person.fill" size={18} color="#fff" />
-          <Text style={styles.viewCountText}>
-            {currentStatus.viewCount || 0} view{currentStatus.viewCount !== 1 ? 's' : ''}
-          </Text>
+      {/* Left/Right Arrow Navigation */}
+      {canGoPrev && !showViewers && (
+        <Pressable style={[styles.navArrow, styles.navArrowLeft]} onPress={goPrev}>
+          <Ionicons name="chevron-back" size={28} color="rgba(255,255,255,0.8)" />
+        </Pressable>
+      )}
+      {canGoNext && !showViewers && (
+        <Pressable style={[styles.navArrow, styles.navArrowRight]} onPress={goNext}>
+          <Ionicons name="chevron-forward" size={28} color="rgba(255,255,255,0.8)" />
         </Pressable>
       )}
 
-      {/* Viewers List */}
+      {/* Bottom Area: Caption + View Count */}
+      {!showViewers && (
+        <View style={[styles.bottomArea, { paddingBottom: insets.bottom + 12 }]}>
+          {/* Caption */}
+          {currentStatus.caption ? (
+            <View style={styles.captionContainer}>
+              <Text style={styles.captionText}>{currentStatus.caption}</Text>
+            </View>
+          ) : null}
+
+          {/* View count for own statuses */}
+          {isOwnStatus && (
+            <Pressable style={styles.viewCountRow} onPress={() => setShowViewers(true)}>
+              <Ionicons name="eye-outline" size={18} color="rgba(255,255,255,0.8)" />
+              <Text style={styles.viewCountText}>
+                {currentStatus.viewCount || 0} view{currentStatus.viewCount !== 1 ? 's' : ''}
+              </Text>
+              <Ionicons name="chevron-up" size={16} color="rgba(255,255,255,0.6)" />
+            </Pressable>
+          )}
+        </View>
+      )}
+
+      {/* Viewers List (own statuses only) */}
       {showViewers && isOwnStatus && (
         <View style={[styles.viewersList, { paddingBottom: insets.bottom }]}>
           <View style={styles.viewersHeader}>
-            <Text style={styles.viewersTitle}>Viewed by</Text>
-            <Pressable onPress={() => setShowViewers(false)}>
-              <IconSymbol name="xmark" size={22} color="#fff" />
+            <View style={styles.viewersHeaderLeft}>
+              <Ionicons name="eye-outline" size={18} color="#fff" />
+              <Text style={styles.viewersTitle}>
+                {currentStatus.viewCount || 0} view{currentStatus.viewCount !== 1 ? 's' : ''}
+              </Text>
+            </View>
+            <Pressable onPress={() => setShowViewers(false)} style={styles.viewersCloseBtn}>
+              <Ionicons name="chevron-down" size={22} color="#fff" />
             </Pressable>
           </View>
           <FlatList
@@ -283,6 +314,11 @@ export default function StatusViewerScreen() {
               </View>
             )}
             style={styles.viewersScroll}
+            ListEmptyComponent={
+              <View style={styles.emptyViewers}>
+                <Text style={styles.emptyViewersText}>No views yet</Text>
+              </View>
+            }
           />
         </View>
       )}
@@ -298,6 +334,8 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
   },
+
+  // Progress bars
   progressContainer: {
     position: 'absolute',
     top: 0,
@@ -320,6 +358,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 2,
   },
+
+  // Header
   header: {
     position: 'absolute',
     left: 0,
@@ -359,14 +399,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 1,
   },
-  captionContainer: {
+
+  // Navigation arrows
+  navArrow: {
+    position: 'absolute',
+    top: '45%',
+    zIndex: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  navArrowLeft: {
+    left: 8,
+  },
+  navArrowRight: {
+    right: 8,
+  },
+
+  // Bottom area (caption + view count)
+  bottomArea: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    zIndex: 10,
+  },
+  captionContainer: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    paddingVertical: 14,
   },
   captionText: {
     color: '#fff',
@@ -374,22 +438,20 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: 'center',
   },
-  viewCountBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+  viewCountRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 12,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0,0,0,0.45)',
     gap: 6,
   },
   viewCountText: {
-    color: '#fff',
+    color: 'rgba(255,255,255,0.85)',
     fontSize: 14,
   },
+
+  // Viewers list
   viewersList: {
     position: 'absolute',
     bottom: 0,
@@ -410,10 +472,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: 'rgba(255,255,255,0.15)',
   },
+  viewersHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   viewersTitle: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  viewersCloseBtn: {
+    padding: 4,
   },
   viewersScroll: {
     maxHeight: SCREEN_HEIGHT * 0.35,
@@ -449,5 +519,13 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
     fontSize: 12,
     marginTop: 2,
+  },
+  emptyViewers: {
+    paddingVertical: 30,
+    alignItems: 'center',
+  },
+  emptyViewersText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
   },
 });

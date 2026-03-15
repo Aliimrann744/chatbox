@@ -58,12 +58,12 @@ export class StatusService {
   }
 
   async getContactStatuses(userId: string) {
-    // Get users who added ME as their contact — their statuses are visible to me
+    // Get users I added as contacts — show their statuses to me
     const contacts = await this.prisma.contact.findMany({
-      where: { contactId: userId }, select: { userId: true },
+      where: { userId: userId }, select: { contactId: true },
     });
 
-    const contactIds = contacts.map((c) => c.userId);
+    const contactIds = contacts.map((c) => c.contactId);
     if (contactIds.length === 0) return [];
 
     // Get non-expired statuses from contacts

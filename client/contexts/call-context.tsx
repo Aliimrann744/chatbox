@@ -245,6 +245,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         socketService.sendCallOffer(data.callId, offer);
 
         InCallManager.start({ media: current.type === 'VIDEO' ? 'video' : 'audio' });
+        InCallManager.setForceSpeakerphoneOn(current.type === 'VIDEO');
       } catch (err) {
         console.error('WebRTC: Failed to create offer:', err);
         resetCallState();
@@ -424,6 +425,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         InCallManager.start({
           media: callStateRef.current.type === 'VIDEO' ? 'video' : 'audio',
         });
+        InCallManager.setForceSpeakerphoneOn(callStateRef.current.type === 'VIDEO');
       } else {
         throw new Error(result.error || 'Failed to accept call');
       }

@@ -114,6 +114,7 @@ export default function ActiveCallScreen() {
                 <RTCView
                   streamURL={remoteStream.toURL()}
                   objectFit="cover"
+                  zOrder={0}
                   style={{ flex: 1 }}
                 />
               ) : (

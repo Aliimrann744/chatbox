@@ -58,13 +58,15 @@ export class ContactService {
         }
 
         const existingContact = await this.prisma.contact.findUnique({ where: { userId_contactId: { userId, contactId: user.id }}});
-        console.log("existingContact", existingContact);
         if (!existingContact) {
-          console.log("create contact");
           await this.prisma.contact.create({ data: { userId, contactId: user.id, nickname: deviceName }});
         } else if (deviceName && existingContact.nickname !== deviceName) {
-          console.log("updated contact");
           await this.prisma.contact.update({ where: { id: existingContact.id }, data: { nickname: deviceName }});
+        }
+
+        const reverseContact = await this.prisma.contact.findUnique({ where: { userId_contactId: { userId: user.id, contactId: userId }}});
+        if (!reverseContact) {
+          await this.prisma.contact.create({ data: { userId: user.id, contactId: userId }});
         }
       }),
     );

@@ -5,6 +5,7 @@ export const InCallManager = {
   start: () => {},
   stop: () => {},
   setSpeakerphoneOn: () => {},
+  setForceSpeakerphoneOn: () => {},
 };
 export const MediaStream = null;
 export const isWebRTCAvailable = false;

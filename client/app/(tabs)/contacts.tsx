@@ -8,6 +8,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { contactApi, chatApi, Contact } from '@/services/api';
+import { cache, CacheKeys } from '@/services/cache';
 
 interface ContactSection {
   title: string;
@@ -18,10 +19,16 @@ export default function ContactsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [initialCache] = useState(() => cache.get<Contact[]>(CacheKeys.CONTACTS));
+  const [contacts, setContacts] = useState<Contact[]>(initialCache || []);
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialCache);
   const [refreshing, setRefreshing] = useState(false);
+
+  const updateContacts = useCallback((data: Contact[]) => {
+    setContacts(data);
+    cache.set(CacheKeys.CONTACTS, data);
+  }, []);
 
   // Auto-sync device contacts with server
   const autoSync = useCallback(async () => {
@@ -30,7 +37,7 @@ export default function ContactsScreen() {
       if (status !== 'granted') {
         // Permission denied - fall back to fetching existing contacts
         const data = await contactApi.getContacts();
-        setContacts(data);
+        updateContacts(data);
         return;
       }
 
@@ -56,19 +63,19 @@ export default function ContactsScreen() {
       if (deviceContacts.length === 0) {
         // No phone contacts - fetch existing contacts from server
         const data = await contactApi.getContacts();
-        setContacts(data);
+        updateContacts(data);
         return;
       }
 
       // Sync with server - returns Contact[] with auto-added contacts
       const syncedContacts = await contactApi.syncContacts(deviceContacts);
-      setContacts(syncedContacts);
+      updateContacts(syncedContacts);
     } catch (error) {
       console.error('Error syncing contacts:', error);
       // Fall back to fetching existing contacts
       try {
         const data = await contactApi.getContacts();
-        setContacts(data);
+        updateContacts(data);
       } catch {
         // Silent fail
       }
@@ -76,7 +83,7 @@ export default function ContactsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [updateContacts]);
 
   // Auto-sync on mount
   useEffect(() => {
