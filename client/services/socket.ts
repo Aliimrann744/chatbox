@@ -2,6 +2,7 @@ import { io, Socket } from 'socket.io-client';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { API_BASE_URL, ensureFreshToken } from '@/services/api';
+import { TOKEN_KEY } from '@/constants/constant';
 
 // Strip /api suffix for socket connections — Socket.IO namespaces don't use the REST prefix
 const SOCKET_URL = API_BASE_URL.replace(/\/api\/?$/, '');
@@ -76,43 +77,36 @@ class SocketService {
     // Prevent double connection
     if (this.chatSocket?.connected && this.callSocket?.connected) return;
 
-    // Clean up any stale connections first
-    if (this.chatSocket || this.callSocket) {
-      this.disconnect();
-    }
-
     const token = await this.getToken();
     if (!token) {
       console.log('No token available, cannot connect to socket');
       return;
     }
 
-    // Connect to chat namespace - dynamic auth so reconnections use the latest token
-    this.chatSocket = io(`${SOCKET_URL}/chat`, {
-      auth: (cb) => {
+    const socketOpts = {
+      auth: (cb: any) => {
         this.getToken().then(t => cb({ token: t }));
       },
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'] as any,
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-    });
+    };
 
-    // Connect to call namespace - dynamic auth so reconnections use the latest token
-    this.callSocket = io(`${SOCKET_URL}/call`, {
-      auth: (cb) => {
-        this.getToken().then(t => cb({ token: t }));
-      },
-      transports: ['websocket'],
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-    });
+    // Connect chat namespace if not already connected
+    if (!this.chatSocket?.connected) {
+      if (this.chatSocket) this.chatSocket.disconnect();
+      this.chatSocket = io(`${SOCKET_URL}/chat`, socketOpts);
+      this.setupChatListeners();
+    }
 
-    this.setupChatListeners();
-    this.setupCallListeners();
+    // Connect call namespace if not already connected
+    if (!this.callSocket?.connected) {
+      if (this.callSocket) this.callSocket.disconnect();
+      this.callSocket = io(`${SOCKET_URL}/call`, socketOpts);
+      this.setupCallListeners();
+    }
   }
 
   async reconnect() {
@@ -137,9 +131,9 @@ class SocketService {
 
   private async getToken(): Promise<string | null> {
     if (Platform.OS === 'web') {
-      return localStorage.getItem('accessToken');
+      return localStorage.getItem(TOKEN_KEY);
     }
-    return SecureStore.getItemAsync('accessToken');
+    return SecureStore.getItemAsync(TOKEN_KEY);
   }
 
   // ==================== CHAT SOCKET LISTENERS ====================
@@ -216,7 +210,8 @@ class SocketService {
       console.log('Call socket disconnected:', reason);
     });
 
-    this.callSocket.on('connect_error', async () => {
+    this.callSocket.on('connect_error', async (err) => {
+      console.warn('Call socket connect_error:', err.message);
       if (!this.isRefreshingToken) {
         this.isRefreshingToken = true;
         try { await ensureFreshToken(); } catch {}
@@ -336,8 +331,17 @@ class SocketService {
 
   initiateCall(receiverId: string, type: 'VOICE' | 'VIDEO'): Promise<any> {
     return new Promise((resolve) => {
-      if (!this.callSocket) {
-        resolve({ success: false, error: 'Not connected' });
+      if (!this.callSocket?.connected) {
+        console.warn('Call socket not connected, attempting reconnect...');
+        this.callSocket?.connect();
+        // Wait briefly for reconnection
+        setTimeout(() => {
+          if (!this.callSocket?.connected) {
+            resolve({ success: false, error: 'Call socket not connected' });
+            return;
+          }
+          this.callSocket.emit('call_initiate', { receiverId, type }, resolve);
+        }, 1500);
         return;
       }
       this.callSocket.emit('call_initiate', { receiverId, type }, resolve);

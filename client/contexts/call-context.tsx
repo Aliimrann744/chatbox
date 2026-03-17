@@ -390,9 +390,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         } else {
           throw new Error(result.error || 'Failed to initiate call');
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error initiating call:', error);
-        Alert.alert('Error', 'Failed to initiate call. Please try again.');
+        const msg = error?.message || error?.error || 'Failed to initiate call. Please try again.';
+        Alert.alert('Error', msg);
         resetCallState();
       }
     },
