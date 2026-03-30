@@ -140,7 +140,7 @@ class NotificationService {
 
   // Handle notification received in foreground
   private handleNotificationReceived = (notification: Notifications.Notification): void => {
-    const data = notification.request.content.data as NotificationData;
+    const data = notification.request.content.data as unknown as NotificationData;
     console.log('Notification received:', data);
 
     // You can customize behavior based on notification type
@@ -149,7 +149,7 @@ class NotificationService {
 
   // Handle notification tap
   private handleNotificationResponse = (response: Notifications.NotificationResponse): void => {
-    const data = response.notification.request.content.data as NotificationData;
+    const data = response.notification.request.content.data as unknown as NotificationData;
     console.log('Notification tapped:', data);
 
     this.navigateToNotification(data);
@@ -188,7 +188,7 @@ class NotificationService {
   // Schedule a local notification (for testing)
   async scheduleLocalNotification(title: string, body: string, data?: NotificationData): Promise<string> {
     const id = await Notifications.scheduleNotificationAsync({
-      content: { title, body, data, sound: true },
+      content: { title, body, data: data as unknown as Record<string, unknown>, sound: true },
       trigger: null,
     });
     return id;

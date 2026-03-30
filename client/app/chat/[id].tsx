@@ -825,7 +825,7 @@ export default function ChatDetailScreen() {
           {
             uri: result.uri,
             type: 'audio/mp4',
-            name: `voice_${Date.now()}.mp4`,
+            name: `voice_${Date.now()}.m4a`,
           },
           'voice'
         );
@@ -889,7 +889,7 @@ export default function ChatDetailScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.backgroundSecondary }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}>
       {/* Custom Header */}
       <ChatHeader

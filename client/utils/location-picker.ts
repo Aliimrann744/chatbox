@@ -55,7 +55,7 @@ export async function getCurrentLocation(): Promise<LocationData | null> {
     try {
       const [geocode] = await Location.reverseGeocodeAsync({ latitude, longitude });
       if (geocode) {
-        name = geocode.name || geocode.street;
+        name = geocode.name || geocode.street || undefined;
         address = [
           geocode.street,
           geocode.city,

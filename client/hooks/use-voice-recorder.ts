@@ -114,7 +114,6 @@ export function useVoiceRecorder(): VoiceRecorderResult {
       // Stop recording
       await recordingRef.current.stopAndUnloadAsync();
       const uri = recordingRef.current.getURI();
-      const status = await recordingRef.current.getStatusAsync();
 
       recordingRef.current = null;
 

@@ -91,7 +91,7 @@ export async function pickVideo(): Promise<PickedMedia | null> {
     mimeType: asset.mimeType || 'video/mp4',
     name: fileName,
     size: asset.fileSize,
-    duration: asset.duration,
+    duration: asset.duration ?? undefined,
     width: asset.width,
     height: asset.height,
   };
@@ -147,7 +147,7 @@ export async function recordVideo(): Promise<PickedMedia | null> {
     mimeType: asset.mimeType || 'video/mp4',
     name: fileName,
     size: asset.fileSize,
-    duration: asset.duration,
+    duration: asset.duration ?? undefined,
     width: asset.width,
     height: asset.height,
   };
@@ -202,7 +202,7 @@ export async function pickMultipleMedia(): Promise<PickedMedia[]> {
       mimeType: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
       name: fileName,
       size: asset.fileSize,
-      duration: asset.duration,
+      duration: asset.duration ?? undefined,
       width: asset.width,
       height: asset.height,
     };

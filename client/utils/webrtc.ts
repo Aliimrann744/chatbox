@@ -1,13 +1,13 @@
 // Web fallback — react-native-webrtc is not available on web
 
-export const RTCView = null;
+export const RTCView = (_props: any) => null;
 export const InCallManager = {
   start: (_opts?: any) => {},
   stop: () => {},
   setSpeakerphoneOn: (_on: boolean) => {},
   setForceSpeakerphoneOn: (_on: boolean) => {},
 };
-export const MediaStream = null;
+export const MediaStream = null as any;
 export const isWebRTCAvailable = false;
 
 export type CallType = 'VOICE' | 'VIDEO';

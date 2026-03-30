@@ -22,7 +22,7 @@ export function useNotifications() {
 
     return () => {
       notificationService.cleanup();
-      Notifications.removeNotificationSubscription(notificationListener);
+      notificationListener.remove();
     };
   }, []);
 

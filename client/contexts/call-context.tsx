@@ -13,7 +13,7 @@ import socketService from '@/services/socket';
 import { useAuth } from '@/contexts/auth-context';
 
 export type CallType = 'VOICE' | 'VIDEO';
-export type CallStatus = 'idle' | 'ringing' | 'connecting' | 'connected' | 'ended';
+export type CallStatus = 'idle' | 'calling' | 'ringing' | 'connecting' | 'connected' | 'ended';
 export type CallDirection = 'incoming' | 'outgoing';
 
 interface CallParticipant {
@@ -113,7 +113,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Setup peer connection with media
   const setupPeerConnection = useCallback(async (callType: CallType) => {
     if (callType === 'VIDEO') {
-      await ensureCameraPermission();
+      const hasCameraPermission = await ensureCameraPermission();
+      if (!hasCameraPermission) {
+        throw new Error('Camera permission is required for video calls');
+      }
     }
 
     const { pc, localStreamPromise } = createPeerConnection(
@@ -349,7 +352,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setCallState({
           callId: null,
           type,
-          status: 'ringing',
+          status: 'calling',
           direction: 'outgoing',
           participant: {
             id: receiverId,
@@ -365,23 +368,31 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const result = await socketService.initiateCall(receiverId, type);
 
         if (result.success) {
-          setCallState((prev) => ({
-            ...prev,
-            callId: result.callId,
-          }));
+          if (result.receiverOnline === true) {
+            setCallState((prev) => ({
+              ...prev,
+              callId: result.callId,
+              status: 'ringing',
+            }));
+          } else {
+            setCallState((prev) => ({
+              ...prev,
+              callId: result.callId,
+            }));
+          }
 
-          // Notify caller immediately if receiver is offline
+          // Notify caller if receiver is offline
           if (result.receiverOnline === false) {
             setTimeout(async () => {
               await socketService.endCall(result.callId);
               resetCallState();
-              Alert.alert('User Offline', `${receiverName} is not available right now. Try again later.`);
-            }, 1500);
+              Alert.alert('User Unavailable', `${receiverName} is not available right now. Try again later.`);
+            }, 3000);
             return;
           }
 
           callTimeoutRef.current = setTimeout(async () => {
-            if (callStateRef.current.status === 'ringing') {
+            if (callStateRef.current.status === 'calling' || callStateRef.current.status === 'ringing') {
               await socketService.endCall(result.callId);
               resetCallState();
               Alert.alert('No Answer', 'The user did not answer your call.');

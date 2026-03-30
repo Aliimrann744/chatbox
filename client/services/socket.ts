@@ -5,7 +5,7 @@ import { API_BASE_URL, ensureFreshToken } from '@/services/api';
 import { TOKEN_KEY } from '@/constants/constant';
 
 // Strip /api suffix for socket connections — Socket.IO namespaces don't use the REST prefix
-const SOCKET_URL = API_BASE_URL.replace(/\/api\/?$/, '');
+const SOCKET_URL = (API_BASE_URL || '').replace(/\/api\/?$/, '');
 
 // Types for socket events
 export interface Message {

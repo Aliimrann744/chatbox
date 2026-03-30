@@ -24,7 +24,7 @@ export function createPeerConnection(
   callType: CallType,
   callbacks: PeerConnectionCallbacks,
 ): { pc: RTCPeerConnection; localStreamPromise: Promise<MediaStream> } {
-  const pc = new RTCPeerConnection({ iceServers });
+  const pc = new RTCPeerConnection({ iceServers }) as any;
 
   pc.onicecandidate = (event: any) => {
     if (event.candidate) {

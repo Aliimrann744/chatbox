@@ -13,6 +13,4 @@ yarn-error.*
 .env*.local
 .vscode/
 .claude/
-android/
-ios/
 app-example/

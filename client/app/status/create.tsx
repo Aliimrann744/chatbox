@@ -46,8 +46,9 @@ export default function StatusCreateScreen() {
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
 
-  const [media, setMedia] = useState<PickedMedia | null>(null);
-  const [originalMedia, setOriginalMedia] = useState<PickedMedia | null>(null);
+  const [mediaList, setMediaList] = useState<PickedMedia[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const media = mediaList[currentIndex] || null;
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState('');
@@ -82,8 +83,8 @@ export default function StatusCreateScreen() {
         router.back();
         return;
       }
-      setMedia(picked[0]);
-      setOriginalMedia(picked[0]);
+      setMediaList(picked);
+      setCurrentIndex(0);
     })();
   }, []);
 
@@ -137,14 +138,18 @@ export default function StatusCreateScreen() {
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         const fileName = asset.uri.split('/').pop() || 'cropped.jpg';
-        setMedia({
-          uri: asset.uri,
-          type: 'image',
-          mimeType: asset.mimeType || 'image/jpeg',
-          name: fileName,
-          size: asset.fileSize,
-          width: asset.width,
-          height: asset.height,
+        setMediaList((prev) => {
+          const updated = [...prev];
+          updated[currentIndex] = {
+            uri: asset.uri,
+            type: 'image',
+            mimeType: asset.mimeType || 'image/jpeg',
+            name: fileName,
+            size: asset.fileSize,
+            width: asset.width,
+            height: asset.height,
+          };
+          return updated;
         });
         setDrawPaths([]);
         setHasEdits(true);
@@ -176,8 +181,8 @@ export default function StatusCreateScreen() {
   const doReselect = async () => {
     const picked = await pickMultipleMedia();
     if (picked.length) {
-      setMedia(picked[0]);
-      setOriginalMedia(picked[0]);
+      setMediaList(picked);
+      setCurrentIndex(0);
       setDrawPaths([]);
       setCurrentPath('');
       setHasEdits(false);
@@ -195,21 +200,24 @@ export default function StatusCreateScreen() {
   };
 
   const handleSend = async () => {
-    if (!media || uploading) return;
+    if (!mediaList.length || uploading) return;
     setUploading(true);
 
     try {
-      setProgress('Uploading...');
-      const uploaded = await uploadApi.uploadFile(
-        { uri: media.uri, type: media.mimeType, name: media.name },
-        'status',
-      );
+      for (let i = 0; i < mediaList.length; i++) {
+        const item = mediaList[i];
+        setProgress(`Uploading ${i + 1} of ${mediaList.length}...`);
+        const uploaded = await uploadApi.uploadFile(
+          { uri: item.uri, type: item.mimeType, name: item.name },
+          'status',
+        );
 
-      await statusApi.createStatus({
-        type: media.type === 'video' ? 'VIDEO' : 'IMAGE',
-        mediaUrl: uploaded.url,
-        caption: caption || undefined,
-      });
+        await statusApi.createStatus({
+          type: item.type === 'video' ? 'VIDEO' : 'IMAGE',
+          mediaUrl: uploaded.url,
+          caption: i === 0 ? (caption || undefined) : undefined,
+        });
+      }
 
       router.back();
     } catch (error) {
@@ -234,7 +242,7 @@ export default function StatusCreateScreen() {
     }
   };
 
-  if (!media) {
+  if (!mediaList.length) {
     return (
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator size="large" color="#fff" />
@@ -247,7 +255,7 @@ export default function StatusCreateScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {/* ─── Top Header ─── */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -309,6 +317,25 @@ export default function StatusCreateScreen() {
               />
             ) : null}
           </Svg>
+        )}
+
+        {/* Multi-media counter */}
+        {mediaList.length > 1 && (
+          <View style={styles.mediaCounter}>
+            <Text style={styles.mediaCounterText}>{currentIndex + 1} / {mediaList.length}</Text>
+          </View>
+        )}
+
+        {/* Multi-media navigation */}
+        {mediaList.length > 1 && currentIndex > 0 && (
+          <Pressable onPress={() => setCurrentIndex(i => i - 1)} style={[styles.mediaNavBtn, styles.mediaNavBtnLeft]}>
+            <Ionicons name="chevron-back" size={28} color="#fff" />
+          </Pressable>
+        )}
+        {mediaList.length > 1 && currentIndex < mediaList.length - 1 && (
+          <Pressable onPress={() => setCurrentIndex(i => i + 1)} style={[styles.mediaNavBtn, styles.mediaNavBtnRight]}>
+            <Ionicons name="chevron-forward" size={28} color="#fff" />
+          </Pressable>
         )}
       </View>
 
@@ -484,6 +511,38 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+
+  // Media navigation
+  mediaCounter: {
+    position: 'absolute',
+    top: 12,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  mediaCounterText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  mediaNavBtn: {
+    position: 'absolute',
+    top: '45%',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaNavBtnLeft: {
+    left: 8,
+  },
+  mediaNavBtnRight: {
+    right: 8,
   },
 
   // Upload overlay

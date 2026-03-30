@@ -23,7 +23,9 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_NO_DEV_CLIENT": "1"
+        "EXPO_NO_DEV_CLIENT": "1",
+        "EXPO_PUBLIC_FACEBOOK_APP_ID": "1154080012747807",
+        "EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN": "c99709deda6f1100bc89ae45c3bba7df"
       }
     }
   },

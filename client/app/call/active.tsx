@@ -87,6 +87,8 @@ export default function ActiveCallScreen() {
 
   const getStatusText = () => {
     switch (callState.status) {
+      case 'calling':
+        return 'Calling...';
       case 'ringing':
         return 'Ringing...';
       case 'connecting':
@@ -151,22 +153,22 @@ export default function ActiveCallScreen() {
         )}
       </View>
 
+      {/* Top info for video calls */}
+      {callState.type === 'VIDEO' && (
+        <View style={styles.topInfo}>
+          <Text style={styles.videoParticipantName}>
+            {callState.participant?.name}
+          </Text>
+          <Text style={styles.videoDuration}>{getStatusText()}</Text>
+        </View>
+      )}
+
       {/* Controls */}
       <Animated.View
         style={[
           styles.controlsContainer,
           { opacity: callState.type === 'VIDEO' ? fadeAnim : 1 },
         ]}>
-        {/* Top info for video calls */}
-        {callState.type === 'VIDEO' && (
-          <View style={styles.topInfo}>
-            <Text style={styles.videoParticipantName}>
-              {callState.participant?.name}
-            </Text>
-            <Text style={styles.videoDuration}>{getStatusText()}</Text>
-          </View>
-        )}
-
         {/* Action buttons */}
         <View style={styles.actionsContainer}>
           {/* Mute button */}
@@ -174,14 +176,15 @@ export default function ActiveCallScreen() {
             onPress={toggleMute}
             style={({ pressed }) => [
               styles.controlButton,
-              callState.isMuted && styles.controlButtonActive,
               pressed && styles.buttonPressed,
             ]}>
-            <IconSymbol
-              name={callState.isMuted ? 'mic.slash.fill' : 'mic.fill'}
-              size={24}
-              color="#ffffff"
-            />
+            <View style={[styles.controlButtonCircle, callState.isMuted && styles.controlButtonCircleActive]}>
+              <IconSymbol
+                name={callState.isMuted ? 'mic.slash.fill' : 'mic.fill'}
+                size={24}
+                color="#ffffff"
+              />
+            </View>
             <Text style={styles.controlLabel}>
               {callState.isMuted ? 'Unmute' : 'Mute'}
             </Text>
@@ -193,14 +196,15 @@ export default function ActiveCallScreen() {
               onPress={toggleSpeaker}
               style={({ pressed }) => [
                 styles.controlButton,
-                callState.isSpeakerOn && styles.controlButtonActive,
                 pressed && styles.buttonPressed,
               ]}>
-              <IconSymbol
-                name={callState.isSpeakerOn ? 'speaker.wave.3.fill' : 'speaker.fill'}
-                size={24}
-                color="#ffffff"
-              />
+              <View style={[styles.controlButtonCircle, callState.isSpeakerOn && styles.controlButtonCircleActive]}>
+                <IconSymbol
+                  name={callState.isSpeakerOn ? 'speaker.wave.3.fill' : 'speaker.fill'}
+                  size={24}
+                  color="#ffffff"
+                />
+              </View>
               <Text style={styles.controlLabel}>Speaker</Text>
             </Pressable>
           )}
@@ -211,14 +215,15 @@ export default function ActiveCallScreen() {
               onPress={toggleVideo}
               style={({ pressed }) => [
                 styles.controlButton,
-                !callState.isVideoEnabled && styles.controlButtonActive,
                 pressed && styles.buttonPressed,
               ]}>
-              <IconSymbol
-                name={callState.isVideoEnabled ? 'video.fill' : 'video.slash.fill'}
-                size={24}
-                color="#ffffff"
-              />
+              <View style={[styles.controlButtonCircle, !callState.isVideoEnabled && styles.controlButtonCircleActive]}>
+                <IconSymbol
+                  name={callState.isVideoEnabled ? 'video.fill' : 'video.slash.fill'}
+                  size={24}
+                  color="#ffffff"
+                />
+              </View>
               <Text style={styles.controlLabel}>
                 {callState.isVideoEnabled ? 'Video' : 'Video Off'}
               </Text>
@@ -233,7 +238,9 @@ export default function ActiveCallScreen() {
                 styles.controlButton,
                 pressed && styles.buttonPressed,
               ]}>
-              <IconSymbol name="camera.rotate.fill" size={24} color="#ffffff" />
+              <View style={styles.controlButtonCircle}>
+                <IconSymbol name="camera.rotate.fill" size={24} color="#ffffff" />
+              </View>
               <Text style={styles.controlLabel}>Flip</Text>
             </Pressable>
           )}
@@ -304,13 +311,18 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   controlsContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     paddingBottom: Platform.OS === 'ios' ? 50 : 30,
     paddingHorizontal: 20,
   },
   topInfo: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 20,
+    top: Platform.OS === 'ios' ? 60 : 40,
     left: 20,
+    zIndex: 10,
   },
   videoParticipantName: {
     fontSize: 18,
@@ -329,6 +341,12 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   controlButton: {
+    width: 70,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  controlButtonCircle: {
     width: 54,
     height: 54,
     borderRadius: 27,
@@ -338,15 +356,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  controlButtonActive: {
+  controlButtonCircleActive: {
     backgroundColor: 'rgba(255, 255, 255, 0.35)',
   },
   controlLabel: {
     fontSize: 10,
     color: '#ffffff',
-    marginTop: 4,
-    position: 'absolute',
-    bottom: -18,
+    marginTop: 6,
     textAlign: 'center',
   },
   endCallButton: {
