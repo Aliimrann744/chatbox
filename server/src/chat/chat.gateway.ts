@@ -296,6 +296,107 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { success: true };
   }
 
+  // ==================== DELETE & STAR MESSAGES ====================
+
+  @SubscribeMessage('delete_message')
+  async handleDeleteMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { messageId: string; forEveryone: boolean },
+  ) {
+    const userId = client.data.userId;
+
+    try {
+      if (data.forEveryone) {
+        const result = await this.chatService.deleteMessageForEveryone(userId, data.messageId);
+
+        // Notify all chat members
+        for (const memberUserId of result.memberUserIds) {
+          if (memberUserId !== userId) {
+            const socketId = this.connectedUsers.get(memberUserId);
+            if (socketId) {
+              this.server.to(socketId).emit('message_deleted', {
+                messageId: result.messageId,
+                chatId: result.chatId,
+              });
+            }
+          }
+        }
+
+        // Also confirm to the sender
+        client.emit('message_deleted', {
+          messageId: result.messageId,
+          chatId: result.chatId,
+        });
+
+        return { success: true };
+      } else {
+        const result = await this.chatService.deleteMessagesForMe(userId, [data.messageId]);
+        client.emit('message_deleted', {
+          messageId: data.messageId,
+          chatId: null,
+        });
+        return { success: true };
+      }
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('delete_messages')
+  async handleDeleteMessages(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { messageIds: string[]; forEveryone: boolean },
+  ) {
+    const userId = client.data.userId;
+
+    try {
+      if (data.forEveryone) {
+        for (const messageId of data.messageIds) {
+          try {
+            const result = await this.chatService.deleteMessageForEveryone(userId, messageId);
+            for (const memberUserId of result.memberUserIds) {
+              const socketId = this.connectedUsers.get(memberUserId);
+              if (socketId) {
+                this.server.to(socketId).emit('message_deleted', {
+                  messageId: result.messageId,
+                  chatId: result.chatId,
+                });
+              }
+            }
+          } catch {}
+        }
+        return { success: true };
+      } else {
+        await this.chatService.deleteMessagesForMe(userId, data.messageIds);
+        for (const messageId of data.messageIds) {
+          client.emit('message_deleted', { messageId, chatId: null });
+        }
+        return { success: true };
+      }
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('star_message')
+  async handleStarMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { messageId: string; starred: boolean },
+  ) {
+    const userId = client.data.userId;
+
+    try {
+      if (data.starred) {
+        await this.chatService.starMessage(userId, data.messageId);
+      } else {
+        await this.chatService.unstarMessage(userId, data.messageId);
+      }
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
   // ==================== UTILITY METHODS ====================
 
   // Get socket ID for a user (useful for other services)

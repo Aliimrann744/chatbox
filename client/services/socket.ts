@@ -12,7 +12,7 @@ export interface Message {
   id: string;
   chatId: string;
   senderId: string;
-  type: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT' | 'LOCATION' | 'CONTACT' | 'STICKER';
+  type: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT' | 'LOCATION' | 'CONTACT' | 'STICKER' | 'CALL';
   content?: string;
   mediaUrl?: string;
   mediaType?: string;
@@ -194,6 +194,11 @@ class SocketService {
     this.chatSocket.on('online_status', (data: OnlineStatusEvent) => {
       this.emit('online_status', data);
     });
+
+    // Message deleted events
+    this.chatSocket.on('message_deleted', (data: any) => {
+      this.emit('message_deleted', data);
+    });
   }
 
   // ==================== CALL SOCKET LISTENERS ====================
@@ -315,6 +320,36 @@ class SocketService {
   leaveChat(chatId: string) {
     if (!this.chatSocket) return;
     this.chatSocket.emit('leave_chat', { chatId });
+  }
+
+  deleteMessage(messageId: string, forEveryone: boolean): Promise<any> {
+    return new Promise((resolve) => {
+      if (!this.chatSocket) {
+        resolve({ success: false, error: 'Not connected' });
+        return;
+      }
+      this.chatSocket.emit('delete_message', { messageId, forEveryone }, resolve);
+    });
+  }
+
+  deleteMessages(messageIds: string[], forEveryone: boolean): Promise<any> {
+    return new Promise((resolve) => {
+      if (!this.chatSocket) {
+        resolve({ success: false, error: 'Not connected' });
+        return;
+      }
+      this.chatSocket.emit('delete_messages', { messageIds, forEveryone }, resolve);
+    });
+  }
+
+  starMessage(messageId: string, starred: boolean): Promise<any> {
+    return new Promise((resolve) => {
+      if (!this.chatSocket) {
+        resolve({ success: false, error: 'Not connected' });
+        return;
+      }
+      this.chatSocket.emit('star_message', { messageId, starred }, resolve);
+    });
   }
 
   getOnlineStatus(userIds: string[]): Promise<{ statuses: { userId: string; isOnline: boolean }[] }> {

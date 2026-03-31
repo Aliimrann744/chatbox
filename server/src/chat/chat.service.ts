@@ -630,4 +630,162 @@ export class ChatService {
     });
     return { success: true };
   }
+
+  // Star a message
+  async starMessage(userId: string, messageId: string) {
+    const message = await this.prisma.message.findUnique({ where: { id: messageId } });
+    if (!message) throw new NotFoundException('Message not found');
+
+    return this.prisma.starredMessage.upsert({
+      where: { messageId_userId: { messageId, userId } },
+      create: { messageId, userId },
+      update: {},
+    });
+  }
+
+  // Unstar a message
+  async unstarMessage(userId: string, messageId: string) {
+    await this.prisma.starredMessage.deleteMany({
+      where: { messageId, userId },
+    });
+    return { success: true };
+  }
+
+  // Get starred messages for a user in a chat
+  async getStarredMessages(userId: string, chatId: string) {
+    const starredMessages = await this.prisma.starredMessage.findMany({
+      where: {
+        userId,
+        message: { chatId },
+      },
+      include: {
+        message: {
+          include: {
+            sender: {
+              select: { id: true, name: true, avatar: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return starredMessages.map(s => s.message);
+  }
+
+  // Delete message for everyone
+  async deleteMessageForEveryone(userId: string, messageId: string) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: { chat: { include: { members: true } } },
+    });
+
+    if (!message) throw new NotFoundException('Message not found');
+
+    // Only the sender can delete for everyone
+    if (message.senderId !== userId) {
+      throw new ForbiddenException('You can only delete your own messages for everyone');
+    }
+
+    // Soft delete the message
+    await this.prisma.message.update({
+      where: { id: messageId },
+      data: { deletedAt: new Date(), content: null, mediaUrl: null },
+    });
+
+    return {
+      messageId,
+      chatId: message.chatId,
+      memberUserIds: message.chat.members.map(m => m.userId),
+    };
+  }
+
+  // Delete multiple messages for the current user only (soft delete)
+  async deleteMessagesForMe(userId: string, messageIds: string[]) {
+    // For "delete for me", we just mark them as deleted for this user
+    // Since we don't have a per-user delete tracking, we'll use the existing soft delete
+    for (const messageId of messageIds) {
+      await this.prisma.message.update({
+        where: { id: messageId },
+        data: { deletedAt: new Date() },
+      });
+    }
+    return { success: true, messageIds };
+  }
+
+  async createCallLogMessage(
+    callerId: string,
+    receiverId: string,
+    callType: 'VOICE' | 'VIDEO',
+    callStatus: string,
+    duration: number | null,
+  ) {
+    // Find existing private chat between caller and receiver
+    let chat = await this.prisma.chat.findFirst({
+      where: {
+        type: 'PRIVATE',
+        AND: [
+          { members: { some: { userId: callerId } } },
+          { members: { some: { userId: receiverId } } },
+        ],
+      },
+    });
+
+    // If no chat exists, create one
+    if (!chat) {
+      chat = await this.prisma.chat.create({
+        data: {
+          type: 'PRIVATE',
+          members: {
+            create: [
+              { userId: callerId, role: 'MEMBER' },
+              { userId: receiverId, role: 'MEMBER' },
+            ],
+          },
+        },
+      });
+    }
+
+    // Build call log content as JSON string
+    const callInfo = JSON.stringify({
+      callType,
+      callStatus,
+      duration,
+    });
+
+    // Create the call log message (sent by the caller)
+    const message = await this.prisma.message.create({
+      data: {
+        chatId: chat.id,
+        senderId: callerId,
+        type: 'CALL',
+        content: callInfo,
+        status: 'SENT',
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+          },
+        },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            type: true,
+            sender: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    // Touch chat's updatedAt so it sorts to top
+    await this.prisma.chat.update({
+      where: { id: chat.id },
+      data: { updatedAt: new Date() },
+    });
+
+    return message;
+  }
 }

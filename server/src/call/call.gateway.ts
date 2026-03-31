@@ -11,6 +11,8 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { CallService } from './call.service';
+import { ChatService } from '../chat/chat.service';
+import { ChatGateway } from '../chat/chat.gateway';
 import { CallType, CallStatus } from '@prisma/client';
 
 @WebSocketGateway({
@@ -33,6 +35,8 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private jwtService: JwtService,
     private configService: ConfigService,
     private callService: CallService,
+    private chatService: ChatService,
+    private chatGateway: ChatGateway,
   ) {}
 
   // ==================== ICE SERVERS ====================
@@ -201,6 +205,15 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
         });
       }
 
+      // Send call log message to chat
+      await this.sendCallLogToChat(
+        call.callerId,
+        call.receiverId,
+        call.type,
+        'DECLINED',
+        null,
+      );
+
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -329,6 +342,15 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
         });
       }
 
+      // Send call log message to chat
+      await this.sendCallLogToChat(
+        call.callerId,
+        call.receiverId,
+        call.type,
+        call.status,
+        call.duration,
+      );
+
       return { success: true, duration: call.duration };
     } catch (error) {
       return { success: false, error: error.message };
@@ -356,9 +378,40 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
         });
       }
 
+      // Send call log message to chat
+      await this.sendCallLogToChat(
+        call.callerId,
+        call.receiverId,
+        call.type,
+        'MISSED',
+        null,
+      );
+
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
+    }
+  }
+
+  // ==================== CALL LOG HELPER ====================
+
+  private async sendCallLogToChat(
+    callerId: string,
+    receiverId: string,
+    callType: 'VOICE' | 'VIDEO',
+    callStatus: string,
+    duration: number | null,
+  ) {
+    try {
+      const message = await this.chatService.createCallLogMessage(
+        callerId, receiverId, callType, callStatus, duration,
+      );
+
+      // Notify both users via chat namespace
+      this.chatGateway.sendToUser(callerId, 'new_message', message);
+      this.chatGateway.sendToUser(receiverId, 'new_message', message);
+    } catch (error) {
+      console.error('Failed to send call log to chat:', error);
     }
   }
 

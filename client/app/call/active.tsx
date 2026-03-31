@@ -117,7 +117,7 @@ export default function ActiveCallScreen() {
                   streamURL={remoteStream.toURL()}
                   objectFit="cover"
                   zOrder={0}
-                  style={{ flex: 1 }}
+                  style={StyleSheet.absoluteFill}
                 />
               ) : (
                 <>
@@ -135,7 +135,7 @@ export default function ActiveCallScreen() {
                   objectFit="cover"
                   mirror={true}
                   zOrder={1}
-                  style={{ flex: 1, borderRadius: 12 }}
+                  style={{ width: 100, height: 140 }}
                 />
               ) : (
                 <IconSymbol name="person.fill" size={40} color="#ffffff" />

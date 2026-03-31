@@ -38,6 +38,13 @@ export function createPeerConnection(
     }
   };
 
+  // Fallback for older react-native-webrtc versions
+  pc.onaddstream = (event: any) => {
+    if (event.stream) {
+      callbacks.onRemoteStream(event.stream);
+    }
+  };
+
   pc.onconnectionstatechange = () => {
     callbacks.onConnectionStateChange(pc.connectionState);
   };

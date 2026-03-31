@@ -151,6 +151,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     pcRef.current = pc;
 
     const stream = await localStreamPromise;
+
+    // Verify video tracks for video calls
+    if (callType === 'VIDEO') {
+      const videoTracks = stream.getVideoTracks();
+      console.log('WebRTC: Local video tracks:', videoTracks.length,
+        videoTracks.map((t: any) => ({ id: t.id, enabled: t.enabled, readyState: t.readyState })));
+      if (videoTracks.length === 0) {
+        console.warn('WebRTC: No video tracks in local stream!');
+      }
+    }
+
     localStreamRef.current = stream;
     setLocalStream(stream);
 

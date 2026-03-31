@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
+import { Alert, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +13,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useVoiceRecorder } from '@/hooks/use-voice-recorder';
 import { chatApi, Chat, Message, uploadApi } from '@/services/api';
 import socketService from '@/services/socket';
+import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '@/contexts/auth-context';
 import { useCall } from '@/contexts/call-context';
 import { pickImage, pickVideo, pickDocument, takePhoto, PickedMedia, getMessageTypeFromMimeType } from '@/utils/media-picker';
@@ -20,7 +21,18 @@ import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-p
 import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
 import { cache, CacheKeys } from '@/services/cache';
 
-function MessageBubble({ message, isMe, onImagePress, onVideoPress }: { message: Message; isMe: boolean; onImagePress?: (url: string) => void; onVideoPress?: (url: string) => void }) {
+function MessageBubble({
+  message, isMe, onImagePress, onVideoPress,
+  isSelected, isSelectionMode, onSelect, onLongPress,
+}: {
+  message: Message; isMe: boolean;
+  onImagePress?: (url: string) => void;
+  onVideoPress?: (url: string) => void;
+  isSelected?: boolean;
+  isSelectionMode?: boolean;
+  onSelect?: () => void;
+  onLongPress?: () => void;
+}) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
@@ -131,6 +143,40 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress }: { message:
             </View>
           </Pressable>
         );
+      case 'CALL': {
+        let callInfo: { callType?: string; callStatus?: string; duration?: number | null } = {};
+        try {
+          callInfo = JSON.parse(message.content || '{}');
+        } catch {}
+
+        const isVoice = callInfo.callType === 'VOICE';
+        const isMissed = callInfo.callStatus === 'MISSED';
+        const isDeclined = callInfo.callStatus === 'DECLINED';
+        const wasAnswered = callInfo.callStatus === 'ENDED' && callInfo.duration;
+
+        const iconName = isVoice ? 'call' : 'videocam';
+        const iconColor = (isMissed || isDeclined) ? '#FF3B30' : '#34C759';
+
+        let label = '';
+        if (isMissed) {
+          label = isMe ? 'No answer' : 'Missed call';
+        } else if (isDeclined) {
+          label = isMe ? 'Cancelled' : 'Declined';
+        } else if (wasAnswered) {
+          const mins = Math.floor((callInfo.duration || 0) / 60);
+          const secs = (callInfo.duration || 0) % 60;
+          label = `${isVoice ? 'Voice' : 'Video'} call · ${mins}:${secs.toString().padStart(2, '0')}`;
+        } else {
+          label = `${isVoice ? 'Voice' : 'Video'} call`;
+        }
+
+        return (
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, gap: 8 }}>
+            <Ionicons name={iconName} size={20} color={iconColor} />
+            <Text style={{ color: colors.text, fontSize: 14 }}>{label}</Text>
+          </View>
+        );
+      }
       default:
         return <Text style={[styles.messageText, { color: colors.text }]}>{message.content}</Text>;
     }
@@ -155,10 +201,33 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress }: { message:
   };
 
   return (
-    <View style={[styles.messageBubbleContainer, isMe ? styles.messageBubbleContainerMe : styles.messageBubbleContainerOther]}>
+    <Pressable
+      onPress={() => {
+        if (isSelectionMode && onSelect) {
+          onSelect();
+        }
+      }}
+      onLongPress={onLongPress}
+      delayLongPress={500}
+      style={[
+        styles.messageBubbleContainer,
+        isMe ? styles.messageBubbleContainerMe : styles.messageBubbleContainerOther,
+        isSelectionMode && styles.messageBubbleContainerSelection,
+        isSelected && styles.messageBubbleSelected,
+      ]}
+    >
+      {isSelectionMode && (
+        <View style={styles.selectionCheckbox}>
+          <Ionicons
+            name={isSelected ? 'checkbox' : 'square-outline'}
+            size={22}
+            color={isSelected ? colors.primary : colors.textSecondary}
+          />
+        </View>
+      )}
       <View style={
-        [styles.messageBubble, isMe ? [{ backgroundColor: colors.messageOutgoing }, styles.messageBubbleMe] : 
-        [{ backgroundColor: colors.messageIncoming }, styles.messageBubbleOther], 
+        [styles.messageBubble, isMe ? [{ backgroundColor: colors.messageOutgoing }, styles.messageBubbleMe] :
+        [{ backgroundColor: colors.messageIncoming }, styles.messageBubbleOther],
         !isMe && colorScheme === 'light' && styles.messageBubbleBorder]}>
         {message.replyTo && (
           <View style={[styles.replyContainer, { borderLeftColor: colors.primary, backgroundColor: isMe ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.04)' }]}>
@@ -178,7 +247,7 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress }: { message:
           {renderStatus()}
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -375,6 +444,112 @@ function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoice
   );
 }
 
+function SelectionHeader({
+  count, onCancel, onStar, onDelete, onCopy, onForward
+}: {
+  count: number;
+  onCancel: () => void;
+  onStar: () => void;
+  onDelete: () => void;
+  onCopy: () => void;
+  onForward: () => void;
+}) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={[styles.selectionHeader, { backgroundColor: colors.primary, paddingTop: insets.top + 2 }]}>
+      <Pressable onPress={onCancel} style={styles.headerBackButton} hitSlop={8}>
+        <Ionicons name="arrow-back" size={24} color={colors.headerText} />
+      </Pressable>
+      <Text style={[styles.selectionCount, { color: colors.headerText }]}>{count}</Text>
+      <View style={{ flex: 1 }} />
+      <Pressable onPress={onStar} style={styles.selectionAction} hitSlop={8}>
+        <Ionicons name="star-outline" size={22} color={colors.headerText} />
+      </Pressable>
+      <Pressable onPress={onDelete} style={styles.selectionAction} hitSlop={8}>
+        <Ionicons name="trash-outline" size={22} color={colors.headerText} />
+      </Pressable>
+      <Pressable onPress={onCopy} style={styles.selectionAction} hitSlop={8}>
+        <Ionicons name="copy-outline" size={22} color={colors.headerText} />
+      </Pressable>
+      <Pressable onPress={onForward} style={styles.selectionAction} hitSlop={8}>
+        <Ionicons name="arrow-redo-outline" size={22} color={colors.headerText} />
+      </Pressable>
+    </View>
+  );
+}
+
+function ForwardModal({
+  visible, onClose, onForward
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onForward: (chatId: string) => void;
+}) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (visible) {
+      chatApi.getChats().then((data) => {
+        setChats(data);
+        setLoading(false);
+      }).catch(() => setLoading(false));
+    }
+  }, [visible]);
+
+  const filtered = chats.filter(c =>
+    (c.name || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={[styles.forwardModal, { backgroundColor: colors.background }]}>
+        <View style={[styles.forwardHeader, { backgroundColor: colors.primary }]}>
+          <Pressable onPress={onClose} style={{ padding: 8 }}>
+            <Ionicons name="arrow-back" size={24} color={colors.headerText} />
+          </Pressable>
+          <Text style={[styles.forwardTitle, { color: colors.headerText }]}>Forward to...</Text>
+        </View>
+        <View style={[styles.forwardSearchContainer, { backgroundColor: colors.backgroundSecondary }]}>
+          <Ionicons name="search" size={20} color={colors.textSecondary} />
+          <TextInput
+            style={[styles.forwardSearchInput, { color: colors.text }]}
+            placeholder="Search..."
+            placeholderTextColor={colors.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+        {loading ? (
+          <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => (
+              <Pressable
+                onPress={() => onForward(item.id)}
+                style={styles.forwardChatItem}
+              >
+                <Avatar uri={item.avatar || item.members?.[0]?.user?.avatar || ''} size={46} showOnlineStatus={false} />
+                <Text style={[styles.forwardChatName, { color: colors.text }]} numberOfLines={1}>
+                  {item.name || item.members?.map(m => m.user.name).join(', ') || 'Chat'}
+                </Text>
+              </Pressable>
+            )}
+          />
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 export default function ChatDetailScreen() {
   const { id: chatId } = useLocalSearchParams<{ id: string }>();
   const colorScheme = useColorScheme() ?? 'light';
@@ -397,6 +572,9 @@ export default function ChatDetailScreen() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<PickedMedia | null>(null);
+  const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [showForwardModal, setShowForwardModal] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   // Get the other participant for PRIVATE chats
   const otherMember = chat?.members?.find((m) => m.user.id !== user?.id);
@@ -535,6 +713,13 @@ export default function ChatDetailScreen() {
       }
     });
 
+    // Message deleted
+    const unsubscribeMessageDeleted = socketService.on('message_deleted', (data: any) => {
+      if (data.chatId === chatId || data.chatId === null) {
+        setMessages((prev) => prev.filter((msg) => msg.id !== data.messageId));
+      }
+    });
+
     // Online status
     const unsubscribeOnlineStatus = socketService.on('online_status', (data: any) => {
       setChat((prev) =>
@@ -549,6 +734,7 @@ export default function ChatDetailScreen() {
       unsubscribeMessageStatus();
       unsubscribeMessagesRead();
       unsubscribeTyping();
+      unsubscribeMessageDeleted();
       unsubscribeOnlineStatus();
     };
   }, [chatId]);
@@ -874,8 +1060,131 @@ export default function ChatDetailScreen() {
     }
   };
 
+  // Selection mode handlers
+  const handleLongPress = (messageId: string) => {
+    if (!isSelectionMode) {
+      setIsSelectionMode(true);
+      setSelectedMessages(new Set([messageId]));
+    }
+  };
+
+  const handleSelectMessage = (messageId: string) => {
+    setSelectedMessages((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+        if (next.size === 0) {
+          setIsSelectionMode(false);
+        }
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  };
+
+  const handleCancelSelection = () => {
+    setIsSelectionMode(false);
+    setSelectedMessages(new Set());
+  };
+
+  const handleCopyMessages = async () => {
+    const selected = messages.filter(m => selectedMessages.has(m.id));
+    const textContent = selected
+      .map(m => m.content || '')
+      .filter(Boolean)
+      .join('\n');
+    if (textContent) {
+      await Clipboard.setStringAsync(textContent);
+    }
+    handleCancelSelection();
+  };
+
+  const handleStarMessages = async () => {
+    for (const messageId of selectedMessages) {
+      await socketService.starMessage(messageId, true);
+    }
+    handleCancelSelection();
+  };
+
+  const handleDeleteMessages = () => {
+    const count = selectedMessages.size;
+    const selectedArray = Array.from(selectedMessages);
+    const allMine = selectedArray.every(id => {
+      const msg = messages.find(m => m.id === id);
+      return msg?.senderId === user?.id;
+    });
+
+    const options: any[] = [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete for me',
+        style: 'destructive',
+        onPress: async () => {
+          await socketService.deleteMessages(selectedArray, false);
+          setMessages(prev => prev.filter(m => !selectedMessages.has(m.id)));
+          handleCancelSelection();
+        },
+      },
+    ];
+
+    if (allMine) {
+      options.push({
+        text: 'Delete for everyone',
+        style: 'destructive',
+        onPress: async () => {
+          await socketService.deleteMessages(selectedArray, true);
+          setMessages(prev => prev.filter(m => !selectedMessages.has(m.id)));
+          handleCancelSelection();
+        },
+      });
+    }
+
+    Alert.alert(`Delete ${count} message${count > 1 ? 's' : ''}?`, '', options);
+  };
+
+  const handleForwardMessages = () => {
+    setShowForwardModal(true);
+  };
+
+  const handleForwardTo = async (targetChatId: string) => {
+    const selected = messages.filter(m => selectedMessages.has(m.id));
+
+    for (const msg of selected) {
+      const tempId = generateTempId();
+      const payload: any = {
+        chatId: targetChatId,
+        type: msg.type,
+        content: msg.content,
+        mediaUrl: msg.mediaUrl,
+        mediaType: msg.mediaType,
+        mediaDuration: msg.mediaDuration,
+        fileName: msg.fileName,
+        fileSize: msg.fileSize,
+        latitude: msg.latitude,
+        longitude: msg.longitude,
+        locationName: msg.locationName,
+        isForwarded: true,
+        tempId,
+      };
+      socketService.sendMessage(payload);
+    }
+
+    setShowForwardModal(false);
+    handleCancelSelection();
+  };
+
   const renderMessage = ({ item }: { item: Message }) => (
-    <MessageBubble message={item} isMe={item.senderId === user?.id} onImagePress={setPreviewImageUrl} onVideoPress={setPreviewVideoUrl} />
+    <MessageBubble
+      message={item}
+      isMe={item.senderId === user?.id}
+      onImagePress={isSelectionMode ? undefined : setPreviewImageUrl}
+      onVideoPress={isSelectionMode ? undefined : setPreviewVideoUrl}
+      isSelected={selectedMessages.has(item.id)}
+      isSelectionMode={isSelectionMode}
+      onSelect={() => handleSelectMessage(item.id)}
+      onLongPress={() => handleLongPress(item.id)}
+    />
   );
 
   if (loading) {
@@ -892,21 +1201,32 @@ export default function ChatDetailScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}>
       {/* Custom Header */}
-      <ChatHeader
-        chat={chat?.type === 'PRIVATE' ? {
-          name: otherUser?.name,
-          avatar: otherUser?.avatar,
-          isOnline: otherUser?.isOnline,
-          lastSeen: otherUser?.lastSeen,
-        } : {
-          name: chat?.name,
-          avatar: chat?.avatar,
-        }}
-        isTyping={isTyping}
-        onBack={handleBack}
-        onCall={handleCall}
-        onVideoCall={handleVideoCall}
-      />
+      {isSelectionMode ? (
+        <SelectionHeader
+          count={selectedMessages.size}
+          onCancel={handleCancelSelection}
+          onStar={handleStarMessages}
+          onDelete={handleDeleteMessages}
+          onCopy={handleCopyMessages}
+          onForward={handleForwardMessages}
+        />
+      ) : (
+        <ChatHeader
+          chat={chat?.type === 'PRIVATE' ? {
+            name: otherUser?.name,
+            avatar: otherUser?.avatar,
+            isOnline: otherUser?.isOnline,
+            lastSeen: otherUser?.lastSeen,
+          } : {
+            name: chat?.name,
+            avatar: chat?.avatar,
+          }}
+          isTyping={isTyping}
+          onBack={handleBack}
+          onCall={handleCall}
+          onVideoCall={handleVideoCall}
+        />
+      )}
 
       {/* Messages List with WhatsApp background */}
       <ImageBackground
@@ -1023,6 +1343,13 @@ export default function ChatDetailScreen() {
           </View>
         </Modal>
       )}
+
+      {/* Forward Modal */}
+      <ForwardModal
+        visible={showForwardModal}
+        onClose={() => { setShowForwardModal(false); }}
+        onForward={handleForwardTo}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -1099,6 +1426,38 @@ const styles = StyleSheet.create({
   },
   messageBubbleContainerOther: {
     alignSelf: 'flex-start',
+  },
+  messageBubbleContainerSelection: {
+    flexDirection: 'row',
+    maxWidth: '90%',
+  },
+  messageBubbleSelected: {
+    backgroundColor: 'rgba(0, 128, 105, 0.15)',
+  },
+  selectionCheckbox: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+    marginLeft: 4,
+  },
+  selectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 6,
+    paddingHorizontal: 6,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+  },
+  selectionCount: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginLeft: 16,
+  },
+  selectionAction: {
+    padding: 10,
   },
   replyContainer: {
     borderLeftWidth: 3,
@@ -1280,7 +1639,8 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
     justifyContent: 'flex-end',
-    zIndex: 10,
+    zIndex: 100,
+    elevation: 100,
   },
   attachmentMenu: {
     borderTopLeftRadius: 20,
@@ -1439,5 +1799,46 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 12,
+  },
+  forwardModal: {
+    flex: 1,
+  },
+  forwardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 50,
+    paddingBottom: 12,
+    paddingHorizontal: 8,
+    gap: 12,
+  },
+  forwardTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  forwardSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    margin: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 8,
+  },
+  forwardSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    paddingVertical: 4,
+  },
+  forwardChatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  forwardChatName: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

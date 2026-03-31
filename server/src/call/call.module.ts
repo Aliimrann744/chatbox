@@ -5,11 +5,13 @@ import { CallController } from './call.controller';
 import { CallService } from './call.service';
 import { CallGateway } from './call.gateway';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ChatModule } from '../chat/chat.module';
 
 @Module({
   imports: [
     PrismaModule,
     ConfigModule,
+    ChatModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
