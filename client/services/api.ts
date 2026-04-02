@@ -324,6 +324,16 @@ export const chatApi = {
       body: JSON.stringify({ isMuted, muteUntil }),
     });
   },
+
+  async clearChat(chatId: string) {
+    return request<{ success: boolean }>(`/chats/${chatId}/clear`, { method: 'DELETE' });
+  },
+
+  async getSharedMedia(chatId: string, type?: string, page = 1, limit = 50) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (type) params.append('type', type);
+    return request<SharedMediaResponse>(`/chats/${chatId}/media?${params}`);
+  },
 };
 
 // Contact API
@@ -622,6 +632,29 @@ export interface SendMessageData {
   locationName?: string;
   replyToId?: string;
   isForwarded?: boolean;
+}
+
+export interface SharedMedia {
+  id: string;
+  type: string;
+  mediaUrl: string;
+  mediaType?: string;
+  thumbnail?: string;
+  fileName?: string;
+  fileSize?: number;
+  createdAt: string;
+  sender: { id: string; name: string };
+}
+
+export interface SharedMediaResponse {
+  media: SharedMedia[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasMore: boolean;
+  };
 }
 
 export interface MessagesResponse {

@@ -6,9 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { ChatListItem } from '@/components/chat/chat-list-item';
+import { ProfilePopup } from '@/components/chat/profile-popup';
 import { FloatingActionButton } from '@/components/ui/floating-action-button';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useCall } from '@/contexts/call-context';
 import { chatApi, Chat } from '@/services/api';
 import socketService from '@/services/socket';
 import { cache, CacheKeys } from '@/services/cache';
@@ -26,6 +28,9 @@ export default function ChatsScreen() {
   const [loading, setLoading] = useState(!initialCache);
   const [refreshing, setRefreshing] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [popupUser, setPopupUser] = useState<{ id: string; name: string; avatar?: string } | null>(null);
+  const [showPopup, setShowPopup] = useState(false);
+  const { initiateCall } = useCall();
 
   const fetchChats = useCallback(async () => {
     try {
@@ -219,11 +224,36 @@ export default function ChatsScreen() {
           </Text>
         </View>
       ) : (
-        <FlatList data={filteredChats} keyExtractor={(item) => item.id} renderItem={({ item }) => <ChatListItem chat={item} />} 
+        <FlatList data={filteredChats} keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <ChatListItem chat={item} onAvatarPress={(user) => { setPopupUser(user); setShowPopup(true); }} />
+          )}
           showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         />
       )}
+
+      <ProfilePopup
+        visible={showPopup}
+        onClose={() => setShowPopup(false)}
+        user={popupUser}
+        onMessage={() => {
+          // Find the chat with this user and navigate
+          const chat = chats.find(c => c.type === 'PRIVATE' && c.members?.some(m => m.user.id === popupUser?.id));
+          if (chat) router.push({ pathname: '/chat/[id]', params: { id: chat.id } });
+        }}
+        onAudioCall={() => {
+          if (popupUser) initiateCall(popupUser.id, popupUser.name, popupUser.avatar, 'VOICE');
+        }}
+        onVideoCall={() => {
+          if (popupUser) initiateCall(popupUser.id, popupUser.name, popupUser.avatar, 'VIDEO');
+        }}
+        onInfo={() => {
+          // Find the chat with this user and navigate to user info
+          const chat = chats.find(c => c.type === 'PRIVATE' && c.members?.some(m => m.user.id === popupUser?.id));
+          if (chat) router.push({ pathname: '/chat/user-info', params: { chatId: chat.id, userId: popupUser?.id } });
+        }}
+      />
 
       <FloatingActionButton onPress={handleNewChat} icon="message.fill" />
       <Modal visible={showMenu} transparent animationType="fade">

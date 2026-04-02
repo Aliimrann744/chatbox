@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
@@ -36,6 +36,8 @@ function MessageBubble({
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
+  const isMediaMessage = message.type === 'IMAGE' || message.type === 'VIDEO';
+
   const renderContent = () => {
     switch (message.type) {
       case 'IMAGE':
@@ -48,6 +50,12 @@ function MessageBubble({
                   style={styles.imagePreview}
                   contentFit="cover"
                 />
+                <View style={styles.mediaTimeOverlay}>
+                  <Text style={styles.mediaTimeText}>
+                    {formatTime(message.createdAt)}
+                  </Text>
+                  {isMe && renderStatus(true)}
+                </View>
               </Pressable>
             ) : (
               <>
@@ -93,6 +101,12 @@ function MessageBubble({
                     </Text>
                   </View>
                 ) : null}
+                <View style={styles.mediaTimeOverlay}>
+                  <Text style={styles.mediaTimeText}>
+                    {formatTime(message.createdAt)}
+                  </Text>
+                  {isMe && renderStatus(true)}
+                </View>
               </View>
             </Pressable>
           </View>
@@ -178,27 +192,36 @@ function MessageBubble({
         );
       }
       default:
-        return <Text style={[styles.messageText, { color: colors.text }]}>{message.content}</Text>;
+        return null;
     }
   };
 
-  const renderStatus = () => {
+  const renderStatus = (forMedia = false) => {
     if (!isMe) return null;
+
+    const tickColor = forMedia ? '#ffffff' : (colorScheme === 'dark' ? '#8696a0' : 'rgba(0,0,0,0.45)');
+    const readColor = forMedia ? '#ffffff' : colors.readReceipt;
 
     switch (message.status) {
       case 'SENDING':
-        return <ActivityIndicator size="small" color={colors.textSecondary} />;
+        return <ActivityIndicator size="small" color={tickColor} />;
       case 'FAILED':
         return <IconSymbol name="exclamationmark.circle" size={14} color="#FF3B30" />;
       case 'READ':
-        return <IconSymbol name="checkmark.circle.fill" size={14} color={colors.readReceipt} />;
+        return <IconSymbol name="checkmark.circle.fill" size={14} color={readColor} />;
       case 'DELIVERED':
-        return <IconSymbol name="checkmark.circle" size={14} color={colors.textSecondary} />;
+        return <IconSymbol name="checkmark.circle" size={14} color={tickColor} />;
       case 'SENT':
       default:
-        return <IconSymbol name="checkmark" size={14} color={colors.textSecondary} />;
+        return <IconSymbol name="checkmark" size={14} color={tickColor} />;
     }
   };
+
+  const timeColor = isMe
+    ? (colorScheme === 'dark' ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)')
+    : colors.textSecondary;
+
+  const isTextMessage = message.type === 'TEXT' || (!['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT', 'LOCATION', 'CALL'].includes(message.type || ''));
 
   return (
     <Pressable
@@ -208,7 +231,7 @@ function MessageBubble({
         }
       }}
       onLongPress={onLongPress}
-      delayLongPress={500}
+      delayLongPress={400}
       style={[
         styles.messageBubbleContainer,
         isMe ? styles.messageBubbleContainerMe : styles.messageBubbleContainerOther,
@@ -225,10 +248,13 @@ function MessageBubble({
           />
         </View>
       )}
-      <View style={
-        [styles.messageBubble, isMe ? [{ backgroundColor: colors.messageOutgoing }, styles.messageBubbleMe] :
+      <View style={[
+        styles.messageBubble,
+        isMe ? [{ backgroundColor: colors.messageOutgoing }, styles.messageBubbleMe] :
         [{ backgroundColor: colors.messageIncoming }, styles.messageBubbleOther],
-        !isMe && colorScheme === 'light' && styles.messageBubbleBorder]}>
+        !isMe && colorScheme === 'light' && styles.messageBubbleBorder,
+        isMediaMessage && styles.mediaBubble,
+      ]}>
         {message.replyTo && (
           <View style={[styles.replyContainer, { borderLeftColor: colors.primary, backgroundColor: isMe ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.04)' }]}>
             <Text style={[styles.replyName, { color: colors.primary }]}>
@@ -239,19 +265,43 @@ function MessageBubble({
             </Text>
           </View>
         )}
-        {renderContent()}
-        <View style={styles.messageFooter}>
-          <Text style={[styles.messageTime, { color: colors.textSecondary }]}>
-            {formatTime(message.createdAt)}
-          </Text>
-          {renderStatus()}
-        </View>
+        {isTextMessage ? (
+          /* WhatsApp-style inline time: text + time on same row for short messages */
+          <View style={styles.textMessageRow}>
+            <Text style={[styles.messageText, { color: colorScheme === 'dark' ? '#e9edef' : '#111b21' }]}>
+              {message.content}
+              {/* Invisible spacer to reserve room for time+tick */}
+              <Text style={styles.timeSpacer}>
+                {'  ' + formatTime(message.createdAt) + (isMe ? ' ✓' : '')}
+              </Text>
+            </Text>
+            {/* Actual visible time, absolutely positioned */}
+            <View style={styles.inlineTimeContainer}>
+              <Text style={[styles.messageTime, { color: timeColor }]}>
+                {formatTime(message.createdAt)}
+              </Text>
+              {renderStatus()}
+            </View>
+          </View>
+        ) : (
+          <>
+            {renderContent()}
+            {!isMediaMessage && (
+              <View style={styles.messageFooter}>
+                <Text style={[styles.messageTime, { color: timeColor }]}>
+                  {formatTime(message.createdAt)}
+                </Text>
+                {renderStatus()}
+              </View>
+            )}
+          </>
+        )}
       </View>
     </Pressable>
   );
 }
 
-function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall }: { chat: any; isTyping: boolean; onBack: () => void; onCall: () => void; onVideoCall: () => void; }) {
+function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall, onUserInfoPress }: { chat: any; isTyping: boolean; onBack: () => void; onCall: () => void; onVideoCall: () => void; onUserInfoPress?: () => void; }) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
@@ -263,7 +313,7 @@ function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall }: { chat: any
         <IconSymbol name="chevron.left" size={28} color={colors.headerText} />
       </Pressable>
 
-      <Pressable style={styles.headerUserInfo}>
+      <Pressable style={styles.headerUserInfo} onPress={onUserInfoPress}>
         {chat?.avatar ? (
           <Avatar uri={chat.avatar} size={38} showOnlineStatus isOnline={chat?.isOnline} />
         ) : (
@@ -647,6 +697,18 @@ export default function ChatDetailScreen() {
       }
     };
   }, [chatId, fetchData]);
+
+  // Re-fetch messages when screen regains focus (e.g., returning from call screen)
+  useFocusEffect(
+    useCallback(() => {
+      if (chatId && !loading) {
+        chatApi.getMessages(chatId, 1, 50).then((data) => {
+          setMessages(data.messages);
+          cache.set(CacheKeys.messages(chatId), data.messages);
+        }).catch(() => {});
+      }
+    }, [chatId, loading])
+  );
 
   // Socket event listeners
   useEffect(() => {
@@ -1101,46 +1163,60 @@ export default function ChatDetailScreen() {
   };
 
   const handleStarMessages = async () => {
-    for (const messageId of selectedMessages) {
-      await socketService.starMessage(messageId, true);
-    }
+    const ids = Array.from(selectedMessages);
     handleCancelSelection();
+    try {
+      for (const messageId of ids) {
+        await socketService.starMessage(messageId, true);
+      }
+      Alert.alert('Starred', `${ids.length} message${ids.length > 1 ? 's' : ''} starred`);
+    } catch (error) {
+      console.error('Error starring messages:', error);
+    }
   };
 
   const handleDeleteMessages = () => {
     const count = selectedMessages.size;
     const selectedArray = Array.from(selectedMessages);
+    const selectedSet = new Set(selectedMessages);
     const allMine = selectedArray.every(id => {
       const msg = messages.find(m => m.id === id);
       return msg?.senderId === user?.id;
     });
 
-    const options: any[] = [
+    const buttons: any[] = [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete for me',
-        style: 'destructive',
-        onPress: async () => {
-          await socketService.deleteMessages(selectedArray, false);
-          setMessages(prev => prev.filter(m => !selectedMessages.has(m.id)));
-          handleCancelSelection();
-        },
-      },
     ];
 
+    buttons.push({
+      text: 'Delete for me',
+      style: 'destructive',
+      onPress: async () => {
+        handleCancelSelection();
+        // Remove locally first for instant feedback
+        setMessages(prev => prev.filter(m => !selectedSet.has(m.id)));
+        for (const messageId of selectedArray) {
+          await socketService.deleteMessage(messageId, false);
+        }
+      },
+    });
+
     if (allMine) {
-      options.push({
+      buttons.push({
         text: 'Delete for everyone',
         style: 'destructive',
         onPress: async () => {
-          await socketService.deleteMessages(selectedArray, true);
-          setMessages(prev => prev.filter(m => !selectedMessages.has(m.id)));
           handleCancelSelection();
+          // Remove locally first for instant feedback
+          setMessages(prev => prev.filter(m => !selectedSet.has(m.id)));
+          for (const messageId of selectedArray) {
+            await socketService.deleteMessage(messageId, true);
+          }
         },
       });
     }
 
-    Alert.alert(`Delete ${count} message${count > 1 ? 's' : ''}?`, '', options);
+    Alert.alert(`Delete ${count} message${count > 1 ? 's' : ''}?`, '', buttons);
   };
 
   const handleForwardMessages = () => {
@@ -1225,6 +1301,11 @@ export default function ChatDetailScreen() {
           onBack={handleBack}
           onCall={handleCall}
           onVideoCall={handleVideoCall}
+          onUserInfoPress={() => {
+            if (chatId) {
+              router.push({ pathname: '/chat/user-info', params: { chatId, userId: otherUser?.id } });
+            }
+          }}
         />
       )}
 
@@ -1410,16 +1491,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   messagesContent: {
-    paddingHorizontal: 12,
-    paddingVertical: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
   },
   loadingMore: {
     paddingVertical: 10,
   },
   messageBubbleContainer: {
     marginVertical: 1,
-    maxWidth: '82%',
-    paddingHorizontal: 2,
+    maxWidth: '80%',
+    paddingHorizontal: 0,
   },
   messageBubbleContainerMe: {
     alignSelf: 'flex-end',
@@ -1474,18 +1555,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   messageBubble: {
-    paddingHorizontal: 10,
-    paddingTop: 6,
-    paddingBottom: 6,
-    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingTop: 5,
+    paddingBottom: 5,
+    borderRadius: 7.5,
     elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 0.5 },
     shadowOpacity: 0.08,
     shadowRadius: 1,
-    display: "flex",
-    flexDirection: "row",
-    gap: 5,
+  },
+  mediaBubble: {
+    paddingHorizontal: 3,
+    paddingTop: 3,
+    paddingBottom: 3,
+    overflow: 'hidden',
   },
   messageBubbleMe: {
     borderTopRightRadius: 2,
@@ -1497,40 +1581,54 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     borderColor: '#d4d4d4',
   },
+  textMessageRow: {
+    position: 'relative',
+  },
   messageText: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 15.5,
+    lineHeight: 20,
+  },
+  timeSpacer: {
+    fontSize: 11,
+    color: 'transparent',
+  },
+  inlineTimeContainer: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
   messageFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    alignSelf: 'flex-end',
-    marginTop: 2,
-    gap: 4,
+    marginTop: 1,
+    gap: 3,
   },
   messageTime: {
     fontSize: 11,
   },
   mediaContainer: {
-    alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 8,
     overflow: 'hidden',
+    position: 'relative',
   },
   mediaText: {
     marginTop: 8,
     fontSize: 14,
   },
   imagePreview: {
-    width: 220,
-    height: 220,
-    borderRadius: 12,
+    width: 240,
+    height: 240,
+    borderRadius: 6,
   },
   videoContainer: {
     position: 'relative',
-    width: 220,
-    height: 220,
-    borderRadius: 12,
+    width: 240,
+    height: 240,
+    borderRadius: 6,
     overflow: 'hidden',
   },
   videoPlayOverlay: {
@@ -1542,7 +1640,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 12,
+    borderRadius: 6,
   },
   audioContainer: {
     flexDirection: 'row',
@@ -1711,6 +1809,23 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '500',
+  },
+  mediaTimeOverlay: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    gap: 4,
+  },
+  mediaTimeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '400',
   },
   videoPlayerOverlay: {
     flex: 1,

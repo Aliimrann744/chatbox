@@ -601,6 +601,15 @@ export class ChatService {
   }
 
   async pinChat(chatId: string, userId: string, isPinned: boolean) {
+    if (isPinned) {
+      const pinnedCount = await this.prisma.chatMember.count({
+        where: { userId, isPinned: true },
+      });
+      if (pinnedCount >= 3) {
+        throw new BadRequestException('You can only pin up to 3 chats. Please unpin one first.');
+      }
+    }
+
     await this.prisma.chatMember.update({
       where: {
         chatId_userId: {
@@ -710,6 +719,106 @@ export class ChatService {
       });
     }
     return { success: true, messageIds };
+  }
+
+  // Clear all messages in a chat for the user
+  async clearChat(chatId: string, userId: string) {
+    const membership = await this.prisma.chatMember.findUnique({
+      where: {
+        chatId_userId: { chatId, userId },
+      },
+    });
+
+    if (!membership || membership.leftAt) {
+      throw new ForbiddenException('You are not a member of this chat');
+    }
+
+    // Soft delete all messages in this chat
+    await this.prisma.message.updateMany({
+      where: {
+        chatId,
+        deletedAt: null,
+      },
+      data: { deletedAt: new Date() },
+    });
+
+    // Reset unread count
+    await this.prisma.chatMember.update({
+      where: {
+        chatId_userId: { chatId, userId },
+      },
+      data: { unreadCount: 0 },
+    });
+
+    return { success: true };
+  }
+
+  // Get shared media from a chat
+  async getSharedMedia(chatId: string, userId: string, type?: string, page: number = 1, limit: number = 50) {
+    const membership = await this.prisma.chatMember.findUnique({
+      where: {
+        chatId_userId: { chatId, userId },
+      },
+    });
+
+    if (!membership || membership.leftAt) {
+      throw new ForbiddenException('You are not a member of this chat');
+    }
+
+    const mediaTypes = type
+      ? [type]
+      : ['IMAGE', 'VIDEO', 'DOCUMENT'];
+
+    const skip = (page - 1) * limit;
+
+    const [media, total] = await Promise.all([
+      this.prisma.message.findMany({
+        where: {
+          chatId,
+          type: { in: mediaTypes as any },
+          deletedAt: null,
+          mediaUrl: { not: null },
+        },
+        select: {
+          id: true,
+          type: true,
+          mediaUrl: true,
+          mediaType: true,
+          thumbnail: true,
+          fileName: true,
+          fileSize: true,
+          createdAt: true,
+          sender: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.message.count({
+        where: {
+          chatId,
+          type: { in: mediaTypes as any },
+          deletedAt: null,
+          mediaUrl: { not: null },
+        },
+      }),
+    ]);
+
+    return {
+      media,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasMore: skip + media.length < total,
+      },
+    };
   }
 
   async createCallLogMessage(

@@ -10,6 +10,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface ChatListItemProps {
   chat: Chat;
+  onAvatarPress?: (user: { id: string; name: string; avatar?: string }) => void;
 }
 
 // Format timestamp to relative time
@@ -30,12 +31,25 @@ function formatTime(dateString: string): string {
   }
 }
 
-export function ChatListItem({ chat }: ChatListItemProps) {
+export function ChatListItem({ chat, onAvatarPress }: ChatListItemProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
   const handlePress = () => {
     router.push({ pathname: '/chat/[id]', params: { id: chat.id } });
+  };
+
+  const handleAvatarPress = () => {
+    if (onAvatarPress && chat.type === 'PRIVATE' && chat.members?.length >= 2) {
+      // For private chats, chat.name and chat.avatar already represent the other user
+      // Find their ID from members - it's the one whose name matches chat.name
+      const otherMember = chat.members.find(m => m.user.name === chat.name) || chat.members[1];
+      onAvatarPress({
+        id: otherMember.user.id,
+        name: chat.name || otherMember.user.name || 'User',
+        avatar: chat.avatar || otherMember.user.avatar,
+      });
+    }
   };
 
   const renderMessageStatus = () => {
@@ -120,11 +134,13 @@ export function ChatListItem({ chat }: ChatListItemProps) {
           backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
         },
       ]}>
-      {chat?.avatar ? (
-        <Avatar uri={chat.avatar} size={52} showOnlineStatus={chat.type === 'PRIVATE'} isOnline={chat.isOnline} />
-      ) : (
-        <InitialsAvatar name={chat?.name} />
-      )}
+      <Pressable onPress={handleAvatarPress}>
+        {chat?.avatar ? (
+          <Avatar uri={chat.avatar} size={52} showOnlineStatus={chat.type === 'PRIVATE'} isOnline={chat.isOnline} />
+        ) : (
+          <InitialsAvatar name={chat?.name} />
+        )}
+      </Pressable>
 
       <View style={styles.content}>
         <View style={styles.topRow}>

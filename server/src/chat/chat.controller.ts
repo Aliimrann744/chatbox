@@ -108,4 +108,26 @@ export class ChatController {
   ) {
     return this.chatService.deleteMessage(messageId, user.id);
   }
+
+  @Delete(':id/clear')
+  async clearChat(@CurrentUser() user: any, @Param('id') chatId: string) {
+    return this.chatService.clearChat(chatId, user.id);
+  }
+
+  @Get(':id/media')
+  async getSharedMedia(
+    @CurrentUser() user: any,
+    @Param('id') chatId: string,
+    @Query('type') type?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.chatService.getSharedMedia(
+      chatId,
+      user.id,
+      type,
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 50,
+    );
+  }
 }
