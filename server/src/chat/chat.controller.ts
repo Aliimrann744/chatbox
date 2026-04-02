@@ -42,6 +42,23 @@ export class ChatController {
     }
   }
 
+  @Get(':id/media')
+  async getSharedMedia(
+    @CurrentUser() user: any,
+    @Param('id') chatId: string,
+    @Query('type') type?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.chatService.getSharedMedia(
+      chatId,
+      user.id,
+      type,
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 50,
+    );
+  }
+
   @Get(':id')
   async getChat(@CurrentUser() user: any, @Param('id') chatId: string) {
     return this.chatService.getChatById(chatId, user.id);
@@ -114,20 +131,4 @@ export class ChatController {
     return this.chatService.clearChat(chatId, user.id);
   }
 
-  @Get(':id/media')
-  async getSharedMedia(
-    @CurrentUser() user: any,
-    @Param('id') chatId: string,
-    @Query('type') type?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.chatService.getSharedMedia(
-      chatId,
-      user.id,
-      type,
-      page ? parseInt(page) : 1,
-      limit ? parseInt(limit) : 50,
-    );
-  }
 }
