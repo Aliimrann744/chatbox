@@ -26,10 +26,8 @@ export class ChatController {
   @Post()
   async createChat(@CurrentUser() user: any, @Body() dto: CreateChatDto) {
     if (dto.participantId) {
-      // Create private chat
       return this.chatService.createPrivateChat(user.id, dto.participantId);
     } else if (dto.participantIds && dto.participantIds.length > 0) {
-      // Create group chat
       return this.chatService.createGroupChat(
         user.id,
         dto.name || 'New Group',
@@ -41,6 +39,31 @@ export class ChatController {
       throw new Error('Either participantId or participantIds is required');
     }
   }
+
+  // ==================== STATIC MESSAGE ROUTES (must be before :id routes) ====================
+
+  @Delete('messages/:messageId')
+  async deleteMessage(
+    @CurrentUser() user: any,
+    @Param('messageId') messageId: string,
+  ) {
+    return this.chatService.deleteMessage(messageId, user.id);
+  }
+
+  @Post('messages/delete-for-me')
+  async deleteMessagesForMe(
+    @CurrentUser() user: any,
+    @Body('messageIds') messageIds: string[],
+  ) {
+    return this.chatService.deleteMessagesForMe(user.id, messageIds);
+  }
+
+  @Post('messages/delete-for-everyone')
+  async deleteMessageForEveryone(@CurrentUser() user: any, @Body('messageId') messageId: string) {
+    return this.chatService.deleteMessageForEveryone(user.id, messageId);
+  }
+
+  // ==================== PARAM ROUTES (:id) ====================
 
   @Get(':id/starred')
   async getStarredMessages(
@@ -96,8 +119,6 @@ export class ChatController {
     );
   }
 
-  // ==================== MESSAGE ENDPOINTS ====================
-
   @Get(':id/messages')
   async getMessages(
     @CurrentUser() user: any,
@@ -127,30 +148,8 @@ export class ChatController {
     return this.chatService.markMessagesAsRead(chatId, user.id);
   }
 
-  @Delete('messages/:messageId')
-  async deleteMessage(
-    @CurrentUser() user: any,
-    @Param('messageId') messageId: string,
-  ) {
-    return this.chatService.deleteMessage(messageId, user.id);
-  }
-
-  @Post('messages/delete-for-me')
-  async deleteMessagesForMe(
-    @CurrentUser() user: any,
-    @Body('messageIds') messageIds: string[],
-  ) {
-    return this.chatService.deleteMessagesForMe(user.id, messageIds);
-  }
-
-  @Post('messages/delete-for-everyone')
-  async deleteMessageForEveryone(@CurrentUser() user: any, @Body('messageId') messageId: string) {
-    return this.chatService.deleteMessageForEveryone(user.id, messageId);
-  }
-
   @Delete(':id/clear')
   async clearChat(@CurrentUser() user: any, @Param('id') chatId: string) {
     return this.chatService.clearChat(chatId, user.id);
   }
-
 }
