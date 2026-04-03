@@ -318,6 +318,13 @@ export const chatApi = {
     });
   },
 
+  async deleteMessageForEveryone(messageId: string) {
+    return request<{ messageId: string; chatId: string }>('/chats/messages/delete-for-everyone', {
+      method: 'POST',
+      body: JSON.stringify({ messageId }),
+    });
+  },
+
   async pinChat(chatId: string, isPinned: boolean) {
     return request(`/chats/${chatId}/pin`, {
       method: 'PATCH',

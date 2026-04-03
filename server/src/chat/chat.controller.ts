@@ -143,6 +143,11 @@ export class ChatController {
     return this.chatService.deleteMessagesForMe(user.id, messageIds);
   }
 
+  @Post('messages/delete-for-everyone')
+  async deleteMessageForEveryone(@CurrentUser() user: any, @Body('messageId') messageId: string) {
+    return this.chatService.deleteMessageForEveryone(user.id, messageId);
+  }
+
   @Delete(':id/clear')
   async clearChat(@CurrentUser() user: any, @Param('id') chatId: string) {
     return this.chatService.clearChat(chatId, user.id);

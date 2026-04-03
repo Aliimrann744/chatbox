@@ -205,21 +205,21 @@ function MessageBubble({
   const renderStatus = (forMedia = false) => {
     if (!isMe) return null;
 
-    const tickColor = forMedia ? '#ffffff' : (colorScheme === 'dark' ? '#8696a0' : 'rgba(0,0,0,0.45)');
-    const readColor = forMedia ? '#ffffff' : colors.readReceipt;
+    const tickColor = forMedia ? '#ffffff' : (colorScheme === 'dark' ? '#8696a0' : '#667781');
+    const readColor = forMedia ? '#53bdeb' : '#53bdeb';
 
     switch (message.status) {
       case 'SENDING':
-        return <ActivityIndicator size="small" color={tickColor} />;
+        return <Ionicons name="time-outline" size={14} color={tickColor} />;
       case 'FAILED':
-        return <IconSymbol name="exclamationmark.circle" size={14} color="#FF3B30" />;
+        return <Ionicons name="alert-circle" size={14} color="#FF3B30" />;
       case 'READ':
-        return <IconSymbol name="checkmark.circle.fill" size={14} color={readColor} />;
+        return <Ionicons name="checkmark-done" size={16} color={readColor} />;
       case 'DELIVERED':
-        return <IconSymbol name="checkmark.circle" size={14} color={tickColor} />;
+        return <Ionicons name="checkmark-done" size={16} color={tickColor} />;
       case 'SENT':
       default:
-        return <IconSymbol name="checkmark" size={14} color={tickColor} />;
+        return <Ionicons name="checkmark" size={16} color={tickColor} />;
     }
   };
 
@@ -272,16 +272,11 @@ function MessageBubble({
           </View>
         )}
         {isTextMessage ? (
-          /* WhatsApp-style inline time: text + time on same row for short messages */
+          /* WhatsApp-style: flex-wrap row so time sits at bottom-right naturally */
           <View style={styles.textMessageRow}>
             <Text style={[styles.messageText, { color: colorScheme === 'dark' ? '#e9edef' : '#111b21' }]}>
               {message.content}
-              {/* Invisible spacer to reserve room for time+tick */}
-              <Text style={styles.timeSpacer}>
-                {isMe ? '         ✓✓' : '        '}
-              </Text>
             </Text>
-            {/* Actual visible time, absolutely positioned */}
             <View style={styles.inlineTimeContainer}>
               {message.isStarred && (
                 <Ionicons name="star" size={10} color={timeColor} />
@@ -1212,59 +1207,24 @@ export default function ChatDetailScreen() {
   };
 
   const performDelete = async (messageIds: string[], forEveryone: boolean) => {
-    let allSucceeded = true;
-
-    if (forEveryone) {
-      // "Delete for everyone" — must go through socket (only sender can do this)
-      for (const messageId of messageIds) {
-        try {
-          if (socketService.isConnected) {
-            const result = await socketService.deleteMessage(messageId, true);
-            if (!result?.success) {
-              // Fallback: REST delete (works for sender's own messages)
-              await chatApi.deleteMessage(messageId);
-            }
-          } else {
-            await chatApi.deleteMessage(messageId);
-          }
-        } catch (error) {
-          console.error('Error deleting message for everyone:', messageId, error);
-          allSucceeded = false;
+    try {
+      if (forEveryone) {
+        // "Delete for everyone" — REST API (nulls content, checks sender ownership)
+        for (const messageId of messageIds) {
+          await chatApi.deleteMessageForEveryone(messageId);
         }
+      } else {
+        // "Delete for me" — REST batch endpoint (no ownership check, just soft-deletes)
+        await chatApi.deleteMessagesForMe(messageIds);
       }
-    } else {
-      // "Delete for me" — use REST endpoint that doesn't check ownership
-      try {
-        if (socketService.isConnected) {
-          // Try socket first for each message
-          for (const messageId of messageIds) {
-            try {
-              const result = await socketService.deleteMessage(messageId, false);
-              if (!result?.success) throw new Error('Socket delete failed');
-            } catch {
-              // If socket fails for any message, fall back to REST batch endpoint
-              await chatApi.deleteMessagesForMe(messageIds);
-              break;
-            }
-          }
-        } else {
-          // Socket not connected — use REST batch endpoint
-          await chatApi.deleteMessagesForMe(messageIds);
-        }
-      } catch (error) {
-        console.error('Error deleting messages for me:', error);
-        allSucceeded = false;
-      }
+    } catch (error) {
+      console.error('Error deleting messages:', error);
     }
 
     // Update cache after deletion
     if (chatId) {
       const remaining = messages.filter(m => !messageIds.includes(m.id));
       cache.set(CacheKeys.messages(chatId), remaining);
-    }
-
-    if (!allSucceeded) {
-      Alert.alert('Warning', 'Some messages may not have been deleted. Pull to refresh.');
     }
   };
 
@@ -1675,24 +1635,22 @@ const styles = StyleSheet.create({
     borderColor: '#d4d4d4',
   },
   textMessageRow: {
-    position: 'relative',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
   },
   messageText: {
     fontSize: 15.5,
     lineHeight: 20,
-  },
-  timeSpacer: {
-    fontSize: 11,
-    color: 'transparent',
-    opacity: 0,
+    flexShrink: 1,
   },
   inlineTimeContainer: {
-    position: 'absolute',
-    bottom: 1,
-    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    alignSelf: 'flex-end',
+    marginLeft: 6,
+    marginBottom: 1,
+    gap: 3,
   },
   messageFooter: {
     flexDirection: 'row',
