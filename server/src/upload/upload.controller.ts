@@ -1,7 +1,7 @@
 import { Controller, Post, UseInterceptors, UploadedFile, Body, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from './upload.service';
-import { allowedMimeTypes } from 'src/constant/mime-types';
+import { allowedMimeTypes } from '../constant/mime-types';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 
