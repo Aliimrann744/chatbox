@@ -42,6 +42,15 @@ export class ChatController {
     }
   }
 
+  @Get(':id/starred')
+  async getStarredMessages(
+    @CurrentUser() user: any,
+    @Param('id') chatId: string,
+  ) {
+    const messages = await this.chatService.getStarredMessages(user.id, chatId);
+    return { messages };
+  }
+
   @Get(':id/media')
   async getSharedMedia(
     @CurrentUser() user: any,
@@ -124,6 +133,14 @@ export class ChatController {
     @Param('messageId') messageId: string,
   ) {
     return this.chatService.deleteMessage(messageId, user.id);
+  }
+
+  @Post('messages/delete-for-me')
+  async deleteMessagesForMe(
+    @CurrentUser() user: any,
+    @Body('messageIds') messageIds: string[],
+  ) {
+    return this.chatService.deleteMessagesForMe(user.id, messageIds);
   }
 
   @Delete(':id/clear')

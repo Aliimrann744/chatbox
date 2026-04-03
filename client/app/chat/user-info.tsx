@@ -55,19 +55,21 @@ export default function UserInfoScreen() {
   const fetchData = useCallback(async () => {
     if (!chatId) return;
     try {
-      const [chatData, mediaData] = await Promise.all([
-        chatApi.getChat(chatId),
-        chatApi.getSharedMedia(chatId, undefined, 1, 8),
-      ]);
+      const chatData = await chatApi.getChat(chatId);
       setChat(chatData);
-      setSharedMedia(mediaData.media.filter(m => m.type === 'IMAGE' || m.type === 'VIDEO'));
-      setMediaCount(mediaData.pagination.total);
+
+      // Fetch media separately so it doesn't block the page if it fails
+      try {
+        const mediaData = await chatApi.getSharedMedia(chatId, undefined, 1, 8);
+        setSharedMedia(mediaData.media.filter(m => m.type === 'IMAGE' || m.type === 'VIDEO'));
+        setMediaCount(mediaData.pagination.total);
+      } catch {}
 
       // Check if blocked
-      if (otherUser?.id || userId) {
+      const targetId = userId || chatData?.members?.find((m: any) => m.user.id !== currentUser?.id)?.user?.id;
+      if (targetId) {
         try {
           const blockedUsers = await contactApi.getBlockedUsers();
-          const targetId = otherUser?.id || userId;
           setIsBlocked(blockedUsers.some(b => b.user.id === targetId));
         } catch {}
       }
@@ -89,12 +91,18 @@ export default function UserInfoScreen() {
     }
   }, [otherUser?.id]);
 
-  const handleAudioCall = () => {
-    if (otherUser?.id) initiateCall(otherUser.id, userName, userAvatar, 'VOICE');
+  const handleAudioCall = async () => {
+    if (otherUser?.id) {
+      await initiateCall(otherUser.id, userName, userAvatar, 'VOICE');
+      router.push('/call/active');
+    }
   };
 
-  const handleVideoCall = () => {
-    if (otherUser?.id) initiateCall(otherUser.id, userName, userAvatar, 'VIDEO');
+  const handleVideoCall = async () => {
+    if (otherUser?.id) {
+      await initiateCall(otherUser.id, userName, userAvatar, 'VIDEO');
+      router.push('/call/active');
+    }
   };
 
   const handlePinChat = async () => {

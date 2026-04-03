@@ -107,6 +107,18 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen
+          name="chat/user-info"
+          options={{
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="chat/media-gallery"
+          options={{
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
           name="call"
           options={{
             headerShown: false,

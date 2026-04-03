@@ -11,6 +11,7 @@ import { FloatingActionButton } from '@/components/ui/floating-action-button';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useCall } from '@/contexts/call-context';
+import { useAuth } from '@/contexts/auth-context';
 import { chatApi, Chat } from '@/services/api';
 import socketService from '@/services/socket';
 import { cache, CacheKeys } from '@/services/cache';
@@ -21,6 +22,7 @@ export default function ChatsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
+  const { isAuthenticated } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('All');
   const [initialCache] = useState(() => cache.get<Chat[]>(CacheKeys.CHATS));
@@ -33,6 +35,11 @@ export default function ChatsScreen() {
   const { initiateCall } = useCall();
 
   const fetchChats = useCallback(async () => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
       const data = await chatApi.getChats();
       setChats(data);
@@ -43,7 +50,7 @@ export default function ChatsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [isAuthenticated]);
 
   // Persist chat list updates to cache
   useEffect(() => {
@@ -242,11 +249,17 @@ export default function ChatsScreen() {
           const chat = chats.find(c => c.type === 'PRIVATE' && c.members?.some(m => m.user.id === popupUser?.id));
           if (chat) router.push({ pathname: '/chat/[id]', params: { id: chat.id } });
         }}
-        onAudioCall={() => {
-          if (popupUser) initiateCall(popupUser.id, popupUser.name, popupUser.avatar, 'VOICE');
+        onAudioCall={async () => {
+          if (popupUser) {
+            await initiateCall(popupUser.id, popupUser.name, popupUser.avatar, 'VOICE');
+            router.push('/call/active');
+          }
         }}
-        onVideoCall={() => {
-          if (popupUser) initiateCall(popupUser.id, popupUser.name, popupUser.avatar, 'VIDEO');
+        onVideoCall={async () => {
+          if (popupUser) {
+            await initiateCall(popupUser.id, popupUser.name, popupUser.avatar, 'VIDEO');
+            router.push('/call/active');
+          }
         }}
         onInfo={() => {
           // Find the chat with this user and navigate to user info

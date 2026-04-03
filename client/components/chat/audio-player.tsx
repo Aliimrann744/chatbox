@@ -71,7 +71,7 @@ export function AudioPlayer({ uri, duration = 0, isOwnMessage = false }: AudioPl
         {isThisLoading ? (
           <View style={[styles.loadingDot, { backgroundColor: buttonColor }]} />
         ) : (
-          <IconSymbol name={isThisPlaying ? 'pause.fill' : 'play.fill'} size={26} color={buttonColor} />
+          <IconSymbol name={isThisPlaying ? 'pause.fill' : 'play.fill'} size={22} color={buttonColor} />
         )}
       </Pressable>
 
@@ -79,8 +79,8 @@ export function AudioPlayer({ uri, duration = 0, isOwnMessage = false }: AudioPl
       <View style={styles.waveformContainer}>
         <View style={styles.waveform}>
           {/* Simplified waveform bars */}
-          {[...Array(20)].map((_, i) => {
-            const height = Math.random() * 16 + 4;
+          {[...Array(24)].map((_, i) => {
+            const height = Math.random() * 14 + 3;
             const isActive = (i / 20) * 100 <= progress;
             return (
               <View
@@ -137,15 +137,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     minWidth: 200,
-    maxWidth: 280,
+    maxWidth: 260,
+    paddingVertical: 2,
   },
   playButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 8,
   },
   buttonPressed: {
     opacity: 0.7,
@@ -161,13 +162,13 @@ const styles = StyleSheet.create({
   waveform: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 24,
-    marginBottom: 4,
+    height: 20,
+    marginBottom: 2,
   },
   waveBar: {
-    width: 3,
-    borderRadius: 1.5,
-    marginHorizontal: 1,
+    width: 2.5,
+    borderRadius: 1.25,
+    marginHorizontal: 0.8,
   },
   duration: {
     fontSize: 11,

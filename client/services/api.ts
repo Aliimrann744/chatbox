@@ -311,6 +311,13 @@ export const chatApi = {
     return request(`/chats/messages/${messageId}`, { method: 'DELETE' });
   },
 
+  async deleteMessagesForMe(messageIds: string[]) {
+    return request<{ success: boolean }>('/chats/messages/delete-for-me', {
+      method: 'POST',
+      body: JSON.stringify({ messageIds }),
+    });
+  },
+
   async pinChat(chatId: string, isPinned: boolean) {
     return request(`/chats/${chatId}/pin`, {
       method: 'PATCH',
@@ -333,6 +340,10 @@ export const chatApi = {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     if (type) params.append('type', type);
     return request<SharedMediaResponse>(`/chats/${chatId}/media?${params}`);
+  },
+
+  async getStarredMessages(chatId: string) {
+    return request<{ messages: Message[] }>(`/chats/${chatId}/starred`);
   },
 };
 
@@ -609,6 +620,7 @@ export interface Message {
     sender: { id: string; name: string };
   };
   isForwarded: boolean;
+  isStarred?: boolean;
   status: 'SENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
   createdAt: string;
   sender: {

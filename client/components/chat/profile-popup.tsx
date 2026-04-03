@@ -45,6 +45,10 @@ export function ProfilePopup({ visible, onClose, user, onMessage, onAudioCall, o
             {/* Image / Initials */}
             <Pressable onPress={() => { if (user.avatar) setShowFullImage(true); }}>
               <View style={styles.imageContainer}>
+                {/* Name overlay at top */}
+                <View style={styles.nameOverlay}>
+                  <Text style={styles.nameText} numberOfLines={1}>{user.name}</Text>
+                </View>
                 {user.avatar ? (
                   <Image source={{ uri: user.avatar }} style={styles.profileImage} contentFit="cover" />
                 ) : (
@@ -52,10 +56,6 @@ export function ProfilePopup({ visible, onClose, user, onMessage, onAudioCall, o
                     <Text style={styles.initialsText}>{getInitials(user.name)}</Text>
                   </View>
                 )}
-                {/* Name overlay */}
-                <View style={styles.nameOverlay}>
-                  <Text style={styles.nameText} numberOfLines={1}>{user.name}</Text>
-                </View>
               </View>
             </Pressable>
 
@@ -140,12 +140,13 @@ const styles = StyleSheet.create({
   },
   nameOverlay: {
     position: 'absolute',
-    bottom: 0,
+    top: 0,
     left: 0,
     right: 0,
     paddingHorizontal: 14,
     paddingVertical: 10,
     backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    zIndex: 2,
   },
   nameText: {
     color: '#ffffff',

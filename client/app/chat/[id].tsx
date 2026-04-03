@@ -51,6 +51,9 @@ function MessageBubble({
                   contentFit="cover"
                 />
                 <View style={styles.mediaTimeOverlay}>
+                  {message.isStarred && (
+                    <Ionicons name="star" size={10} color="#ffffff" />
+                  )}
                   <Text style={styles.mediaTimeText}>
                     {formatTime(message.createdAt)}
                   </Text>
@@ -102,6 +105,9 @@ function MessageBubble({
                   </View>
                 ) : null}
                 <View style={styles.mediaTimeOverlay}>
+                  {message.isStarred && (
+                    <Ionicons name="star" size={10} color="#ffffff" />
+                  )}
                   <Text style={styles.mediaTimeText}>
                     {formatTime(message.createdAt)}
                   </Text>
@@ -272,11 +278,14 @@ function MessageBubble({
               {message.content}
               {/* Invisible spacer to reserve room for time+tick */}
               <Text style={styles.timeSpacer}>
-                {'  ' + formatTime(message.createdAt) + (isMe ? ' ✓' : '')}
+                {isMe ? '         ✓✓' : '        '}
               </Text>
             </Text>
             {/* Actual visible time, absolutely positioned */}
             <View style={styles.inlineTimeContainer}>
+              {message.isStarred && (
+                <Ionicons name="star" size={10} color={timeColor} />
+              )}
               <Text style={[styles.messageTime, { color: timeColor }]}>
                 {formatTime(message.createdAt)}
               </Text>
@@ -288,6 +297,9 @@ function MessageBubble({
             {renderContent()}
             {!isMediaMessage && (
               <View style={styles.messageFooter}>
+                {message.isStarred && (
+                  <Ionicons name="star" size={10} color={timeColor} />
+                )}
                 <Text style={[styles.messageTime, { color: timeColor }]}>
                   {formatTime(message.createdAt)}
                 </Text>
@@ -495,7 +507,7 @@ function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoice
 }
 
 function SelectionHeader({
-  count, onCancel, onStar, onDelete, onCopy, onForward
+  count, onCancel, onStar, onDelete, onCopy, onForward, allStarred
 }: {
   count: number;
   onCancel: () => void;
@@ -503,6 +515,7 @@ function SelectionHeader({
   onDelete: () => void;
   onCopy: () => void;
   onForward: () => void;
+  allStarred?: boolean;
 }) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -516,7 +529,7 @@ function SelectionHeader({
       <Text style={[styles.selectionCount, { color: colors.headerText }]}>{count}</Text>
       <View style={{ flex: 1 }} />
       <Pressable onPress={onStar} style={styles.selectionAction} hitSlop={8}>
-        <Ionicons name="star-outline" size={22} color={colors.headerText} />
+        <Ionicons name={allStarred ? "star" : "star-outline"} size={22} color={colors.headerText} />
       </Pressable>
       <Pressable onPress={onDelete} style={styles.selectionAction} hitSlop={8}>
         <Ionicons name="trash-outline" size={22} color={colors.headerText} />
@@ -644,13 +657,26 @@ export default function ChatDetailScreen() {
       ]);
 
       setChat(chatData);
-      setMessages(messagesData.messages);
+
+      // Fetch starred messages and merge starred state
+      let starredIds = new Set<string>();
+      try {
+        const starredData = await chatApi.getStarredMessages(chatId);
+        starredIds = new Set(starredData.messages.map((m: any) => m.id || m.messageId));
+      } catch {}
+
+      const messagesWithStarred = messagesData.messages.map(msg => ({
+        ...msg,
+        isStarred: starredIds.has(msg.id),
+      }));
+
+      setMessages(messagesWithStarred);
       setHasMore(messagesData.pagination.hasMore);
       setPage(1);
 
       // Cache results
       cache.set(CacheKeys.chatDetail(chatId), chatData);
-      cache.set(CacheKeys.messages(chatId), messagesData.messages);
+      cache.set(CacheKeys.messages(chatId), messagesWithStarred);
 
       // Mark messages as read
       chatApi.markAsRead(chatId);
@@ -1164,14 +1190,81 @@ export default function ChatDetailScreen() {
 
   const handleStarMessages = async () => {
     const ids = Array.from(selectedMessages);
+    // Determine if we should star or unstar based on current state
+    const allStarred = ids.every(id => {
+      const msg = messages.find(m => m.id === id);
+      return msg?.isStarred;
+    });
+    const newStarred = !allStarred;
+
     handleCancelSelection();
     try {
       for (const messageId of ids) {
-        await socketService.starMessage(messageId, true);
+        await socketService.starMessage(messageId, newStarred);
       }
-      Alert.alert('Starred', `${ids.length} message${ids.length > 1 ? 's' : ''} starred`);
+      // Update local state
+      setMessages(prev => prev.map(msg =>
+        ids.includes(msg.id) ? { ...msg, isStarred: newStarred } : msg
+      ));
     } catch (error) {
       console.error('Error starring messages:', error);
+    }
+  };
+
+  const performDelete = async (messageIds: string[], forEveryone: boolean) => {
+    let allSucceeded = true;
+
+    if (forEveryone) {
+      // "Delete for everyone" — must go through socket (only sender can do this)
+      for (const messageId of messageIds) {
+        try {
+          if (socketService.isConnected) {
+            const result = await socketService.deleteMessage(messageId, true);
+            if (!result?.success) {
+              // Fallback: REST delete (works for sender's own messages)
+              await chatApi.deleteMessage(messageId);
+            }
+          } else {
+            await chatApi.deleteMessage(messageId);
+          }
+        } catch (error) {
+          console.error('Error deleting message for everyone:', messageId, error);
+          allSucceeded = false;
+        }
+      }
+    } else {
+      // "Delete for me" — use REST endpoint that doesn't check ownership
+      try {
+        if (socketService.isConnected) {
+          // Try socket first for each message
+          for (const messageId of messageIds) {
+            try {
+              const result = await socketService.deleteMessage(messageId, false);
+              if (!result?.success) throw new Error('Socket delete failed');
+            } catch {
+              // If socket fails for any message, fall back to REST batch endpoint
+              await chatApi.deleteMessagesForMe(messageIds);
+              break;
+            }
+          }
+        } else {
+          // Socket not connected — use REST batch endpoint
+          await chatApi.deleteMessagesForMe(messageIds);
+        }
+      } catch (error) {
+        console.error('Error deleting messages for me:', error);
+        allSucceeded = false;
+      }
+    }
+
+    // Update cache after deletion
+    if (chatId) {
+      const remaining = messages.filter(m => !messageIds.includes(m.id));
+      cache.set(CacheKeys.messages(chatId), remaining);
+    }
+
+    if (!allSucceeded) {
+      Alert.alert('Warning', 'Some messages may not have been deleted. Pull to refresh.');
     }
   };
 
@@ -1195,9 +1288,7 @@ export default function ChatDetailScreen() {
         handleCancelSelection();
         // Remove locally first for instant feedback
         setMessages(prev => prev.filter(m => !selectedSet.has(m.id)));
-        for (const messageId of selectedArray) {
-          await socketService.deleteMessage(messageId, false);
-        }
+        await performDelete(selectedArray, false);
       },
     });
 
@@ -1209,9 +1300,7 @@ export default function ChatDetailScreen() {
           handleCancelSelection();
           // Remove locally first for instant feedback
           setMessages(prev => prev.filter(m => !selectedSet.has(m.id)));
-          for (const messageId of selectedArray) {
-            await socketService.deleteMessage(messageId, true);
-          }
+          await performDelete(selectedArray, true);
         },
       });
     }
@@ -1285,6 +1374,10 @@ export default function ChatDetailScreen() {
           onDelete={handleDeleteMessages}
           onCopy={handleCopyMessages}
           onForward={handleForwardMessages}
+          allStarred={Array.from(selectedMessages).every(id => {
+            const msg = messages.find(m => m.id === id);
+            return msg?.isStarred;
+          })}
         />
       ) : (
         <ChatHeader
@@ -1591,21 +1684,22 @@ const styles = StyleSheet.create({
   timeSpacer: {
     fontSize: 11,
     color: 'transparent',
+    opacity: 0,
   },
   inlineTimeContainer: {
     position: 'absolute',
-    bottom: 0,
+    bottom: 1,
     right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
   },
   messageFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     marginTop: 1,
-    gap: 3,
+    gap: 4,
   },
   messageTime: {
     fontSize: 11,
@@ -1645,7 +1739,7 @@ const styles = StyleSheet.create({
   audioContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 4,
     minWidth: 150,
     gap: 8,
   },
@@ -1820,7 +1914,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    gap: 4,
+    gap: 5,
   },
   mediaTimeText: {
     color: '#ffffff',
