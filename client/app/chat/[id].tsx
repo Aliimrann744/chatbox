@@ -1,29 +1,19 @@
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import React, { useState, useEffect, useRef, useCallback, use } from 'react';
+import React, { useState, useEffect, useRef, useCallback, use, useMemo } from 'react';
 import { Alert, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-  runOnJS,
-  interpolate,
-  Extrapolation,
-  FadeIn,
-  FadeOut,
-} from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, runOnJS, interpolate, Extrapolation, FadeIn, FadeOut } from 'react-native-reanimated';
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AudioPlayer } from '@/components/chat/audio-player';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useVoiceRecorder } from '@/hooks/use-voice-recorder';
-import { chatApi, Chat, Message, uploadApi } from '@/services/api';
+import { chatApi, Chat, Message, uploadApi, contactApi, Contact } from '@/services/api';
 import socketService from '@/services/socket';
 import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '@/contexts/auth-context';
@@ -32,6 +22,72 @@ import { pickImage, pickVideo, pickDocument, takePhoto, PickedMedia, getMessageT
 import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-picker';
 import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
 import { cache, CacheKeys } from '@/services/cache';
+
+const SHORT_MESSAGE_THRESHOLD = 30;
+function isShortSingleLineMessage(content?: string): boolean {
+  if (!content) return true;
+  if (content.includes('\n')) return false;
+  return content.length <= SHORT_MESSAGE_THRESHOLD;
+}
+
+type SenderLookupUser = { name?: string; phone?: string; countryCode?: string };
+
+// ==================== GROUP READ RECEIPTS ====================
+// For group chats we cannot rely on Message.status alone (the server flips it
+// to READ as soon as the first member reads). Instead we count the number of
+// distinct non-sender members who have a MessageReadReceipt for this message
+// and compare it to the number of members who were in the group at the time
+// the message was sent. This gives WhatsApp-style dynamic ticks that scale to
+// any group size without extra server work.
+
+type GroupReadState = 'single' | 'double_gray' | 'double_blue';
+type EligibleMember = { userId: string; joinedAtMs: number; leftAtMs: number | null };
+
+function computeGroupReadState(
+  message: Message,
+  eligibleMembers: EligibleMember[],
+  senderId: string,
+): GroupReadState {
+  const sentMs = new Date(message.createdAt).getTime();
+
+  // Denominator = members present at send time, excluding the sender.
+  // A member "was present" if they joined on/before the send time and had
+  // not yet left (leftAt is null or after the send time).
+  const denominator = new Set<string>();
+  for (const m of eligibleMembers) {
+    if (m.userId === senderId) continue;
+    if (m.joinedAtMs > sentMs) continue;
+    if (m.leftAtMs !== null && m.leftAtMs <= sentMs) continue;
+    denominator.add(m.userId);
+  }
+
+  // Edge case: sender is the only eligible participant. Treat as fully read
+  // so the bubble doesn't get stuck on a single gray tick forever.
+  if (denominator.size === 0) return 'double_blue';
+
+  // Numerator = distinct receipts from users who are in the denominator set.
+  // Filtering by the denominator set implicitly handles users who joined
+  // after the message was sent (they don't count) and also caps S <= N.
+  const seen = new Set<string>();
+  const receipts = message.readReceipts || [];
+  for (const r of receipts) {
+    if (r.userId === senderId) continue;
+    if (!denominator.has(r.userId)) continue;
+    seen.add(r.userId);
+  }
+
+  if (seen.size === 0) return 'single';
+  if (seen.size >= denominator.size) return 'double_blue';
+  return 'double_gray';
+}
+function resolveSenderDisplayName(msg: Message,contactsById: Record<string, Contact>, memberUserById: Record<string, SenderLookupUser>): string {
+  const contact = contactsById[msg.senderId];
+  if (contact) return contact.nickname || contact.name;
+  const member = memberUserById[msg.senderId];
+  if (member?.phone && member?.countryCode) return `${member.countryCode}${member.phone}`;
+  if (member?.phone) return member.phone;
+  return member?.name || msg.sender?.name || 'Unknown';
+}
 
 function getReplyPreviewText(msg: Message | { type?: string; content?: string | null; fileName?: string | null; locationName?: string | null; isDeletedForEveryone?: boolean }): string {
   if (!msg) return '';
@@ -73,15 +129,7 @@ function getReplyPreviewText(msg: Message | { type?: string; content?: string | 
   }
 }
 
-// SwipeToReply — wraps each message bubble and triggers `onReply` when the
-// user swipes it to the right past the threshold. Uses the new Reanimated
-// gesture API so it integrates cleanly with the existing FlatList scroll.
-function SwipeToReply({ children, onReply, enabled, isMe }: {
-  children: React.ReactNode;
-  onReply: () => void;
-  enabled: boolean;
-  isMe: boolean;
-}) {
+function SwipeToReply({ children, onReply, enabled, isMe }: { children: React.ReactNode; onReply: () => void; enabled: boolean; isMe: boolean; }) {
   const translateX = useSharedValue(0);
   const THRESHOLD = 55;
   const MAX = 80;
@@ -157,7 +205,7 @@ function SwipeToReply({ children, onReply, enabled, isMe }: {
   );
 }
 
-function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, isSelectionMode, onSelect, onLongPress, onReply }: {
+function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, isSelectionMode, onSelect, onLongPress, onReply, isGroup, showSenderInfo, senderDisplayName, senderAvatar, groupReadState }: {
   message: Message; isMe: boolean;
   onImagePress?: (url: string) => void;
   onVideoPress?: (url: string) => void;
@@ -166,6 +214,11 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
   onSelect?: () => void;
   onLongPress?: () => void;
   onReply?: (msg: Message) => void;
+  isGroup?: boolean;
+  showSenderInfo?: boolean;
+  senderDisplayName?: string;
+  senderAvatar?: string;
+  groupReadState?: GroupReadState;
 }) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -184,11 +237,13 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
 
   if (message.isDeletedForEveryone) {
     const deletedText = isMe ? 'You deleted this message' : 'This message was deleted';
-    return (
+    const deletedGroupOther = !!isGroup && !isMe;
+    const deletedPressable = (
       <Pressable onPress={() => { if (isSelectionMode && onSelect) onSelect(); }} onLongPress={onLongPress} delayLongPress={400}
         style={[
           styles.messageBubbleContainer,
           isMe ? styles.messageBubbleContainerMe : styles.messageBubbleContainerOther,
+          deletedGroupOther && styles.messageBubbleContainerGroupOther,
           isSelectionMode && styles.messageBubbleContainerSelection,
           isSelected && styles.messageBubbleSelected,
         ]}
@@ -221,6 +276,16 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
         </View>
       </Pressable>
     );
+
+    if (deletedGroupOther) {
+      return (
+        <View style={styles.groupMessageRow}>
+          <View style={styles.groupAvatarSlot} />
+          <View style={styles.groupMessageColumn}>{deletedPressable}</View>
+        </View>
+      );
+    }
+    return deletedPressable;
   }
 
   const isMediaMessage = message.type === 'IMAGE' || message.type === 'VIDEO';
@@ -395,11 +460,29 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
     const tickColor = forMedia ? '#ffffff' : (colorScheme === 'dark' ? '#8696a0' : '#667781');
     const readColor = forMedia ? '#53bdeb' : '#53bdeb';
 
+    // SENDING / FAILED are transport states — always take precedence.
+    if (message.status === 'SENDING') {
+      return <Ionicons name="time-outline" size={14} color={tickColor} />;
+    }
+    if (message.status === 'FAILED') {
+      return <Ionicons name="alert-circle" size={14} color="#FF3B30" />;
+    }
+
+    // Group chats: use per-member read receipts (S vs N) rather than the
+    // coarse Message.status enum, which cannot represent "read by some".
+    if (isGroup && groupReadState) {
+      switch (groupReadState) {
+        case 'single':
+          return <Ionicons name="checkmark" size={16} color={tickColor} />;
+        case 'double_gray':
+          return <Ionicons name="checkmark-done" size={16} color={tickColor} />;
+        case 'double_blue':
+          return <Ionicons name="checkmark-done" size={16} color={readColor} />;
+      }
+    }
+
+    // Private chats: fall back to the existing status enum behavior.
     switch (message.status) {
-      case 'SENDING':
-        return <Ionicons name="time-outline" size={14} color={tickColor} />;
-      case 'FAILED':
-        return <Ionicons name="alert-circle" size={14} color="#FF3B30" />;
       case 'READ':
         return <Ionicons name="checkmark-done" size={16} color={readColor} />;
       case 'DELIVERED':
@@ -412,9 +495,9 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
 
   const timeColor = isMe ? (colorScheme === 'dark' ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)') : colors.textSecondary;
   const isTextMessage = message.type === 'TEXT' || (!['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT', 'LOCATION', 'CALL'].includes(message.type || ''));
+  const isGroupOther = !!isGroup && !isMe;
 
-  return (
-    <SwipeToReply enabled={!isSelectionMode && !!onReply} isMe={isMe} onReply={() => onReply && onReply(message)}>
+  const bubblePressable = (
     <Pressable
       onPress={() => {
         if (isSelectionMode && onSelect) {
@@ -426,6 +509,7 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
       style={[
         styles.messageBubbleContainer,
         isMe ? styles.messageBubbleContainerMe : styles.messageBubbleContainerOther,
+        isGroupOther && styles.messageBubbleContainerGroupOther,
         isSelectionMode && styles.messageBubbleContainerSelection,
         isSelected && styles.messageBubbleSelected,
       ]}
@@ -446,9 +530,14 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
         !isMe && colorScheme === 'light' && styles.messageBubbleBorder,
         isMediaMessage && styles.mediaBubble,
       ]}>
+        {isGroupOther && showSenderInfo && !!senderDisplayName && (
+          <Text style={[styles.bubbleSenderName, { color: "rgb(72, 197, 255)" }]} numberOfLines={1}>
+            {senderDisplayName}
+          </Text>
+        )}
         {message.replyTo && (
-          <View style={[styles.replyContainer, { borderLeftColor: colors.primary, backgroundColor: isMe ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.04)' }]}>
-            <Text style={[styles.replyName, { color: colors.primary }]} numberOfLines={1}>
+          <View style={[styles.replyContainer, { borderLeftColor: colors.primary, backgroundColor: isMe ? 'rgba(23, 54, 195, 0.06)' : 'rgba(0,0,0,0.04)' }]}>
+            <Text style={[styles.replyName, { color: colorScheme === 'dark' ? "rgb(72, 197, 255)" : colors.primary }]} numberOfLines={1}>
               {message.replyTo.sender.name}
             </Text>
             <Text style={[styles.replyText, { color: colors.textSecondary }]} numberOfLines={1}>
@@ -457,8 +546,12 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
           </View>
         )}
         {isTextMessage ? (
-          /* WhatsApp-style: flex-wrap row so time sits at bottom-right naturally */
-          <View style={styles.textMessageRow}>
+          <View
+            style={[
+              styles.textMessageRow,
+              isShortSingleLineMessage(message.content) && styles.textMessageRowShort,
+            ]}
+          >
             <Text style={[styles.messageText, { color: colorScheme === 'dark' ? '#e9edef' : '#111b21' }]}>
               {message.content}
             </Text>
@@ -490,6 +583,36 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
         )}
       </View>
     </Pressable>
+  );
+
+  if (isGroupOther) {
+    return (
+      <SwipeToReply enabled={!isSelectionMode && !!onReply} isMe={isMe} onReply={() => onReply && onReply(message)}>
+        <View style={styles.groupMessageRow}>
+          <View style={styles.groupAvatarSlot}>
+            {showSenderInfo ? (
+              senderAvatar ? (
+                <Avatar uri={senderAvatar} size={28} />
+              ) : (
+                <View style={styles.groupAvatarFallback}>
+                  <Text style={styles.groupAvatarFallbackText}>
+                    {getInitials(senderDisplayName || '') || '?'}
+                  </Text>
+                </View>
+              )
+            ) : null}
+          </View>
+          <View style={styles.groupMessageColumn}>
+            {bubblePressable}
+          </View>
+        </View>
+      </SwipeToReply>
+    );
+  }
+
+  return (
+    <SwipeToReply enabled={!isSelectionMode && !!onReply} isMe={isMe} onReply={() => onReply && onReply(message)}>
+      {bubblePressable}
     </SwipeToReply>
   );
 }
@@ -717,9 +840,7 @@ function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoice
   );
 }
 
-function SelectionHeader({
-  count, onCancel, onStar, onDelete, onCopy, onForward, onReply, allStarred
-}: {
+function SelectionHeader({ count, onCancel, onStar, onDelete, onCopy, onForward, onReply, allStarred }: {
   count: number;
   onCancel: () => void;
   onStar: () => void;
@@ -761,9 +882,7 @@ function SelectionHeader({
   );
 }
 
-function ForwardModal({
-  visible, onClose, onForward
-}: {
+function ForwardModal({ visible, onClose, onForward }: {
   visible: boolean;
   onClose: () => void;
   onForward: (chatId: string) => void;
@@ -856,10 +975,59 @@ export default function ChatDetailScreen() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [showForwardModal, setShowForwardModal] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const flatListRef = useRef<FlatList>(null);
   // Get the other participant for PRIVATE chats
   const otherMember = chat?.members?.find((m) => m.user.id !== user?.id);
   const otherUser = otherMember?.user;
+
+  // Contacts lookup for sender-name resolution in group chats
+  const contactsById = useMemo(() => {
+    const map: Record<string, Contact> = {};
+    for (const c of contacts) map[c.contactId] = c;
+    return map;
+  }, [contacts]);
+
+  const memberUserById = useMemo(() => {
+    const map: Record<string, SenderLookupUser> = {};
+    for (const m of chat?.members || []) {
+      if (m?.user?.id) {
+        map[m.user.id] = {
+          name: m.user.name,
+          phone: m.user.phone,
+          countryCode: m.user.countryCode,
+        };
+      }
+    }
+    return map;
+  }, [chat?.members]);
+
+  // Precompute member join/leave timestamps once per chat.members update so
+  // per-message read-state calculation stays O(receipts) instead of
+  // O(members * receipts) during FlatList rendering. Scales to large groups.
+  const eligibleMembers = useMemo<EligibleMember[]>(() => {
+    const members = chat?.members || [];
+    const arr: EligibleMember[] = [];
+    for (const m of members) {
+      const uid = m?.user?.id;
+      if (!uid) continue;
+      arr.push({
+        userId: uid,
+        joinedAtMs: m.joinedAt ? new Date(m.joinedAt).getTime() : 0,
+        leftAtMs: m.leftAt ? new Date(m.leftAt).getTime() : null,
+      });
+    }
+    return arr;
+  }, [chat?.members]);
+
+  // Load contacts once (used to display contact name vs phone number for group senders)
+  useEffect(() => {
+    let cancelled = false;
+    contactApi.getContacts()
+      .then((c) => { if (!cancelled) setContacts(c); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Voice recording
   const { recording: voiceRecording, startRecording, stopRecording, cancelRecording } = useVoiceRecorder();
@@ -1001,15 +1169,33 @@ export default function ChatDetailScreen() {
       );
     });
 
-    // Messages read
+    // Messages read — append a per-user readReceipt (with dedup) so group
+    // chats can transition single → double_gray → double_blue in real time.
+    // Private chats continue to rely on the status = 'READ' update too.
     const unsubscribeMessagesRead = socketService.on('messages_read', (data: any) => {
-      if (data.chatId === chatId) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            data.messageIds.includes(msg.id) ? { ...msg, status: 'READ' } : msg
-          )
-        );
-      }
+      if (data.chatId !== chatId) return;
+      const readerId: string | undefined = data.readBy;
+      const messageIds: string[] = Array.isArray(data.messageIds) ? data.messageIds : [];
+      if (messageIds.length === 0) return;
+      const readAtIso = new Date().toISOString();
+      const idSet = new Set(messageIds);
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (!idSet.has(msg.id)) return msg;
+          const existing = msg.readReceipts || [];
+          const alreadyHasReceipt =
+            !!readerId && existing.some((r) => r.userId === readerId);
+          const nextReceipts =
+            readerId && !alreadyHasReceipt
+              ? [...existing, { userId: readerId, readAt: readAtIso }]
+              : existing;
+          return {
+            ...msg,
+            status: 'READ',
+            readReceipts: nextReceipts,
+          };
+        })
+      );
     });
 
     // Typing indicator
@@ -1612,19 +1798,45 @@ export default function ChatDetailScreen() {
     handleCancelSelection();
   };
 
-  const renderMessage = ({ item }: { item: Message }) => (
-    <MessageBubble
-      message={item}
-      isMe={item.senderId === user?.id}
-      onImagePress={isSelectionMode ? undefined : setPreviewImageUrl}
-      onVideoPress={isSelectionMode ? undefined : setPreviewVideoUrl}
-      isSelected={selectedMessages.has(item.id)}
-      isSelectionMode={isSelectionMode}
-      onSelect={() => handleSelectMessage(item.id)}
-      onLongPress={() => handleLongPress(item.id)}
-      onReply={handleReply}
-    />
-  );
+  const isGroupChat = chat?.type === 'GROUP';
+
+  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
+    const isMe = item.senderId === user?.id;
+    const prev = index > 0 ? messages[index - 1] : null;
+    const showSenderInfo =
+      isGroupChat &&
+      !isMe &&
+      item.type !== 'SYSTEM' &&
+      (!prev || prev.senderId !== item.senderId || prev.type === 'SYSTEM');
+    const senderDisplayName =
+      isGroupChat && !isMe
+        ? resolveSenderDisplayName(item, contactsById, memberUserById)
+        : undefined;
+    // Only the sender needs a read indicator, and only groups need the
+    // per-receipt calculation (private chats keep using message.status).
+    const groupReadState =
+      isGroupChat && isMe && item.type !== 'SYSTEM' && user?.id
+        ? computeGroupReadState(item, eligibleMembers, user.id)
+        : undefined;
+    return (
+      <MessageBubble
+        message={item}
+        isMe={isMe}
+        isGroup={isGroupChat}
+        showSenderInfo={showSenderInfo}
+        senderDisplayName={senderDisplayName}
+        senderAvatar={item.sender?.avatar}
+        groupReadState={groupReadState}
+        onImagePress={isSelectionMode ? undefined : setPreviewImageUrl}
+        onVideoPress={isSelectionMode ? undefined : setPreviewVideoUrl}
+        isSelected={selectedMessages.has(item.id)}
+        isSelectionMode={isSelectionMode}
+        onSelect={() => handleSelectMessage(item.id)}
+        onLongPress={() => handleLongPress(item.id)}
+        onReply={handleReply}
+      />
+    );
+  };
 
   if (loading) {
     return (
@@ -1891,12 +2103,54 @@ const styles = StyleSheet.create({
     marginVertical: 1,
     maxWidth: '80%',
     paddingHorizontal: 0,
+    minWidth: 0,
   },
   messageBubbleContainerMe: {
     alignSelf: 'flex-end',
   },
   messageBubbleContainerOther: {
     alignSelf: 'flex-start',
+  },
+  messageBubbleContainerGroupOther: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  groupMessageRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    alignSelf: 'flex-start',
+    maxWidth: '85%',
+    marginVertical: 1,
+  },
+  groupAvatarSlot: {
+    width: 28,
+    marginRight: 6,
+    marginBottom: 2,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  groupAvatarFallback: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupAvatarFallbackText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  groupMessageColumn: {
+    flexShrink: 1,
+    minWidth: 0,
+    alignItems: 'flex-start',
+  },
+  bubbleSenderName: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 6,
   },
   messageBubbleContainerSelection: {
     flexDirection: 'row',
@@ -1973,8 +2227,15 @@ const styles = StyleSheet.create({
   },
   textMessageRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'wrap',   // my-changes
     justifyContent: 'flex-end',
+    alignItems: 'flex-end',
+  },
+  textMessageRowShort: {
+    // Short single-line messages: keep text + timestamp on one line
+    // so the bubble stays compact and doesn't force-wrap.
+    flexWrap: 'nowrap',
+    alignItems: 'center',
   },
   messageText: {
     fontSize: 15.5,
@@ -1988,6 +2249,7 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     marginBottom: 1,
     gap: 3,
+    flexShrink: 0,
   },
   messageFooter: {
     flexDirection: 'row',

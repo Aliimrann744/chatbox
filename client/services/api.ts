@@ -666,12 +666,16 @@ export interface ChatMember {
   id: string;
   userId: string;
   role: 'ADMIN' | 'MEMBER';
+  joinedAt?: string;
+  leftAt?: string | null;
   user: {
     id: string;
     name: string;
     avatar?: string;
     isOnline?: boolean;
     lastSeen?: string;
+    phone?: string;
+    countryCode?: string;
   };
 }
 
@@ -707,6 +711,10 @@ export interface Message {
     name: string;
     avatar?: string;
   };
+  // Per-user read receipts (populated by GET /chats/:id/messages and
+  // appended client-side when a `messages_read` socket event arrives).
+  // Used to compute WhatsApp-style group read ticks.
+  readReceipts?: { userId: string; readAt: string }[];
 }
 
 export interface SendMessageData {
