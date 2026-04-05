@@ -65,6 +65,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
     './plugins/force-agp-version',
+    './plugins/fix-android-stl',
   ],
   experiments: {
     typedRoutes: true,

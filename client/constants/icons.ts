@@ -63,4 +63,12 @@ export const MAPPING: Record<string, ComponentProps<typeof MaterialIcons>['name'
   'video.slash.fill': 'videocam-off',
   'camera.rotate.fill': 'flip-camera-ios',
   'exclamationmark.circle': 'error-outline',
+
+  // Group module icons
+  'arrow.right': 'arrow-forward',
+  'pencil': 'edit',
+  'gearshape.fill': 'settings',
+  'trash.fill': 'delete',
+  'rectangle.portrait.and.arrow.right': 'logout',
+  'person': 'person-outline',
 };

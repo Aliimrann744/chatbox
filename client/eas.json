@@ -20,7 +20,8 @@
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
       },
       "env": {
         "EXPO_NO_DEV_CLIENT": "1",
@@ -31,7 +32,9 @@
     "production": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease",
+        "applicationArchivePath": "android/app/build/outputs/apk/release/*.apk"
       },
       "env": {
         "EXPO_NO_DEV_CLIENT": "1",

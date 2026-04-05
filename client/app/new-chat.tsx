@@ -159,7 +159,7 @@ export default function NewChatScreen() {
   };
 
   const handleNewGroup = () => {
-    Alert.alert('Coming Soon', 'Group chat feature is coming soon!');
+    router.push('/group/new');
   };
 
   const handleNewContact = () => {

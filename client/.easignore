@@ -1,16 +1,39 @@
+# ─── Dependencies ──────────────────────────────────────────────────────────
 node_modules/
+
+# ─── Generated native folders (EAS regenerates these via `expo prebuild`) ──
+# CRITICAL: these MUST be ignored so EAS always runs a clean prebuild on the
+# server. If the local /android folder is uploaded, EAS treats the project
+# as bare workflow, skips prebuild, reuses stale build caches, and may fall
+# back to archiving the workspace as .tar.gz instead of producing an APK.
+/android
+/ios
+
+# ─── Expo / Metro caches ───────────────────────────────────────────────────
 .expo/
+.metro-health-check*
+
+# ─── Build output ──────────────────────────────────────────────────────────
 dist/
 web-build/
+*.tsbuildinfo
+
+# ─── Git / editor / OS ─────────────────────────────────────────────────────
 .git/
-.metro-health-check*
+.vscode/
+.idea/
+.DS_Store
+
+# ─── Logs ──────────────────────────────────────────────────────────────────
 npm-debug.*
 yarn-debug.*
 yarn-error.*
-*.tsbuildinfo
-.DS_Store
+
+# ─── Secrets / local env (EAS injects env vars via eas.json) ───────────────
 .env
-.env*.local
-.vscode/
+.env.*.local
+.env.local
+
+# ─── Project-local ─────────────────────────────────────────────────────────
 .claude/
 app-example/

@@ -309,31 +309,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (data.forEveryone) {
         const result = await this.chatService.deleteMessageForEveryone(userId, data.messageId);
 
-        // Notify all chat members
+        // Notify all chat members about the "deleted for everyone" placeholder
         for (const memberUserId of result.memberUserIds) {
-          if (memberUserId !== userId) {
-            const socketId = this.connectedUsers.get(memberUserId);
-            if (socketId) {
-              this.server.to(socketId).emit('message_deleted', {
-                messageId: result.messageId,
-                chatId: result.chatId,
-              });
-            }
+          const socketId = this.connectedUsers.get(memberUserId);
+          if (socketId) {
+            this.server.to(socketId).emit('message_deleted_for_everyone', {
+              messageId: result.messageId,
+              chatId: result.chatId,
+              senderId: result.senderId,
+            });
           }
         }
 
-        // Also confirm to the sender
-        client.emit('message_deleted', {
-          messageId: result.messageId,
-          chatId: result.chatId,
-        });
-
         return { success: true };
       } else {
-        const result = await this.chatService.deleteMessagesForMe(userId, [data.messageId]);
+        await this.chatService.deleteMessagesForMe(userId, [data.messageId]);
+        // Only notify the requesting user
         client.emit('message_deleted', {
           messageId: data.messageId,
-          chatId: null,
         });
         return { success: true };
       }
@@ -357,9 +350,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             for (const memberUserId of result.memberUserIds) {
               const socketId = this.connectedUsers.get(memberUserId);
               if (socketId) {
-                this.server.to(socketId).emit('message_deleted', {
+                this.server.to(socketId).emit('message_deleted_for_everyone', {
                   messageId: result.messageId,
                   chatId: result.chatId,
+                  senderId: result.senderId,
                 });
               }
             }
@@ -369,7 +363,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       } else {
         await this.chatService.deleteMessagesForMe(userId, data.messageIds);
         for (const messageId of data.messageIds) {
-          client.emit('message_deleted', { messageId, chatId: null });
+          client.emit('message_deleted', { messageId });
         }
         return { success: true };
       }

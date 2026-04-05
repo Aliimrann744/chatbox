@@ -400,21 +400,37 @@ export const contactApi = {
 
 // Group API
 export const groupApi = {
-  async createGroup(data: { name: string; memberIds: string[]; description?: string; avatar?: string }) {
-    return request<Chat>('/groups', {
+  async createGroup(data: {
+    name: string;
+    memberIds: string[];
+    description?: string;
+    avatar?: string;
+    permissions?: GroupPermissions;
+  }) {
+    return request<GroupChat>('/groups', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   async getGroup(groupId: string) {
-    return request<Chat>(`/groups/${groupId}`);
+    return request<GroupChat>(`/groups/${groupId}`);
   },
 
-  async updateGroup(groupId: string, data: { name?: string; description?: string; avatar?: string }) {
-    return request<Chat>(`/groups/${groupId}`, {
+  async updateGroup(
+    groupId: string,
+    data: { name?: string; description?: string; avatar?: string },
+  ) {
+    return request<GroupChat>(`/groups/${groupId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+  },
+
+  async updatePermissions(groupId: string, permissions: GroupPermissions) {
+    return request<GroupChat>(`/groups/${groupId}/permissions`, {
+      method: 'PATCH',
+      body: JSON.stringify(permissions),
     });
   },
 
@@ -423,10 +439,13 @@ export const groupApi = {
   },
 
   async addMembers(groupId: string, memberIds: string[]) {
-    return request(`/groups/${groupId}/members`, {
-      method: 'POST',
-      body: JSON.stringify({ memberIds }),
-    });
+    return request<{ success: boolean; addedMembers: string[] }>(
+      `/groups/${groupId}/members`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ memberIds }),
+      },
+    );
   },
 
   async removeMember(groupId: string, memberId: string) {
@@ -443,7 +462,59 @@ export const groupApi = {
       body: JSON.stringify({ memberId }),
     });
   },
+
+  async removeAdmin(groupId: string, memberId: string) {
+    return request(`/groups/${groupId}/admins/${memberId}`, {
+      method: 'DELETE',
+    });
+  },
 };
+
+// Group permission roles — mirror server enum.
+export type GroupPermissionRole = 'ADMINS' | 'ALL_MEMBERS';
+
+export interface GroupPermissions {
+  editInfoRole?: GroupPermissionRole;
+  sendMessagesRole?: GroupPermissionRole;
+  addMembersRole?: GroupPermissionRole;
+  approveMembersRole?: GroupPermissionRole;
+}
+
+// Rich group-chat response from /groups/:id — includes full member list and
+// permission settings (unlike the lean Chat returned by /chats).
+export interface GroupChat {
+  id: string;
+  type: 'GROUP';
+  name: string;
+  description?: string;
+  avatar?: string;
+  creatorId: string;
+  creator?: { id: string; name: string; avatar?: string };
+  editInfoRole: GroupPermissionRole;
+  sendMessagesRole: GroupPermissionRole;
+  addMembersRole: GroupPermissionRole;
+  approveMembersRole: GroupPermissionRole;
+  members: GroupMember[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GroupMember {
+  id: string;
+  userId: string;
+  role: 'ADMIN' | 'MEMBER';
+  joinedAt: string;
+  user: {
+    id: string;
+    name: string;
+    phone?: string;
+    countryCode?: string;
+    avatar?: string;
+    about?: string;
+    isOnline?: boolean;
+    lastSeen?: string;
+  };
+}
 
 // Call API
 export const callApi = {
@@ -608,7 +679,7 @@ export interface Message {
   id: string;
   chatId: string;
   senderId: string;
-  type: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT' | 'LOCATION' | 'CONTACT' | 'STICKER' | 'CALL';
+  type: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT' | 'LOCATION' | 'CONTACT' | 'STICKER' | 'CALL' | 'SYSTEM';
   content?: string;
   mediaUrl?: string;
   mediaType?: string;
@@ -628,6 +699,7 @@ export interface Message {
   };
   isForwarded: boolean;
   isStarred?: boolean;
+  isDeletedForEveryone?: boolean;
   status: 'SENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
   createdAt: string;
   sender: {

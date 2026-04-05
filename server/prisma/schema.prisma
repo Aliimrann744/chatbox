@@ -58,6 +58,7 @@ model User {
   groupsCreated   Chat[]          @relation("GroupCreator")
   readReceipts    MessageReadReceipt[]
   starredMessages StarredMessage[]
+  deletedMessages DeletedMessageForUser[]
   statuses        Status[]        @relation("UserStatuses")
   statusViews     StatusView[]    @relation("StatusViews")
 
@@ -119,6 +120,13 @@ model Chat {
   creatorId   String?    // Group creator
   creator     User?      @relation("GroupCreator", fields: [creatorId], references: [id])
 
+  // Group permissions (who can perform each action)
+  // Default: ALL_MEMBERS (least restrictive) — admins can tighten these later.
+  editInfoRole         GroupPermissionRole @default(ALL_MEMBERS) // change name/icon/description/settings
+  sendMessagesRole     GroupPermissionRole @default(ALL_MEMBERS) // who can send messages
+  addMembersRole       GroupPermissionRole @default(ALL_MEMBERS) // who can add new members
+  approveMembersRole   GroupPermissionRole @default(ADMINS)      // who can approve join requests
+
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -134,6 +142,11 @@ model Chat {
 enum ChatType {
   PRIVATE   // 1-on-1 chat
   GROUP     // Group chat
+}
+
+enum GroupPermissionRole {
+  ADMINS       // Only admins can perform the action
+  ALL_MEMBERS  // Any participant can perform the action
 }
 
 // ==================== CHAT MEMBER ====================
@@ -202,16 +215,20 @@ model Message {
   // Status
   status      MessageStatus @default(SENT)
 
+  // Deletion
+  isDeletedForEveryone Boolean @default(false)
+
   // Timestamps
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
-  deletedAt   DateTime?     // Soft delete
+  deletedAt   DateTime?     // Legacy soft delete (for clearChat)
 
   // Relations
   chat        Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
   sender      User          @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
   readReceipts MessageReadReceipt[]
   starredBy   StarredMessage[]
+  deletedForUsers DeletedMessageForUser[]
 
   @@index([chatId])
   @@index([senderId])
@@ -229,6 +246,7 @@ enum MessageType {
   CONTACT
   STICKER
   CALL
+  SYSTEM      // Group system events (joined/removed/promoted/settings changed)
 }
 
 enum MessageStatus {
@@ -253,6 +271,22 @@ model MessageReadReceipt {
   @@index([messageId])
   @@index([userId])
   @@map("message_read_receipts")
+}
+
+// ==================== DELETED MESSAGE FOR USER (per-user "delete for me") ====================
+model DeletedMessageForUser {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  deletedAt DateTime @default(now())
+
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+  @@index([messageId])
+  @@map("deleted_messages_for_user")
 }
 
 // ==================== STARRED MESSAGES ====================

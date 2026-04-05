@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateChatDto, SendMessageDto } from './dto';
-import { ChatType, MessageStatus, MemberRole } from '@prisma/client';
+import {
+  ChatType,
+  MessageStatus,
+  MemberRole,
+  GroupPermissionRole,
+} from '@prisma/client';
 
 @Injectable()
 export class ChatService {
@@ -178,18 +183,6 @@ export class ChatService {
             },
           },
         },
-        messages: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          include: {
-            sender: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
       },
       orderBy: { updatedAt: 'desc' },
     });
@@ -199,6 +192,28 @@ export class ChatService {
       chats.map(async (chat) => {
         const currentMember = chat.members.find((m) => m.userId === userId);
         const otherMembers = chat.members.filter((m) => m.userId !== userId);
+
+        // Get last message excluding per-user deleted messages
+        const lastMessages = await this.prisma.message.findMany({
+          where: {
+            chatId: chat.id,
+            deletedAt: null,
+            NOT: {
+              deletedForUsers: {
+                some: { userId },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: {
+            sender: {
+              select: { id: true, name: true },
+            },
+          },
+        });
+
+        const lastMessage = lastMessages[0] || null;
 
         // For private chats, use the other user's info as chat info
         const chatInfo =
@@ -219,7 +234,7 @@ export class ChatService {
           type: chat.type,
           ...chatInfo,
           description: chat.description,
-          lastMessage: chat.messages[0] || null,
+          lastMessage,
           unreadCount: currentMember?.unreadCount || 0,
           isPinned: currentMember?.isPinned || false,
           isMuted: currentMember?.isMuted || false,
@@ -281,6 +296,21 @@ export class ChatService {
 
     if (!membership || membership.leftAt) {
       throw new ForbiddenException('You are not a member of this chat');
+    }
+
+    // Enforce group send-messages permission
+    const chat = await this.prisma.chat.findUnique({
+      where: { id: dto.chatId },
+      select: { type: true, sendMessagesRole: true },
+    });
+    if (
+      chat?.type === ChatType.GROUP &&
+      chat.sendMessagesRole === GroupPermissionRole.ADMINS &&
+      membership.role !== MemberRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Only admins can send messages in this group',
+      );
     }
 
     // Create message
@@ -375,6 +405,12 @@ export class ChatService {
         where: {
           chatId,
           deletedAt: null,
+          // Exclude messages the current user has "deleted for me"
+          NOT: {
+            deletedForUsers: {
+              some: { userId },
+            },
+          },
         },
         include: {
           sender: {
@@ -412,6 +448,11 @@ export class ChatService {
         where: {
           chatId,
           deletedAt: null,
+          NOT: {
+            deletedForUsers: {
+              some: { userId },
+            },
+          },
         },
       }),
     ]);
@@ -695,27 +736,44 @@ export class ChatService {
       throw new ForbiddenException('You can only delete your own messages for everyone');
     }
 
-    // Soft delete the message
+    // Time limit: 24 hours
+    const hoursSinceSent = (Date.now() - new Date(message.createdAt).getTime()) / (1000 * 60 * 60);
+    if (hoursSinceSent > 24) {
+      throw new BadRequestException('You can only delete messages for everyone within 24 hours of sending');
+    }
+
+    // Mark as deleted for everyone (keep the message row, just flag it)
     await this.prisma.message.update({
       where: { id: messageId },
-      data: { deletedAt: new Date(), content: null, mediaUrl: null },
+      data: {
+        isDeletedForEveryone: true,
+        content: null,
+        mediaUrl: null,
+        thumbnail: null,
+        fileName: null,
+      },
     });
 
     return {
       messageId,
       chatId: message.chatId,
+      senderId: message.senderId,
       memberUserIds: message.chat.members.map(m => m.userId),
     };
   }
 
-  // Delete multiple messages for the current user only (soft delete)
+  // Delete messages only for the current user (per-user tracking)
   async deleteMessagesForMe(userId: string, messageIds: string[]) {
-    // For "delete for me", we just mark them as deleted for this user
-    // Since we don't have a per-user delete tracking, we'll use the existing soft delete
     for (const messageId of messageIds) {
-      await this.prisma.message.update({
-        where: { id: messageId },
-        data: { deletedAt: new Date() },
+      // Verify message exists
+      const message = await this.prisma.message.findUnique({ where: { id: messageId } });
+      if (!message) continue;
+
+      // Create per-user deletion record (upsert to avoid duplicates)
+      await this.prisma.deletedMessageForUser.upsert({
+        where: { messageId_userId: { messageId, userId } },
+        create: { messageId, userId },
+        update: {},
       });
     }
     return { success: true, messageIds };

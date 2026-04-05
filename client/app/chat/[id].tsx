@@ -1,10 +1,22 @@
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, use } from 'react';
 import { Alert, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  runOnJS,
+  interpolate,
+  Extrapolation,
+  FadeIn,
+  FadeOut,
+} from 'react-native-reanimated';
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AudioPlayer } from '@/components/chat/audio-player';
@@ -21,10 +33,131 @@ import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-p
 import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
 import { cache, CacheKeys } from '@/services/cache';
 
-function MessageBubble({
-  message, isMe, onImagePress, onVideoPress,
-  isSelected, isSelectionMode, onSelect, onLongPress,
-}: {
+function getReplyPreviewText(msg: Message | { type?: string; content?: string | null; fileName?: string | null; locationName?: string | null; isDeletedForEveryone?: boolean }): string {
+  if (!msg) return '';
+  if ((msg as any).isDeletedForEveryone) return 'Message deleted';
+  switch (msg.type) {
+    case 'TEXT':
+      return msg.content || '';
+    case 'IMAGE':
+      return msg.content ? `📷 ${msg.content}` : '📷 Photo';
+    case 'VIDEO':
+      return msg.content ? `🎥 ${msg.content}` : '🎥 Video';
+    case 'AUDIO':
+      return '🎤 Voice message';
+    case 'DOCUMENT':
+      return `📄 ${(msg as any).fileName || 'Document'}`;
+    case 'LOCATION':
+      return `📍 ${(msg as any).locationName || 'Location'}`;
+    case 'CONTACT':
+      return '👤 Contact';
+    case 'STICKER':
+      return '🎨 Sticker';
+    case 'CALL': {
+      try {
+        const info = JSON.parse(msg.content || '{}');
+        const isVoice = info.callType === 'VOICE';
+        const label = isVoice ? 'Voice call' : 'Video call';
+        if (info.callStatus === 'MISSED') return `📞 ${label} • Missed`;
+        if (info.callStatus === 'DECLINED') return `📞 ${label} • Declined`;
+        if (info.callStatus === 'ENDED' && info.duration) {
+          const m = Math.floor(info.duration / 60);
+          const s = info.duration % 60;
+          return `📞 ${label} • ${m}:${s.toString().padStart(2, '0')}`;
+        }
+        return `📞 ${label}`;
+      } catch { return '📞 Call'; }
+    }
+    default:
+      return msg.content || '';
+  }
+}
+
+// SwipeToReply — wraps each message bubble and triggers `onReply` when the
+// user swipes it to the right past the threshold. Uses the new Reanimated
+// gesture API so it integrates cleanly with the existing FlatList scroll.
+function SwipeToReply({ children, onReply, enabled, isMe }: {
+  children: React.ReactNode;
+  onReply: () => void;
+  enabled: boolean;
+  isMe: boolean;
+}) {
+  const translateX = useSharedValue(0);
+  const THRESHOLD = 55;
+  const MAX = 80;
+
+  const trigger = () => {
+    onReply();
+  };
+
+  const pan = Gesture.Pan().enabled(enabled).activeOffsetX([-9999, 10]).failOffsetY([-12, 12]).onUpdate((e) => {
+      if (e.translationX > 0) {
+        translateX.value = Math.min(e.translationX, MAX);
+      } else {
+        translateX.value = 0;
+      }
+    })
+    .onEnd((e) => {
+      if (e.translationX > THRESHOLD) {
+        runOnJS(trigger)();
+      }
+      translateX.value = withSpring(0, { damping: 18, stiffness: 180 });
+    });
+
+  const rowStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const iconStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      translateX.value,
+      [0, THRESHOLD * 0.6, THRESHOLD],
+      [0, 0.6, 1],
+      Extrapolation.CLAMP,
+    ),
+    transform: [
+      {
+        scale: interpolate(
+          translateX.value,
+          [0, THRESHOLD],
+          [0.5, 1],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
+
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View style={{ position: 'relative' }}>
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: 'absolute',
+              left: 14,
+              top: 0,
+              bottom: 0,
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              backgroundColor: 'rgba(0,0,0,0.08)',
+              alignSelf: 'center',
+            },
+            iconStyle,
+          ]}
+        >
+          <Ionicons name="arrow-undo" size={18} color="#667781" />
+        </Animated.View>
+        <Animated.View style={rowStyle}>{children}</Animated.View>
+      </Animated.View>
+    </GestureDetector>
+  );
+}
+
+function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, isSelectionMode, onSelect, onLongPress, onReply }: {
   message: Message; isMe: boolean;
   onImagePress?: (url: string) => void;
   onVideoPress?: (url: string) => void;
@@ -32,9 +165,63 @@ function MessageBubble({
   isSelectionMode?: boolean;
   onSelect?: () => void;
   onLongPress?: () => void;
+  onReply?: (msg: Message) => void;
 }) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+
+  if (message.type === 'SYSTEM') {
+    return (
+      <View style={styles.systemMessageWrapper}>
+        <View style={[styles.systemMessageBubble, { backgroundColor: colors.backgroundSecondary }]}>
+          <Text style={[styles.systemMessageText, { color: colors.textSecondary }]}>
+            {message.content || ''}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (message.isDeletedForEveryone) {
+    const deletedText = isMe ? 'You deleted this message' : 'This message was deleted';
+    return (
+      <Pressable onPress={() => { if (isSelectionMode && onSelect) onSelect(); }} onLongPress={onLongPress} delayLongPress={400}
+        style={[
+          styles.messageBubbleContainer,
+          isMe ? styles.messageBubbleContainerMe : styles.messageBubbleContainerOther,
+          isSelectionMode && styles.messageBubbleContainerSelection,
+          isSelected && styles.messageBubbleSelected,
+        ]}
+      >
+        {isSelectionMode && (
+          <View style={styles.selectionCheckbox}>
+            <Ionicons
+              name={isSelected ? 'checkbox' : 'square-outline'}
+              size={22}
+              color={isSelected ? colors.primary : colors.textSecondary}
+            />
+          </View>
+        )}
+        <View style={[
+          styles.messageBubble,
+          isMe ? [{ backgroundColor: colors.messageOutgoing }, styles.messageBubbleMe] :
+          [{ backgroundColor: colors.messageIncoming }, styles.messageBubbleOther],
+          !isMe && colorScheme === 'light' && styles.messageBubbleBorder,
+          { opacity: 0.7 },
+        ]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 }}>
+            <Ionicons name="ban-outline" size={16} color={colors.textSecondary} />
+            <Text style={{ color: colors.textSecondary, fontSize: 14, fontStyle: 'italic' }}>
+              {deletedText}
+            </Text>
+            <Text style={[styles.messageTime, { color: colors.textSecondary }]}>
+              {formatTime(message.createdAt)}
+            </Text>
+          </View>
+        </View>
+      </Pressable>
+    );
+  }
 
   const isMediaMessage = message.type === 'IMAGE' || message.type === 'VIDEO';
 
@@ -223,13 +410,11 @@ function MessageBubble({
     }
   };
 
-  const timeColor = isMe
-    ? (colorScheme === 'dark' ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)')
-    : colors.textSecondary;
-
+  const timeColor = isMe ? (colorScheme === 'dark' ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)') : colors.textSecondary;
   const isTextMessage = message.type === 'TEXT' || (!['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT', 'LOCATION', 'CALL'].includes(message.type || ''));
 
   return (
+    <SwipeToReply enabled={!isSelectionMode && !!onReply} isMe={isMe} onReply={() => onReply && onReply(message)}>
     <Pressable
       onPress={() => {
         if (isSelectionMode && onSelect) {
@@ -263,11 +448,11 @@ function MessageBubble({
       ]}>
         {message.replyTo && (
           <View style={[styles.replyContainer, { borderLeftColor: colors.primary, backgroundColor: isMe ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.04)' }]}>
-            <Text style={[styles.replyName, { color: colors.primary }]}>
+            <Text style={[styles.replyName, { color: colors.primary }]} numberOfLines={1}>
               {message.replyTo.sender.name}
             </Text>
             <Text style={[styles.replyText, { color: colors.textSecondary }]} numberOfLines={1}>
-              {message.replyTo.content || `[${message.replyTo.type}]`}
+              {getReplyPreviewText(message.replyTo as any)}
             </Text>
           </View>
         )}
@@ -305,6 +490,7 @@ function MessageBubble({
         )}
       </View>
     </Pressable>
+    </SwipeToReply>
   );
 }
 
@@ -400,7 +586,7 @@ function AttachmentMenu({ visible, onClose, onSelect }: { visible: boolean; onCl
   );
 }
 
-function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoiceStart, onVoiceStop, onVoiceCancel, isRecording, recordingDuration, onTypingStart, onTypingStop }: {
+function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoiceStart, onVoiceStop, onVoiceCancel, isRecording, recordingDuration, onTypingStart, onTypingStop, replyingTo, onCancelReply, currentUserId }: {
   value: string;
   onChange: (text: string) => void;
   onSend: () => void;
@@ -413,6 +599,9 @@ function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoice
   recordingDuration: number;
   onTypingStart: () => void;
   onTypingStop: () => void;
+  replyingTo?: Message | null;
+  onCancelReply?: () => void;
+  currentUserId?: string;
 }) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -427,6 +616,27 @@ function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoice
   }, []);
 
   const bottomPadding = keyboardVisible ? 6 : insets.bottom + 6;
+
+  const replyPreview = replyingTo ? (
+    <Animated.View
+      entering={FadeIn.duration(160)}
+      exiting={FadeOut.duration(120)}
+      style={[styles.replyPreviewContainer, { backgroundColor: colors.backgroundSecondary }]}
+    >
+      <View style={[styles.replyPreviewBar, { backgroundColor: colors.primary }]} />
+      <View style={styles.replyPreviewContent}>
+        <Text style={[styles.replyPreviewName, { color: colors.primary }]} numberOfLines={1}>
+          {replyingTo.senderId === currentUserId ? 'You' : (replyingTo.sender?.name || 'Unknown')}
+        </Text>
+        <Text style={[styles.replyPreviewText, { color: colors.textSecondary }]} numberOfLines={1}>
+          {getReplyPreviewText(replyingTo as any)}
+        </Text>
+      </View>
+      <Pressable onPress={onCancelReply} hitSlop={10} style={styles.replyPreviewClose}>
+        <Ionicons name="close" size={20} color={colors.textSecondary} />
+      </Pressable>
+    </Animated.View>
+  ) : null;
 
   const handleTextChange = (text: string) => {
     onChange(text);
@@ -452,30 +662,35 @@ function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoice
   // Show voice recorder when recording — WhatsApp style
   if (isRecording) {
     return (
-      <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: bottomPadding }]}>
-        {/* Delete button */}
-        <Pressable onPress={onVoiceCancel} style={styles.voiceDeleteButton}>
-          <Ionicons name="trash" size={22} color="#FF3B30" />
-        </Pressable>
+      <View style={{ backgroundColor: colors.backgroundSecondary }}>
+        {replyPreview}
+        <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: bottomPadding }]}>
+          {/* Delete button */}
+          <Pressable onPress={onVoiceCancel} style={styles.voiceDeleteButton}>
+            <Ionicons name="trash" size={22} color="#FF3B30" />
+          </Pressable>
 
-        {/* Recording indicator */}
-        <View style={[styles.voiceRecordingRow, { backgroundColor: colors.inputBackground }]}>
-          <View style={styles.voiceRecordingDot} />
-          <Text style={[styles.voiceRecordingTime, { color: colors.text }]}>
-            {Math.floor(recordingDuration / 60000)}:{Math.floor((recordingDuration % 60000) / 1000).toString().padStart(2, '0')}
-          </Text>
+          {/* Recording indicator */}
+          <View style={[styles.voiceRecordingRow, { backgroundColor: colors.inputBackground }]}>
+            <View style={styles.voiceRecordingDot} />
+            <Text style={[styles.voiceRecordingTime, { color: colors.text }]}>
+              {Math.floor(recordingDuration / 60000)}:{Math.floor((recordingDuration % 60000) / 1000).toString().padStart(2, '0')}
+            </Text>
+          </View>
+
+          {/* Send button */}
+          <Pressable onPress={onVoiceStop} style={[styles.sendButton, { backgroundColor: colors.primary }]}>
+            <Ionicons name="send" size={20} color="#fff" />
+          </Pressable>
         </View>
-
-        {/* Send button */}
-        <Pressable onPress={onVoiceStop} style={[styles.sendButton, { backgroundColor: colors.primary }]}>
-          <Ionicons name="send" size={20} color="#fff" />
-        </Pressable>
       </View>
     );
   }
 
   return (
-    <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: bottomPadding }]}>
+    <View style={{ backgroundColor: colors.backgroundSecondary }}>
+      {replyPreview}
+      <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: bottomPadding }]}>
       <View style={[styles.inputRow, { backgroundColor: colors.inputBackground }]}>
         <TextInput
           style={[styles.textInput, { color: colors.text }]} placeholder="Type a message..."
@@ -497,12 +712,13 @@ function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoice
       <Pressable onPress={value.trim() ? onSend : onVoiceStart} style={[styles.sendButton, { backgroundColor: colors.primary }]}>
         <Ionicons name={value.trim() ? "send" : "mic"} size={24} color="#fff" />
       </Pressable>
+      </View>
     </View>
   );
 }
 
 function SelectionHeader({
-  count, onCancel, onStar, onDelete, onCopy, onForward, allStarred
+  count, onCancel, onStar, onDelete, onCopy, onForward, onReply, allStarred
 }: {
   count: number;
   onCancel: () => void;
@@ -510,6 +726,7 @@ function SelectionHeader({
   onDelete: () => void;
   onCopy: () => void;
   onForward: () => void;
+  onReply: () => void;
   allStarred?: boolean;
 }) {
   const colorScheme = useColorScheme() ?? 'light';
@@ -523,6 +740,11 @@ function SelectionHeader({
       </Pressable>
       <Text style={[styles.selectionCount, { color: colors.headerText }]}>{count}</Text>
       <View style={{ flex: 1 }} />
+      {count === 1 && (
+        <Pressable onPress={onReply} style={styles.selectionAction} hitSlop={8}>
+          <Ionicons name="arrow-undo-outline" size={22} color={colors.headerText} />
+        </Pressable>
+      )}
       <Pressable onPress={onStar} style={styles.selectionAction} hitSlop={8}>
         <Ionicons name={allStarred ? "star" : "star-outline"} size={22} color={colors.headerText} />
       </Pressable>
@@ -633,6 +855,7 @@ export default function ChatDetailScreen() {
   const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [showForwardModal, setShowForwardModal] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const flatListRef = useRef<FlatList>(null);
   // Get the other participant for PRIVATE chats
   const otherMember = chat?.members?.find((m) => m.user.id !== user?.id);
@@ -796,10 +1019,17 @@ export default function ChatDetailScreen() {
       }
     });
 
-    // Message deleted
+    // Message deleted for me (remove from view)
     const unsubscribeMessageDeleted = socketService.on('message_deleted', (data: any) => {
-      if (data.chatId === chatId || data.chatId === null) {
-        setMessages((prev) => prev.filter((msg) => msg.id !== data.messageId));
+      setMessages((prev) => prev.filter((msg) => msg.id !== data.messageId));
+    });
+
+    // Message deleted for everyone (show placeholder)
+    const unsubscribeMessageDeletedForEveryone = socketService.on('message_deleted_for_everyone', (data: any) => {
+      if (data.chatId === chatId) {
+        setMessages((prev: any) => prev?.map((msg: any) =>
+          msg.id === data.messageId ? { ...msg, isDeletedForEveryone: true, content: null, mediaUrl: null } : msg
+        ));
       }
     });
 
@@ -818,6 +1048,7 @@ export default function ChatDetailScreen() {
       unsubscribeMessagesRead();
       unsubscribeTyping();
       unsubscribeMessageDeleted();
+      unsubscribeMessageDeletedForEveryone();
       unsubscribeOnlineStatus();
     };
   }, [chatId]);
@@ -844,6 +1075,16 @@ export default function ChatDetailScreen() {
     if (!messageText.trim() || !chatId || !user) return;
 
     const tempId = generateTempId();
+    const replyToIdForSend = replyingTo?.id;
+    const replyToForOptimistic = replyingTo
+      ? {
+          id: replyingTo.id,
+          content: replyingTo.content,
+          type: replyingTo.type,
+          sender: { id: replyingTo.sender.id, name: replyingTo.sender.name },
+        }
+      : undefined;
+
     const optimisticMessage: Message = {
       id: tempId,
       chatId,
@@ -853,6 +1094,8 @@ export default function ChatDetailScreen() {
       status: 'SENDING',
       isForwarded: false,
       createdAt: new Date().toISOString(),
+      replyToId: replyToIdForSend,
+      replyTo: replyToForOptimistic as any,
       sender: {
         id: user.id,
         name: user.name,
@@ -862,6 +1105,7 @@ export default function ChatDetailScreen() {
 
     setMessages((prev) => [...prev, optimisticMessage]);
     setMessageText('');
+    setReplyingTo(null);
 
     // Scroll to bottom
     setTimeout(() => {
@@ -874,10 +1118,11 @@ export default function ChatDetailScreen() {
         chatId,
         type: 'TEXT',
         content: messageText.trim(),
+        replyToId: replyToIdForSend,
         tempId,
       });
     } else {
-      chatApi.sendMessage(chatId, { type: 'TEXT', content: messageText.trim() }).then((saved) => {
+      chatApi.sendMessage(chatId, { type: 'TEXT', content: messageText.trim(), replyToId: replyToIdForSend }).then((saved) => {
         setMessages((prev) =>
           prev.map((msg) => msg.id === tempId ? { ...saved, status: 'SENT' } : msg)
         );
@@ -932,6 +1177,15 @@ export default function ChatDetailScreen() {
     if (!chatId || !user) return;
 
     const tempId = generateTempId();
+    const replyToIdForSend = replyingTo?.id;
+    const replyToForOptimistic = replyingTo
+      ? {
+          id: replyingTo.id,
+          content: replyingTo.content,
+          type: replyingTo.type,
+          sender: { id: replyingTo.sender.id, name: replyingTo.sender.name },
+        }
+      : undefined;
 
     // Create optimistic message
     const optimisticMessage: Message = {
@@ -945,6 +1199,8 @@ export default function ChatDetailScreen() {
       status: 'SENDING',
       isForwarded: false,
       createdAt: new Date().toISOString(),
+      replyToId: replyToIdForSend,
+      replyTo: replyToForOptimistic as any,
       sender: {
         id: user.id,
         name: user.name,
@@ -953,6 +1209,7 @@ export default function ChatDetailScreen() {
     };
 
     setMessages((prev) => [...prev, optimisticMessage]);
+    setReplyingTo(null);
 
     // Scroll to bottom
     setTimeout(() => {
@@ -966,6 +1223,7 @@ export default function ChatDetailScreen() {
       latitude: location.latitude,
       longitude: location.longitude,
       locationName: location.name,
+      replyToId: replyToIdForSend,
       tempId,
     });
   };
@@ -975,6 +1233,15 @@ export default function ChatDetailScreen() {
 
     const tempId = generateTempId();
     const messageType = getMessageTypeFromMimeType(media.mimeType);
+    const replyToIdForSend = replyingTo?.id;
+    const replyToForOptimistic = replyingTo
+      ? {
+          id: replyingTo.id,
+          content: replyingTo.content,
+          type: replyingTo.type,
+          sender: { id: replyingTo.sender.id, name: replyingTo.sender.name },
+        }
+      : undefined;
 
     // Create optimistic message
     const optimisticMessage: Message = {
@@ -991,6 +1258,8 @@ export default function ChatDetailScreen() {
       status: 'SENDING',
       isForwarded: false,
       createdAt: new Date().toISOString(),
+      replyToId: replyToIdForSend,
+      replyTo: replyToForOptimistic as any,
       sender: {
         id: user.id,
         name: user.name,
@@ -999,6 +1268,7 @@ export default function ChatDetailScreen() {
     };
 
     setMessages((prev) => [...prev, optimisticMessage]);
+    setReplyingTo(null);
 
     // Scroll to bottom
     setTimeout(() => {
@@ -1025,6 +1295,7 @@ export default function ChatDetailScreen() {
         mediaDuration: media.duration ? Math.floor(media.duration / 1000) : undefined,
         fileName: media.name,
         fileSize: media.size,
+        replyToId: replyToIdForSend,
       };
 
       // Prefer WebSocket, fall back to REST API if socket is disconnected
@@ -1061,6 +1332,15 @@ export default function ChatDetailScreen() {
       // Send voice message
       const tempId = generateTempId();
       const durationSeconds = Math.floor(result.duration / 1000);
+      const replyToIdForSend = replyingTo?.id;
+      const replyToForOptimistic = replyingTo
+        ? {
+            id: replyingTo.id,
+            content: replyingTo.content,
+            type: replyingTo.type,
+            sender: { id: replyingTo.sender.id, name: replyingTo.sender.name },
+          }
+        : undefined;
 
       // Create optimistic message
       const optimisticMessage: Message = {
@@ -1074,6 +1354,8 @@ export default function ChatDetailScreen() {
         status: 'SENDING',
         isForwarded: false,
         createdAt: new Date().toISOString(),
+        replyToId: replyToIdForSend,
+        replyTo: replyToForOptimistic as any,
         sender: {
           id: user.id,
           name: user.name,
@@ -1082,6 +1364,7 @@ export default function ChatDetailScreen() {
       };
 
       setMessages((prev) => [...prev, optimisticMessage]);
+      setReplyingTo(null);
 
       // Scroll to bottom
       setTimeout(() => {
@@ -1104,6 +1387,7 @@ export default function ChatDetailScreen() {
           mediaUrl: uploadResult.url,
           mediaType: 'audio/mp4',
           mediaDuration: durationSeconds,
+          replyToId: replyToIdForSend,
         };
 
         if (socketService.isConnected) {
@@ -1171,6 +1455,22 @@ export default function ChatDetailScreen() {
     setSelectedMessages(new Set());
   };
 
+  // Enter reply mode for a specific message (triggered by swipe or reply
+  // icon in the selection header). Ignores deleted messages.
+  const handleReply = (msg: Message) => {
+    if (!msg || (msg as any).isDeletedForEveryone) return;
+    setReplyingTo(msg);
+    handleCancelSelection();
+  };
+
+  // Reply action from the selection header (acts on the single selected msg)
+  const handleReplyFromSelection = () => {
+    if (selectedMessages.size !== 1) return;
+    const [id] = Array.from(selectedMessages);
+    const msg = messages.find(m => m.id === id);
+    if (msg) handleReply(msg);
+  };
+
   const handleCopyMessages = async () => {
     const selected = messages.filter(m => selectedMessages.has(m.id));
     const textContent = selected
@@ -1209,9 +1509,11 @@ export default function ChatDetailScreen() {
   const performDelete = async (messageIds: string[], forEveryone: boolean) => {
     try {
       if (forEveryone) {
-        // "Delete for everyone" — REST API (nulls content, checks sender ownership)
-        for (const messageId of messageIds) {
-          await chatApi.deleteMessageForEveryone(messageId);
+        // "Delete for everyone" — via socket so all members get real-time notification
+        if (messageIds.length === 1) {
+          await socketService.deleteMessage(messageIds[0], true);
+        } else {
+          await socketService.deleteMessages(messageIds, true);
         }
       } else {
         // "Delete for me" — REST batch endpoint (no ownership check, just soft-deletes)
@@ -1223,8 +1525,19 @@ export default function ChatDetailScreen() {
 
     // Update cache after deletion
     if (chatId) {
-      const remaining = messages.filter(m => !messageIds.includes(m.id));
-      cache.set(CacheKeys.messages(chatId), remaining);
+      const idSet = new Set(messageIds);
+      if (forEveryone) {
+        // Keep messages but mark as deleted placeholders
+        const updated = messages.map(m =>
+          idSet.has(m.id)
+            ? { ...m, isDeletedForEveryone: true, content: undefined, mediaUrl: undefined, type: 'TEXT' as const }
+            : m
+        );
+        cache.set(CacheKeys.messages(chatId), updated);
+      } else {
+        const remaining = messages.filter(m => !idSet.has(m.id));
+        cache.set(CacheKeys.messages(chatId), remaining);
+      }
     }
   };
 
@@ -1246,7 +1559,7 @@ export default function ChatDetailScreen() {
       style: 'destructive',
       onPress: async () => {
         handleCancelSelection();
-        // Remove locally first for instant feedback
+        // Remove from local state (only for this user)
         setMessages(prev => prev.filter(m => !selectedSet.has(m.id)));
         await performDelete(selectedArray, false);
       },
@@ -1258,8 +1571,8 @@ export default function ChatDetailScreen() {
         style: 'destructive',
         onPress: async () => {
           handleCancelSelection();
-          // Remove locally first for instant feedback
-          setMessages(prev => prev.filter(m => !selectedSet.has(m.id)));
+          // Show placeholder locally for "deleted for everyone"
+          setMessages((prev: any) => prev?.map((m: any) => selectedSet?.has(m.id) ? { ...m, isDeletedForEveryone: true, content: null, mediaUrl: null, type: 'TEXT' as const } : m));
           await performDelete(selectedArray, true);
         },
       });
@@ -1309,6 +1622,7 @@ export default function ChatDetailScreen() {
       isSelectionMode={isSelectionMode}
       onSelect={() => handleSelectMessage(item.id)}
       onLongPress={() => handleLongPress(item.id)}
+      onReply={handleReply}
     />
   );
 
@@ -1334,6 +1648,7 @@ export default function ChatDetailScreen() {
           onDelete={handleDeleteMessages}
           onCopy={handleCopyMessages}
           onForward={handleForwardMessages}
+          onReply={handleReplyFromSelection}
           allStarred={Array.from(selectedMessages).every(id => {
             const msg = messages.find(m => m.id === id);
             return msg?.isStarred;
@@ -1355,7 +1670,10 @@ export default function ChatDetailScreen() {
           onCall={handleCall}
           onVideoCall={handleVideoCall}
           onUserInfoPress={() => {
-            if (chatId) {
+            if (!chatId) return;
+            if (chat?.type === 'GROUP') {
+              router.push({ pathname: '/group/[id]/info', params: { id: chatId } });
+            } else {
               router.push({ pathname: '/chat/user-info', params: { chatId, userId: otherUser?.id } });
             }
           }}
@@ -1404,6 +1722,9 @@ export default function ChatDetailScreen() {
         recordingDuration={voiceRecording.duration}
         onTypingStart={handleTypingStart}
         onTypingStop={handleTypingStop}
+        replyingTo={replyingTo}
+        onCancelReply={() => setReplyingTo(null)}
+        currentUserId={user?.id}
       />
 
       {/* Attachment Menu */}
@@ -1549,6 +1870,22 @@ const styles = StyleSheet.create({
   },
   loadingMore: {
     paddingVertical: 10,
+  },
+  systemMessageWrapper: {
+    alignItems: 'center',
+    marginVertical: 8,
+    paddingHorizontal: 24,
+  },
+  systemMessageBubble: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 14,
+    maxWidth: '85%',
+  },
+  systemMessageText: {
+    fontSize: 12.5,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   messageBubbleContainer: {
     marginVertical: 1,
@@ -1739,6 +2076,41 @@ const styles = StyleSheet.create({
   locationCoords: {
     fontSize: 12,
     marginTop: 2,
+  },
+  replyPreviewContainer: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    marginHorizontal: 8,
+    marginTop: 6,
+    borderRadius: 10,
+    overflow: 'hidden',
+    paddingVertical: 6,
+    paddingLeft: 0,
+    paddingRight: 6,
+    backgroundColor: 'rgba(0,0,0,0.03)',
+  },
+  replyPreviewBar: {
+    width: 4,
+    borderTopLeftRadius: 10,
+    borderBottomLeftRadius: 10,
+    marginRight: 8,
+  },
+  replyPreviewContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  replyPreviewName: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  replyPreviewText: {
+    fontSize: 13,
+    marginTop: 1,
+  },
+  replyPreviewClose: {
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   inputContainer: {
     flexDirection: 'row',

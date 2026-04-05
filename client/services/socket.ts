@@ -199,6 +199,10 @@ class SocketService {
     this.chatSocket.on('message_deleted', (data: any) => {
       this.emit('message_deleted', data);
     });
+
+    this.chatSocket.on('message_deleted_for_everyone', (data: any) => {
+      this.emit('message_deleted_for_everyone', data);
+    });
   }
 
   // ==================== CALL SOCKET LISTENERS ====================

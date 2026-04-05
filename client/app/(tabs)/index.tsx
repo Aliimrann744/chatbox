@@ -104,9 +104,41 @@ export default function ChatsScreen() {
       );
     });
 
+    // Deleted for everyone — update last-message preview in place
+    const unsubscribeDeletedForEveryone = socketService.on(
+      'message_deleted_for_everyone',
+      (data: { messageId: string; chatId: string; senderId: string }) => {
+        setChats((prevChats) =>
+          prevChats.map((chat) => {
+            if (chat.id !== data.chatId) return chat;
+            if (!chat.lastMessage || chat.lastMessage.id !== data.messageId) return chat;
+            return {
+              ...chat,
+              lastMessage: {
+                ...chat.lastMessage,
+                isDeletedForEveryone: true,
+                content: undefined,
+                mediaUrl: undefined,
+                thumbnail: undefined,
+                fileName: undefined,
+              },
+            };
+          }),
+        );
+      },
+    );
+
+    // Deleted for me — the backend filters per-user deletions, so re-fetch
+    // to get the correct previous message as the new lastMessage.
+    const unsubscribeDeletedForMe = socketService.on('message_deleted', () => {
+      fetchChats();
+    });
+
     return () => {
       unsubscribeNewMessage();
       unsubscribeOnlineStatus();
+      unsubscribeDeletedForEveryone();
+      unsubscribeDeletedForMe();
     };
   }, [fetchChats]);
 

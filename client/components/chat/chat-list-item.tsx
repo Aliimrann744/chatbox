@@ -7,6 +7,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Chat } from '@/services/api';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuth } from '@/contexts/auth-context';
 
 interface ChatListItemProps {
   chat: Chat;
@@ -34,6 +35,7 @@ function formatTime(dateString: string): string {
 export function ChatListItem({ chat, onAvatarPress }: ChatListItemProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { user } = useAuth();
 
   const handlePress = () => {
     router.push({ pathname: '/chat/[id]', params: { id: chat.id } });
@@ -52,8 +54,12 @@ export function ChatListItem({ chat, onAvatarPress }: ChatListItemProps) {
     }
   };
 
+  const isLastMessageMine = !!chat.lastMessage && chat.lastMessage.senderId === user?.id;
+
   const renderMessageStatus = () => {
     if (!chat.lastMessage) return null;
+    // No tick for "deleted for everyone" placeholders
+    if (chat.lastMessage.isDeletedForEveryone) return null;
 
     // Only show status for sent messages (we need to check if current user is sender)
     // For now, we'll check based on status
@@ -70,14 +76,47 @@ export function ChatListItem({ chat, onAvatarPress }: ChatListItemProps) {
     return null;
   };
 
+  const formatCallPreview = (content?: string): string => {
+    let info: { callType?: string; callStatus?: string; duration?: number | null } = {};
+    try {
+      info = JSON.parse(content || '{}');
+    } catch {}
+
+    const isVoice = info.callType === 'VOICE';
+    const label = isVoice ? 'Voice call' : 'Video call';
+
+    if (info.callStatus === 'MISSED') {
+      return `${label} • Missed`;
+    }
+    if (info.callStatus === 'DECLINED') {
+      return `${label} • Declined`;
+    }
+    if (info.callStatus === 'ENDED' && info.duration) {
+      const mins = Math.floor(info.duration / 60);
+      const secs = info.duration % 60;
+      return `${label} • ${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+    return label;
+  };
+
   const renderMessagePreview = () => {
     if (!chat.lastMessage) {
       return 'No messages yet';
     }
 
+    // "Deleted for everyone" placeholder — show before group-sender prefix
+    if (chat.lastMessage.isDeletedForEveryone) {
+      return isLastMessageMine ? 'You deleted this message' : 'This message was deleted';
+    }
+
     const { type, content, sender } = chat.lastMessage;
     let prefix = '';
     let text = content || '';
+
+    // System messages (group events) are rendered as-is, without a sender prefix.
+    if (type === 'SYSTEM') {
+      return content || '';
+    }
 
     // For group chats, show sender name
     if (chat.type === 'GROUP' && sender) {
@@ -105,6 +144,23 @@ export function ChatListItem({ chat, onAvatarPress }: ChatListItemProps) {
         break;
       case 'STICKER':
         text = '🎨 Sticker';
+        break;
+      case 'CALL':
+        // Call events are stored as JSON in content — never expose raw JSON
+        text = formatCallPreview(content);
+        break;
+      case 'TEXT':
+      default:
+        // Guard against accidental JSON/object content for unknown types
+        if (typeof text !== 'string') {
+          text = '';
+        } else if (text.startsWith('{') && text.endsWith('}')) {
+          try {
+            JSON.parse(text);
+            // It's valid JSON that wasn't handled above — hide raw JSON from UI
+            text = '';
+          } catch {}
+        }
         break;
     }
 

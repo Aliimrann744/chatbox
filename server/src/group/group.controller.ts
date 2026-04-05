@@ -3,11 +3,12 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
 } from '@nestjs/common';
-import { GroupService } from './group.service';
+import { GroupService, GroupPermissionsInput } from './group.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @Controller('groups')
@@ -23,6 +24,7 @@ export class GroupController {
       memberIds: string[];
       description?: string;
       avatar?: string;
+      permissions?: GroupPermissionsInput;
     },
   ) {
     return this.groupService.createGroup(
@@ -31,6 +33,7 @@ export class GroupController {
       body.memberIds,
       body.description,
       body.avatar,
+      body.permissions,
     );
   }
 
@@ -46,6 +49,15 @@ export class GroupController {
     @Body() body: { name?: string; description?: string; avatar?: string },
   ) {
     return this.groupService.updateGroup(groupId, user.id, body);
+  }
+
+  @Patch(':id/permissions')
+  async updatePermissions(
+    @CurrentUser() user: any,
+    @Param('id') groupId: string,
+    @Body() body: GroupPermissionsInput,
+  ) {
+    return this.groupService.updatePermissions(groupId, user.id, body);
   }
 
   @Delete(':id')

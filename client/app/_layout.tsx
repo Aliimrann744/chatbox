@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { Colors } from '@/constants/theme';
@@ -107,6 +108,38 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen
+          name="group/new"
+          options={{
+            title: 'Add participants',
+            headerStyle: { backgroundColor: colors.primary },
+            headerTintColor: colors.headerText,
+            headerTitleStyle: { fontWeight: '600' },
+          }}
+        />
+        <Stack.Screen
+          name="group/setup"
+          options={{
+            title: 'New group',
+            headerStyle: { backgroundColor: colors.primary },
+            headerTintColor: colors.headerText,
+            headerTitleStyle: { fontWeight: '600' },
+          }}
+        />
+        <Stack.Screen name="group/[id]/info" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="group/[id]/permissions"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="group/[id]/add-members"
+          options={{
+            title: 'Add participants',
+            headerStyle: { backgroundColor: colors.primary },
+            headerTintColor: colors.headerText,
+            headerTitleStyle: { fontWeight: '600' },
+          }}
+        />
+        <Stack.Screen
           name="chat/user-info"
           options={{
             headerShown: false,
@@ -149,14 +182,16 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <NotificationProvider>
-          <CallProvider>
-            <RootLayoutNav />
-          </CallProvider>
-        </NotificationProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <NotificationProvider>
+            <CallProvider>
+              <RootLayoutNav />
+            </CallProvider>
+          </NotificationProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
