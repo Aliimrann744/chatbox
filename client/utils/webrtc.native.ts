@@ -1,11 +1,4 @@
-import {
-  RTCPeerConnection,
-  RTCSessionDescription,
-  RTCIceCandidate,
-  RTCView,
-  mediaDevices,
-  MediaStream,
-} from 'react-native-webrtc';
+import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, RTCView, mediaDevices, MediaStream } from 'react-native-webrtc';
 import InCallManager from 'react-native-incall-manager';
 
 export { RTCView, InCallManager, MediaStream };
@@ -19,11 +12,7 @@ interface PeerConnectionCallbacks {
   onConnectionStateChange: (state: string) => void;
 }
 
-export function createPeerConnection(
-  iceServers: any[],
-  callType: CallType,
-  callbacks: PeerConnectionCallbacks,
-): { pc: RTCPeerConnection; localStreamPromise: Promise<MediaStream> } {
+export function createPeerConnection(iceServers: any[], callType: CallType, callbacks: PeerConnectionCallbacks ): { pc: RTCPeerConnection; localStreamPromise: Promise<MediaStream> } {
   const pc = new RTCPeerConnection({ iceServers }) as any;
 
   pc.onicecandidate = (event: any) => {
@@ -49,15 +38,9 @@ export function createPeerConnection(
     callbacks.onConnectionStateChange(pc.connectionState);
   };
 
-  const localStreamPromise = mediaDevices
-    .getUserMedia({
-      audio: true,
-      video: callType === 'VIDEO' ? { facingMode: 'user' } : false,
-    })
+  const localStreamPromise = mediaDevices.getUserMedia({ audio: true, video: callType === 'VIDEO' ? { facingMode: 'user' } : false })
     .then((stream: MediaStream) => {
-      stream.getTracks().forEach((track: any) => {
-        pc.addTrack(track, stream);
-      });
+      stream.getTracks().forEach((track: any) => { pc.addTrack(track, stream); });
       return stream;
     });
 
@@ -70,34 +53,22 @@ export async function createOffer(pc: RTCPeerConnection): Promise<any> {
   return offer;
 }
 
-export async function handleOffer(
-  pc: RTCPeerConnection,
-  offer: any,
-): Promise<any> {
+export async function handleOffer(pc: RTCPeerConnection, offer: any): Promise<any> {
   await pc.setRemoteDescription(new RTCSessionDescription(offer));
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
   return answer;
 }
 
-export async function handleAnswer(
-  pc: RTCPeerConnection,
-  answer: any,
-): Promise<void> {
+export async function handleAnswer(pc: RTCPeerConnection, answer: any): Promise<void> {
   await pc.setRemoteDescription(new RTCSessionDescription(answer));
 }
 
-export async function addIceCandidate(
-  pc: RTCPeerConnection,
-  candidate: any,
-): Promise<void> {
+export async function addIceCandidate(pc: RTCPeerConnection, candidate: any): Promise<void> {
   await pc.addIceCandidate(new RTCIceCandidate(candidate));
 }
 
-export function closePeerConnection(
-  pc: RTCPeerConnection | null,
-  localStream: MediaStream | null,
-): void {
+export function closePeerConnection(pc: RTCPeerConnection | null, localStream: MediaStream | null): void {
   if (localStream) {
     localStream.getTracks().forEach((track: any) => track.stop());
   }
