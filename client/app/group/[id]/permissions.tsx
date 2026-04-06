@@ -43,13 +43,9 @@ export default function GroupPermissionsScreen() {
     })();
   }, [id]);
 
-  const amAdmin =
-    !!group && group.members.some((m) => m.userId === user?.id && m.role === 'ADMIN');
+  const amAdmin = !!group && group.members.some((m) => m.userId === user?.id && m.role === 'ADMIN');
 
-  const updateField = async (
-    field: 'editInfoRole' | 'sendMessagesRole' | 'addMembersRole' | 'approveMembersRole',
-    value: GroupPermissionRole,
-  ) => {
+  const updateField = async (field: 'editInfoRole' | 'sendMessagesRole' | 'addMembersRole' | 'approveMembersRole', value: GroupPermissionRole) => {
     if (!group || !amAdmin) return;
     const previous = group[field];
     setGroup({ ...group, [field]: value });
@@ -58,7 +54,7 @@ export default function GroupPermissionsScreen() {
       const updated = await groupApi.updatePermissions(group.id, { [field]: value });
       setGroup(updated);
     } catch (e: any) {
-      // Revert on failure
+      console.error('Failed to update permissions', e);
       setGroup({ ...group, [field]: previous });
       Alert.alert('Error', e?.message || 'Failed to update permissions.');
     } finally {

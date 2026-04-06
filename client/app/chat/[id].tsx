@@ -23,13 +23,6 @@ import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-p
 import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
 import { cache, CacheKeys } from '@/services/cache';
 
-const SHORT_MESSAGE_THRESHOLD = 30;
-function isShortSingleLineMessage(content?: string): boolean {
-  if (!content) return true;
-  if (content.includes('\n')) return false;
-  return content.length <= SHORT_MESSAGE_THRESHOLD;
-}
-
 type SenderLookupUser = { name?: string; phone?: string; countryCode?: string };
 
 // ==================== GROUP READ RECEIPTS ====================
@@ -546,12 +539,7 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
           </View>
         )}
         {isTextMessage ? (
-          <View
-            style={[
-              styles.textMessageRow,
-              isShortSingleLineMessage(message.content) && styles.textMessageRowShort,
-            ]}
-          >
+          <View style={styles.textMessageRow}>
             <Text style={[styles.messageText, { color: colorScheme === 'dark' ? '#e9edef' : '#111b21' }]}>
               {message.content}
             </Text>
@@ -2227,15 +2215,8 @@ const styles = StyleSheet.create({
   },
   textMessageRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',   // my-changes
-    justifyContent: 'flex-end',
+    flexWrap: 'wrap',
     alignItems: 'flex-end',
-  },
-  textMessageRowShort: {
-    // Short single-line messages: keep text + timestamp on one line
-    // so the bubble stays compact and doesn't force-wrap.
-    flexWrap: 'nowrap',
-    alignItems: 'center',
   },
   messageText: {
     fontSize: 15.5,
@@ -2246,7 +2227,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-end',
-    marginLeft: 6,
+    marginLeft: 'auto',
+    paddingLeft: 6,
     marginBottom: 1,
     gap: 3,
     flexShrink: 0,
