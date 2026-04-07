@@ -6,6 +6,7 @@ import { CallService } from './call.service';
 import { ChatService } from '../chat/chat.service';
 import { ChatGateway } from '../chat/chat.gateway';
 import { CallType, CallStatus } from '@prisma/client';
+import { NotificationService } from '../notification/notification.service';
 
 @WebSocketGateway({ cors: { origin: '*', }, namespace: '/call' })
 
@@ -15,7 +16,7 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private connectedUsers = new Map<string, string>();
   private activeCalls = new Map<string, { callerId: string; receiverId: string }>();
-  constructor(private jwtService: JwtService, private configService: ConfigService, private callService: CallService, private chatService: ChatService, private chatGateway: ChatGateway) {}
+  constructor(private jwtService: JwtService, private configService: ConfigService, private callService: CallService, private chatService: ChatService, private chatGateway: ChatGateway, private notificationService: NotificationService) {}
 
   // ==================== ICE SERVERS ====================
 
@@ -87,7 +88,18 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (receiverSocketId) {
         this.server.to(receiverSocketId).emit('incoming_call', { callId: call.id, caller: call.caller, type: data.type });
       } else {
-        console.log(`Call: Receiver ${data.receiverId} is offline, cannot deliver incoming_call`,);
+        // Receiver offline — send high-priority FCM to wake device
+        const caller = await this.notificationService.getUserWithDetails(callerId);
+        this.notificationService.sendCallNotification(
+          data.receiverId,
+          caller?.name || 'Unknown',
+          caller?.avatar || null,
+          call.id,
+          callerId,
+          data.type,
+        ).catch((err) =>
+          console.error('Call push notification failed:', err.message),
+        );
       }
       return { success: true, callId: call.id, receiverOnline, call };
     } catch (error: any) {
@@ -241,6 +253,16 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const receiverSocketId = this.connectedUsers.get(call.receiverId);
       if (receiverSocketId) {
         this.server.to(receiverSocketId).emit('call_missed', { callId: data.callId, caller: call.caller });
+      } else {
+        // Receiver offline — send missed call push
+        const caller = await this.notificationService.getUserWithDetails(call.callerId);
+        this.notificationService.sendMissedCallNotification(
+          call.receiverId,
+          caller?.name || 'Unknown',
+          call.type,
+        ).catch((err) =>
+          console.error('Missed call push failed:', err.message),
+        );
       }
 
       // Send call log message to chat

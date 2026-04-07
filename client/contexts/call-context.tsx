@@ -11,6 +11,13 @@ import {
 } from '@/utils/webrtc';
 import socketService from '@/services/socket';
 import { useAuth } from '@/contexts/auth-context';
+import {
+  setupCallKeep,
+  setCallKeepCallbacks,
+  displayIncomingCall,
+  endCallKeepCall,
+  reportConnectedCall,
+} from '@/services/callkeep';
 
 export type CallType = 'VOICE' | 'VIDEO';
 export type CallStatus = 'idle' | 'calling' | 'ringing' | 'connecting' | 'connected' | 'ended';
@@ -97,7 +104,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const callStateRef = useRef(callState);
   callStateRef.current = callState;
 
-  // Request microphone permission on mount
+  // Request microphone permission and setup CallKeep on mount
   useEffect(() => {
     if (Platform.OS === 'android') {
       PermissionsAndroid.request(
@@ -108,6 +115,31 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         console.warn('Audio permission request error:', err);
       });
     }
+
+    // Initialize CallKeep for native call UI
+    setupCallKeep();
+
+    // Register CallKeep callbacks
+    setCallKeepCallbacks({
+      onAnswerCall: (callUUID: string) => {
+        // User answered from native call UI — accept the call
+        const current = callStateRef.current;
+        if (current.callId === callUUID && current.status === 'ringing') {
+          acceptCall();
+        }
+      },
+      onEndCall: (callUUID: string) => {
+        // User ended from native call UI — decline or end the call
+        const current = callStateRef.current;
+        if (current.callId === callUUID) {
+          if (current.status === 'ringing' && current.direction === 'incoming') {
+            declineCall();
+          } else {
+            endCall();
+          }
+        }
+      },
+    });
   }, []);
 
   // Setup peer connection with media
@@ -136,11 +168,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         onConnectionStateChange: (state) => {
           console.log('WebRTC: Connection state:', state);
           if (state === 'connected') {
-            setCallState((prev) => ({
-              ...prev,
-              status: 'connected',
-              startTime: new Date(),
-            }));
+            setCallState((prev) => {
+              // Report call as connected to native call UI
+              if (prev.callId) {
+                reportConnectedCall(prev.callId);
+              }
+              return {
+                ...prev,
+                status: 'connected',
+                startTime: new Date(),
+              };
+            });
           } else if (state === 'failed' || state === 'disconnected') {
             console.warn('WebRTC: Connection', state);
           }
@@ -189,6 +227,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Reset call state
   const resetCallState = useCallback(() => {
+    // End native call UI
+    const prevCallId = callStateRef.current.callId;
+    if (prevCallId) {
+      endCallKeepCall(prevCallId);
+    }
+
     closePeerConnection(pcRef.current, localStreamRef.current);
     pcRef.current = null;
     localStreamRef.current = null;
@@ -230,9 +274,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         isVideoEnabled: data.type === 'VIDEO',
       });
 
+      // Show native incoming call UI via CallKeep
+      displayIncomingCall(
+        data.callId,
+        data.caller.name,
+        data.type === 'VIDEO',
+      );
+
+      // Cancel any existing Notifee call notification (from background push)
+      try {
+        const notifee = require('@notifee/react-native').default;
+        notifee.cancelNotification(`call_${data.callId}`).catch(() => {});
+      } catch (e) {}
+
       callTimeoutRef.current = setTimeout(() => {
         if (callStateRef.current.status === 'ringing') {
           socketService.declineCall(data.callId);
+          endCallKeepCall(data.callId);
           resetCallState();
         }
       }, 30000);

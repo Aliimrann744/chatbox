@@ -569,6 +569,13 @@ export class ChatService {
 
   // ==================== HELPER METHODS ====================
 
+  async getChatBasicInfo(chatId: string) {
+    return this.prisma.chat.findUnique({
+      where: { id: chatId },
+      select: { id: true, type: true, name: true },
+    });
+  }
+
   async getChatMembers(chatId: string) {
     return this.prisma.chatMember.findMany({
       where: {

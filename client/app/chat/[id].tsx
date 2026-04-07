@@ -22,6 +22,7 @@ import { pickImage, pickVideo, pickDocument, takePhoto, PickedMedia, getMessageT
 import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-picker';
 import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
 import { cache, CacheKeys } from '@/services/cache';
+import { useNotificationContext } from '@/contexts/notification-context';
 
 type SenderLookupUser = { name?: string; phone?: string; countryCode?: string };
 
@@ -943,6 +944,7 @@ export default function ChatDetailScreen() {
   const colors = Colors[colorScheme];
   const { user } = useAuth();
   const { initiateCall } = useCall();
+  const { setCurrentChatId } = useNotificationContext();
 
   const [cachedChat] = useState(() => chatId ? cache.get<Chat>(CacheKeys.chatDetail(chatId)) : null);
   const [cachedMessages] = useState(() => chatId ? cache.get<Message[]>(CacheKeys.messages(chatId)) : null);
@@ -1099,14 +1101,22 @@ export default function ChatDetailScreen() {
   }, [chatId, fetchData]);
 
   // Re-fetch messages when screen regains focus (e.g., returning from call screen)
+  // Also track active chat for notification suppression
   useFocusEffect(
     useCallback(() => {
+      if (chatId) {
+        setCurrentChatId(chatId);
+      }
       if (chatId && !loading) {
         chatApi.getMessages(chatId, 1, 50).then((data) => {
           setMessages(data.messages);
           cache.set(CacheKeys.messages(chatId), data.messages);
         }).catch(() => {});
       }
+
+      return () => {
+        setCurrentChatId(null);
+      };
     }, [chatId, loading])
   );
 

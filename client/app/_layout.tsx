@@ -14,6 +14,11 @@ import { NotificationProvider } from '@/contexts/notification-context';
 import { IncomingCallListener } from '@/components/call/incoming-call-listener';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
+// Register background handlers at module level (before React tree mounts)
+import { registerBackgroundHandler, registerNotifeeBackgroundHandler } from '@/services/background-handler';
+registerBackgroundHandler();
+registerNotifeeBackgroundHandler();
+
 export const unstable_settings = {
   anchor: '(tabs)',
 };

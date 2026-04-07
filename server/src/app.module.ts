@@ -12,6 +12,7 @@ import { CallModule } from './call/call.module';
 import { GroupModule } from './group/group.module';
 import { SettingsModule } from './settings/settings.module';
 import { StatusModule } from './status/status.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { StatusModule } from './status/status.module';
     }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    NotificationModule,
     AuthModule,
     UploadModule,
     ChatModule,

@@ -330,7 +330,7 @@ export default function LoginScreen() {
             )}
           </Pressable>
 
-          <Pressable
+          {/* <Pressable
             style={[styles.socialButton, { backgroundColor: '#1877F2' }]}
             onPress={handleFacebookLogin}
             disabled={socialLoading !== null}>
@@ -342,7 +342,7 @@ export default function LoginScreen() {
                 <Text style={[styles.socialButtonText, { color: '#ffffff' }]}>Continue with Facebook</Text>
               </>
             )}
-          </Pressable>
+          </Pressable> */}
 
           {/* OR Divider */}
           <View style={styles.orDivider}>

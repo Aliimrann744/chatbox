@@ -12,7 +12,8 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { ChatService } from './chat.service';
 import { SendMessageDto } from './dto';
-import { MessageStatus } from '@prisma/client';
+import { MessageStatus, ChatType } from '@prisma/client';
+import { NotificationService } from '../notification/notification.service';
 
 @WebSocketGateway({
   cors: {
@@ -31,6 +32,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private jwtService: JwtService,
     private configService: ConfigService,
     private chatService: ChatService,
+    private notificationService: NotificationService,
   ) {}
 
   // ==================== CONNECTION HANDLING ====================
@@ -113,6 +115,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Get chat members
       const members = await this.chatService.getChatMembers(data.chatId);
 
+      // Get chat details for group notification context
+      const chat = await this.chatService.getChatBasicInfo(data.chatId);
+      const sender = await this.notificationService.getUserWithDetails(senderId);
+      const senderName = sender?.name || 'Someone';
+      const messagePreview = this.notificationService.getMessagePreview(
+        data.type || 'TEXT',
+        data.content,
+      );
+
       // Send message to all other members
       for (const member of members) {
         if (member.userId !== senderId) {
@@ -121,8 +132,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           if (recipientSocketId) {
             // User is online - send via WebSocket
             this.server.to(recipientSocketId).emit('new_message', message);
+          } else {
+            // User is offline - send push notification
+            this.notificationService.sendMessageNotification(
+              member.userId,
+              senderName,
+              messagePreview,
+              data.chatId,
+              senderId,
+              chat?.type === ChatType.GROUP ? 'GROUP' : 'PRIVATE',
+              chat?.name || undefined,
+            ).catch((err) =>
+              console.error('Push notification failed:', err.message),
+            );
           }
-          // TODO: Send push notification if offline
         }
       }
 
