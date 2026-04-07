@@ -63,11 +63,33 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = client.data.userId;
     if (userId) {
       this.connectedUsers.delete(userId);
+
       for (const [callId, call] of this.activeCalls.entries()) {
-        if (call.callerId === userId || call.receiverId === userId) {
+        // Only end call if the CALLER disconnects (they initiated it, so disconnecting = giving up)
+        // Don't end call if the RECEIVER disconnects while RINGING — they may accept via FCM notification
+        if (call.callerId === userId) {
+          console.log(`Call: Caller ${userId} disconnected, ending call ${callId}`);
           await this.handleCallEnd(client, { callId });
+        } else if (call.receiverId === userId) {
+          // Receiver disconnected — check if the call was already answered (in progress)
+          try {
+            const callRecord = await this.callService.getCall(callId);
+            if (callRecord.status === 'ANSWERED') {
+              // Call was active — end it
+              console.log(`Call: Receiver ${userId} disconnected during active call ${callId}, ending`);
+              await this.handleCallEnd(client, { callId });
+            } else {
+              // Call is still RINGING — receiver might reconnect and accept via FCM, don't end it
+              console.log(`Call: Receiver ${userId} disconnected while call ${callId} is ${callRecord.status}, keeping call alive`);
+            }
+          } catch (err) {
+            // Call record not found or error — clean up
+            console.log(`Call: Error checking call ${callId} status, cleaning up:`, err.message);
+            this.activeCalls.delete(callId);
+          }
         }
       }
+
       console.log(`Call: User ${userId} disconnected`);
     }
   }
@@ -85,22 +107,30 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const receiverSocketId = this.connectedUsers.get(data.receiverId);
       const receiverOnline = !!receiverSocketId;
 
+      // ALWAYS send FCM push for calls — even if user appears online.
+      // The socket may be stale (app in background but not yet disconnected).
+      // FCM is the only reliable way to wake a backgrounded/killed app.
+      const caller = await this.notificationService.getUserWithDetails(callerId);
+      console.log(`Call: Sending FCM call notification from "${caller?.name}" to user ${data.receiverId} (socketOnline=${receiverOnline})`);
+      this.notificationService.sendCallNotification(
+        data.receiverId,
+        caller?.name || 'Unknown',
+        caller?.avatar || null,
+        call.id,
+        callerId,
+        data.type,
+      ).then(() => {
+        console.log(`Call: FCM call notification sent successfully`);
+      }).catch((err) =>
+        console.error('Call: FCM push notification FAILED:', err.message),
+      );
+
+      // Also send via socket if user appears online (instant delivery for foreground app)
       if (receiverSocketId) {
+        console.log(`Call: Also sending incoming_call via socket to ${data.receiverId}`);
         this.server.to(receiverSocketId).emit('incoming_call', { callId: call.id, caller: call.caller, type: data.type });
-      } else {
-        // Receiver offline — send high-priority FCM to wake device
-        const caller = await this.notificationService.getUserWithDetails(callerId);
-        this.notificationService.sendCallNotification(
-          data.receiverId,
-          caller?.name || 'Unknown',
-          caller?.avatar || null,
-          call.id,
-          callerId,
-          data.type,
-        ).catch((err) =>
-          console.error('Call push notification failed:', err.message),
-        );
       }
+
       return { success: true, callId: call.id, receiverOnline, call };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -112,6 +142,12 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('call_accept')
   async handleCallAccept(@ConnectedSocket() client: Socket, @MessageBody() data: { callId: string }) {
     try {
+      // Check if call is still active (not already ended/missed/declined)
+      const existingCall = await this.callService.getCall(data.callId);
+      if (existingCall.status !== 'RINGING') {
+        return { success: false, error: `Call is no longer available (status: ${existingCall.status})` };
+      }
+
       const call = await this.callService.acceptCall(data.callId);
       const iceServers = this.getIceServers();
 

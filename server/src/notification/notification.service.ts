@@ -23,11 +23,22 @@ export class NotificationService implements OnModuleInit {
       const clientEmail = this.configService.get<string>('FIREBASE_CLIENT_EMAIL');
       const privateKey = this.configService.get<string>('FIREBASE_PRIVATE_KEY');
 
+      this.logger.log(`Firebase config: projectId=${projectId}, clientEmail=${clientEmail}, privateKey=${privateKey ? 'SET (' + privateKey.length + ' chars)' : 'NOT SET'}`);
+
       if (!projectId || !clientEmail || !privateKey) {
         this.logger.warn(
           'Firebase credentials not configured. Push notifications will be disabled.',
         );
         return;
+      }
+
+      // Validate credentials format
+      if (!clientEmail.includes('@') || !clientEmail.includes('.iam.gserviceaccount.com')) {
+        this.logger.error(`Invalid FIREBASE_CLIENT_EMAIL format: "${clientEmail}". Expected format: firebase-adminsdk-xxxxx@project-id.iam.gserviceaccount.com`);
+      }
+
+      if (!privateKey.includes('BEGIN PRIVATE KEY')) {
+        this.logger.error('FIREBASE_PRIVATE_KEY does not contain "BEGIN PRIVATE KEY". Make sure the key is properly quoted in .env');
       }
 
       // Prevent re-initialization
@@ -126,7 +137,7 @@ export class NotificationService implements OnModuleInit {
           priority: 'high',
           notification: {
             channelId: 'messages',
-            icon: 'ic_notification',
+
             color: '#25D366',
             sound: 'default',
             defaultSound: true,
@@ -143,7 +154,7 @@ export class NotificationService implements OnModuleInit {
         },
       });
 
-      this.logger.debug(`Push sent to ${recipientUserId} for ${chatType} message`);
+      this.logger.log(`Push sent to ${recipientUserId} for ${chatType} message`);
     } catch (error) {
       this.handleFcmError(error, recipientUserId);
     }
@@ -196,7 +207,7 @@ export class NotificationService implements OnModuleInit {
         },
       });
 
-      this.logger.debug(`Call push sent to ${recipientUserId} (${callType})`);
+      this.logger.log(`Call push sent to ${recipientUserId} (${callType})`);
     } catch (error) {
       this.handleFcmError(error, recipientUserId);
     }
@@ -232,7 +243,7 @@ export class NotificationService implements OnModuleInit {
           priority: 'high',
           notification: {
             channelId: 'calls',
-            icon: 'ic_notification',
+
             color: '#FF0000',
             sound: 'default',
           },
@@ -247,7 +258,7 @@ export class NotificationService implements OnModuleInit {
         },
       });
 
-      this.logger.debug(`Missed call push sent to ${recipientUserId}`);
+      this.logger.log(`Missed call push sent to ${recipientUserId}`);
     } catch (error) {
       this.handleFcmError(error, recipientUserId);
     }
@@ -281,7 +292,7 @@ export class NotificationService implements OnModuleInit {
           priority: 'normal',
           notification: {
             channelId: 'system',
-            icon: 'ic_notification',
+
             color: '#25D366',
           },
         },

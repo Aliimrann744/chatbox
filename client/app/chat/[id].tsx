@@ -1125,7 +1125,11 @@ export default function ChatDetailScreen() {
     // New message received
     const unsubscribeNewMessage = socketService.on('new_message', (message: Message) => {
       if (message.chatId === chatId) {
-        setMessages((prev) => [...prev, message]);
+        setMessages((prev) => {
+          // Prevent duplicates — message may already exist from API fetch or prior socket event
+          if (prev.some((m) => m.id === message.id)) return prev;
+          return [...prev, message];
+        });
 
         // Mark as delivered
         socketService.markAsDelivered(message.id);

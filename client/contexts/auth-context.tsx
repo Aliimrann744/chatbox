@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { authApi, User, setOnAuthFailure } from '@/services/api';
 import socketService from '@/services/socket';
 import { cache, CacheKeys } from '@/services/cache';
@@ -41,6 +42,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       socketService.disconnect();
     }
   }, [state.isAuthenticated, state.isLoading]);
+
+  // Reconnect socket when app returns to foreground
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      const wasBackground = appStateRef.current.match(/inactive|background/);
+      const goingToBackground = nextAppState.match(/inactive|background/) && appStateRef.current === 'active';
+
+      if (goingToBackground && state.isAuthenticated) {
+        // Disconnect socket immediately when going to background.
+        // This tells the server the user is offline so it uses FCM push instead.
+        // Without this, the server sends via a stale socket that the backgrounded app can't process.
+        console.log('[Auth] App going to background, disconnecting sockets');
+        socketService.disconnect();
+      }
+
+      if (wasBackground && nextAppState === 'active') {
+        console.log('[Auth] App returned to foreground');
+        if (state.isAuthenticated) {
+          console.log('[Auth] Reconnecting sockets...');
+          socketService.reconnect();
+        }
+      }
+
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [state.isAuthenticated]);
 
   useEffect(() => {
     checkAuth();

@@ -567,6 +567,78 @@ export class ChatService {
     return { success: true };
   }
 
+  // ==================== MESSAGE DELIVERY (REST) ====================
+
+  /**
+   * Mark all SENT messages in a specific chat as DELIVERED for a user.
+   * Called via REST API from background FCM handler.
+   */
+  async markChatMessagesDelivered(chatId: string, userId: string) {
+    const result = await this.prisma.message.updateMany({
+      where: {
+        chatId,
+        senderId: { not: userId },
+        status: MessageStatus.SENT,
+        isDeletedForEveryone: false,
+      },
+      data: { status: MessageStatus.DELIVERED },
+    });
+
+    return { updated: result.count };
+  }
+
+  // ==================== PENDING MESSAGE DELIVERY ====================
+
+  /**
+   * Find all messages in the user's chats that are still SENT (not delivered).
+   * Called when a user reconnects — marks them DELIVERED and returns them
+   * so the gateway can notify senders about the status change.
+   */
+  async deliverPendingMessages(userId: string): Promise<
+    { messageId: string; senderId: string; chatId: string }[]
+  > {
+    // Get all chats this user is a member of
+    const memberships = await this.prisma.chatMember.findMany({
+      where: { userId, leftAt: null },
+      select: { chatId: true },
+    });
+
+    const chatIds = memberships.map((m) => m.chatId);
+    if (chatIds.length === 0) return [];
+
+    // Find all SENT messages in these chats that are NOT from this user
+    const pendingMessages = await this.prisma.message.findMany({
+      where: {
+        chatId: { in: chatIds },
+        senderId: { not: userId },
+        status: MessageStatus.SENT,
+        isDeletedForEveryone: false,
+      },
+      select: { id: true, senderId: true, chatId: true },
+    });
+
+    if (pendingMessages.length === 0) return [];
+
+    // Batch update all to DELIVERED
+    await this.prisma.message.updateMany({
+      where: {
+        id: { in: pendingMessages.map((m) => m.id) },
+        status: MessageStatus.SENT,
+      },
+      data: { status: MessageStatus.DELIVERED },
+    });
+
+    console.log(
+      `Marked ${pendingMessages.length} messages as DELIVERED for user ${userId}`,
+    );
+
+    return pendingMessages.map((m) => ({
+      messageId: m.id,
+      senderId: m.senderId,
+      chatId: m.chatId,
+    }));
+  }
+
   // ==================== HELPER METHODS ====================
 
   async getChatBasicInfo(chatId: string) {

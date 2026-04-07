@@ -7,10 +7,10 @@
 
 export function registerBackgroundHandler() {
   try {
-    const messaging = require('@react-native-firebase/messaging').default;
+    const { getMessaging, setBackgroundMessageHandler } = require('@react-native-firebase/messaging');
 
-    messaging().setBackgroundMessageHandler(async (remoteMessage: any) => {
-      console.log('Background FCM message:', remoteMessage);
+    setBackgroundMessageHandler(getMessaging(), async (remoteMessage: any) => {
+      console.log('[Background] FCM message:', remoteMessage);
 
       const data = remoteMessage.data;
       if (!data) return;
@@ -18,13 +18,44 @@ export function registerBackgroundHandler() {
       if (data.type === 'call') {
         await handleBackgroundCallNotification(data);
       }
-      // Regular message notifications with `notification` key are shown automatically by Android
-      // Data-only messages for messages don't need special handling in background
+
+      // Send delivery receipt to server for message notifications
+      if (data.type === 'message' || data.type === 'group') {
+        await sendDeliveryReceipt(data.chatId);
+      }
     });
 
-    console.log('Background message handler registered');
+    console.log('[Background] Message handler registered');
   } catch (e) {
-    console.warn('Could not register background message handler:', e);
+    console.warn('[Background] Could not register handler:', e);
+  }
+}
+
+/**
+ * Send delivery receipt to server via REST API.
+ */
+async function sendDeliveryReceipt(chatId: string) {
+  if (!chatId) return;
+
+  try {
+    const SecureStore = require('expo-secure-store');
+    const { TOKEN_KEY, API_BASE_URL } = require('@/constants/constant');
+
+    const token = await SecureStore.getItemAsync(TOKEN_KEY);
+    if (!token || !API_BASE_URL) return;
+
+    const response = await fetch(`${API_BASE_URL}/chats/${chatId}/deliver`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+    });
+
+    console.log('[Background] Delivery receipt sent for chat:', chatId, 'status:', response.status);
+  } catch (e) {
+    console.warn('[Background] Delivery receipt failed:', e);
   }
 }
 
@@ -45,17 +76,16 @@ async function handleBackgroundCallNotification(data: any) {
         channelId: 'calls',
         category: AndroidCategory.CALL,
         importance: AndroidImportance.HIGH,
-        // Full-screen intent — shows call UI over lockscreen
         fullScreenAction: {
-          id: 'default',
+          id: 'accept_call',
           launchActivity: 'default',
         },
         ongoing: true,
         autoCancel: false,
-        smallIcon: 'ic_notification',
         color: '#25D366',
+        sound: 'default',
         pressAction: {
-          id: 'default',
+          id: 'accept_call',
           launchActivity: 'default',
         },
         actions: [
@@ -74,28 +104,35 @@ async function handleBackgroundCallNotification(data: any) {
       },
     });
 
-    // Also display via CallKeep for native phone UI integration
-    try {
-      const RNCallKeep = require('react-native-callkeep').default;
-      RNCallKeep.displayIncomingCall(
-        data.callId,
-        data.callerName || 'Unknown',
-        data.callerName || 'Unknown',
-        'generic',
-        data.callType === 'VIDEO',
-      );
-    } catch (e) {
-      console.warn('CallKeep not available in background:', e);
-    }
-
-    // Auto-cancel notification after 30 seconds (call timeout)
+    // Auto-cancel after 30 seconds (call timeout)
     setTimeout(async () => {
       try {
         await notifee.cancelNotification(`call_${data.callId}`);
       } catch (e) {}
     }, 30000);
   } catch (e) {
-    console.error('Background call notification error:', e);
+    console.error('[Background] Call notification error:', e);
+  }
+}
+
+/**
+ * Store pending call accept data so the foreground app can pick it up.
+ */
+function storePendingCallAccept(data: any) {
+  try {
+    const { MMKV } = require('react-native-mmkv');
+    const storage = new MMKV();
+    const payload = JSON.stringify({
+      callId: data.callId,
+      callerId: data.callerId,
+      callerName: data.callerName,
+      callerAvatar: data.callerAvatar,
+      callType: data.callType,
+    });
+    storage.set('pending_call_accept', payload);
+    console.log('[Background] Stored pending call accept:', payload);
+  } catch (e) {
+    console.warn('[Background] Could not store pending call:', e);
   }
 }
 
@@ -109,51 +146,41 @@ export function registerNotifeeBackgroundHandler() {
 
     notifee.onBackgroundEvent(async ({ type, detail }: any) => {
       const { notification, pressAction } = detail;
+      const data = notification?.data;
 
-      if (type === EventType.ACTION_PRESS) {
-        const data = notification?.data;
+      console.log('[Background] Notifee event:', { type, pressActionId: pressAction?.id, dataType: data?.type });
 
-        if (pressAction?.id === 'accept_call' && data?.callId) {
-          // User pressed Accept — app will launch and CallContext will handle
-          // Store the pending call acceptance for the app to pick up
-          try {
-            const { MMKV } = require('react-native-mmkv');
-            const storage = new MMKV();
-            storage.set('pending_call_accept', JSON.stringify({
-              callId: data.callId,
-              callerId: data.callerId,
-              callerName: data.callerName,
-              callerAvatar: data.callerAvatar,
-              callType: data.callType,
-            }));
-          } catch (e) {
-            console.warn('Could not store pending call:', e);
-          }
-
-          // Cancel the notification
-          await notifee.cancelNotification(notification?.id);
-        }
-
-        if (pressAction?.id === 'decline_call' && data?.callId) {
-          // Cancel the notification
-          await notifee.cancelNotification(notification?.id);
-
-          // End CallKeep display
-          try {
-            const RNCallKeep = require('react-native-callkeep').default;
-            RNCallKeep.endCall(data.callId);
-          } catch (e) {}
-        }
+      // Handle Accept button press
+      if (type === EventType.ACTION_PRESS && pressAction?.id === 'accept_call' && data?.callId) {
+        console.log('[Background] Accept call button pressed');
+        storePendingCallAccept(data);
+        await notifee.cancelNotification(notification?.id);
+        return;
       }
 
-      if (type === EventType.DISMISSED && detail.notification?.data?.type === 'call') {
-        // Notification dismissed — treat as decline
+      // Handle Decline button press
+      if (type === EventType.ACTION_PRESS && pressAction?.id === 'decline_call' && data?.callId) {
+        console.log('[Background] Decline call button pressed');
+        await notifee.cancelNotification(notification?.id);
+        return;
+      }
+
+      // Handle notification body tap or fullScreenAction — treat as accept for calls
+      if (type === EventType.PRESS && data?.type === 'call' && data?.callId) {
+        console.log('[Background] Call notification body tapped — treating as accept');
+        storePendingCallAccept(data);
+        await notifee.cancelNotification(notification?.id);
+        return;
+      }
+
+      // Handle notification dismissed
+      if (type === EventType.DISMISSED && data?.type === 'call') {
         await notifee.cancelNotification(notification?.id);
       }
     });
 
-    console.log('Notifee background handler registered');
+    console.log('[Background] Notifee handler registered');
   } catch (e) {
-    console.warn('Could not register Notifee background handler:', e);
+    console.warn('[Background] Could not register Notifee handler:', e);
   }
 }

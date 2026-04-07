@@ -31,6 +31,7 @@ export interface NotificationData {
 let currentActiveChatId: string | null = null;
 
 export function setActiveChatId(chatId: string | null) {
+  console.log('[Notifications] Active chat set to:', chatId);
   currentActiveChatId = chatId;
 }
 
@@ -40,124 +41,79 @@ export function getActiveChatId(): string | null {
 
 class NotificationService {
   private fcmToken: string | null = null;
-  private notificationListener: Notifications.EventSubscription | null = null;
   private responseListener: Notifications.EventSubscription | null = null;
-  private firebaseMessaging: any = null;
-  private notifee: any = null;
+  private onMessageUnsubscribe: (() => void) | null = null;
+  private onTokenRefreshUnsubscribe: (() => void) | null = null;
 
   // Initialize notifications
   async initialize(): Promise<void> {
-    try {
-      // Register for push notifications via system permissions
-      await this.requestPermissions();
+    console.log('[Notifications] Initializing...');
 
-      // Try to get FCM token via @react-native-firebase/messaging
+    try {
+      const permGranted = await this.requestPermissions();
+      console.log('[Notifications] Permission granted:', permGranted);
+
       const token = await this.getFcmToken();
+      console.log('[Notifications] Got FCM token:', token ? 'YES' : 'NO');
 
       if (token) {
         this.fcmToken = token;
         await this.registerTokenWithServer(token);
       }
 
-      // Setup notification channels on Android
       await this.setupNotificationChannels();
-
-      // Setup Firebase messaging listeners
-      await this.setupFirebaseListeners();
+      this.setupFirebaseListeners();
     } catch (error) {
-      console.warn('Notification initialization error:', error);
+      console.error('[Notifications] Initialization error:', error);
     }
 
-    // Handle expo notification taps (for when notification is shown via system)
     this.responseListener = Notifications.addNotificationResponseReceivedListener(
       this.handleNotificationResponse
     );
+
+    console.log('[Notifications] Initialization complete');
   }
 
   // Request notification permissions
   private async requestPermissions(): Promise<boolean> {
     if (!Device.isDevice) {
-      console.log('Push notifications require a physical device');
+      console.log('[Notifications] Not a physical device, skipping');
       return false;
     }
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    console.log('[Notifications] Existing permission status:', existingStatus);
+
     let finalStatus = existingStatus;
 
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
+      console.log('[Notifications] Requested permission, got:', finalStatus);
     }
 
-    if (finalStatus !== 'granted') {
-      console.log('Notification permission not granted');
-      return false;
-    }
-
-    // Also request Firebase messaging permission
-    try {
-      const messaging = await this.getFirebaseMessaging();
-      if (messaging) {
-        const authStatus = await messaging.requestPermission();
-        console.log('Firebase messaging permission:', authStatus);
-      }
-    } catch (e) {
-      console.warn('Firebase permission request failed:', e);
-    }
-
-    return true;
+    return finalStatus === 'granted';
   }
 
-  // Get Firebase Messaging instance (lazy load)
-  private async getFirebaseMessaging() {
-    if (this.firebaseMessaging) return this.firebaseMessaging;
-
-    try {
-      const messagingModule = require('@react-native-firebase/messaging');
-      this.firebaseMessaging = messagingModule.default;
-      return this.firebaseMessaging;
-    } catch (e) {
-      console.warn('Firebase messaging not available:', e);
-      return null;
-    }
-  }
-
-  // Get Notifee instance (lazy load)
-  private async getNotifee() {
-    if (this.notifee) return this.notifee;
-
-    try {
-      const notifeeModule = require('@notifee/react-native');
-      this.notifee = notifeeModule.default;
-      return this.notifee;
-    } catch (e) {
-      console.warn('Notifee not available:', e);
-      return null;
-    }
-  }
-
-  // Get FCM device token
+  // Get FCM device token using modular API
   private async getFcmToken(): Promise<string | null> {
     try {
-      const messaging = await this.getFirebaseMessaging();
-      if (messaging) {
-        const token = await messaging().getToken();
-        console.log('FCM Token:', token);
-        return token;
-      }
+      const { getToken, getMessaging } = require('@react-native-firebase/messaging');
+      const token = await getToken(getMessaging());
+      console.log('[Notifications] FCM Token:', token);
+      return token;
     } catch (e) {
-      console.warn('Could not get FCM token, falling back to Expo token:', e);
+      console.warn('[Notifications] FCM token error, trying Expo fallback:', e);
     }
 
-    // Fallback: try Expo device push token (raw FCM/APNs token)
     try {
       if (Device.isDevice) {
         const tokenResponse = await Notifications.getDevicePushTokenAsync();
-        console.log('Device Push Token:', tokenResponse.data);
+        console.log('[Notifications] Device Push Token:', tokenResponse.data);
         return tokenResponse.data as string;
       }
     } catch (e) {
-      console.warn('Could not get device push token:', e);
+      console.warn('[Notifications] Device push token error:', e);
     }
 
     return null;
@@ -167,20 +123,18 @@ class NotificationService {
   private async registerTokenWithServer(token: string): Promise<void> {
     try {
       await settingsApi.updateFcmToken(token);
-      console.log('FCM token registered with server');
+      console.log('[Notifications] Token registered with server');
     } catch (error) {
-      console.error('Error registering FCM token with server:', error);
+      console.error('[Notifications] Token registration error:', error);
     }
   }
 
-  // Setup Android notification channels via Notifee (or fallback to expo)
+  // Setup Android notification channels
   private async setupNotificationChannels(): Promise<void> {
     if (Platform.OS !== 'android') return;
 
-    const notifee = await this.getNotifee();
-
-    if (notifee) {
-      // Use Notifee for better channel control
+    try {
+      const notifee = require('@notifee/react-native').default;
       const { AndroidImportance } = require('@notifee/react-native');
 
       await notifee.createChannel({
@@ -189,7 +143,7 @@ class NotificationService {
         importance: AndroidImportance.HIGH,
         sound: 'default',
         vibration: true,
-        vibrationPattern: [0, 250, 250, 250],
+        vibrationPattern: [300, 300, 300, 300],
       });
 
       await notifee.createChannel({
@@ -198,7 +152,7 @@ class NotificationService {
         importance: AndroidImportance.HIGH,
         sound: 'default',
         vibration: true,
-        vibrationPattern: [0, 500, 200, 500, 200, 500],
+        vibrationPattern: [500, 500, 300, 500],
       });
 
       await notifee.createChannel({
@@ -207,8 +161,11 @@ class NotificationService {
         importance: AndroidImportance.DEFAULT,
         sound: 'default',
       });
-    } else {
-      // Fallback to expo-notifications channels
+
+      console.log('[Notifications] Channels created via Notifee');
+    } catch (e) {
+      console.warn('[Notifications] Notifee channels failed:', e);
+
       await Notifications.setNotificationChannelAsync('messages', {
         name: 'Messages',
         importance: Notifications.AndroidImportance.HIGH,
@@ -220,7 +177,7 @@ class NotificationService {
       await Notifications.setNotificationChannelAsync('calls', {
         name: 'Incoming Calls',
         importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 500, 200, 500, 200, 500],
+        vibrationPattern: [0, 500, 200, 500],
         lightColor: '#04003a',
         sound: 'default',
       });
@@ -230,75 +187,122 @@ class NotificationService {
         importance: Notifications.AndroidImportance.DEFAULT,
         sound: 'default',
       });
+
+      console.log('[Notifications] Channels created via Expo');
     }
   }
 
-  // Setup Firebase messaging listeners for foreground messages
-  private async setupFirebaseListeners(): Promise<void> {
-    const messaging = await this.getFirebaseMessaging();
-    if (!messaging) return;
+  // Setup Firebase messaging listeners
+  private setupFirebaseListeners(): void {
+    try {
+      const { onMessage, onTokenRefresh, getMessaging } = require('@react-native-firebase/messaging');
+      const messaging = getMessaging();
 
-    // Foreground messages from FCM
-    messaging().onMessage(async (remoteMessage: any) => {
-      console.log('FCM foreground message:', remoteMessage);
+      // FCM foreground messages (only fires when server sends FCM — i.e. user was offline)
+      this.onMessageUnsubscribe = onMessage(messaging, async (remoteMessage: any) => {
+        console.log('[Notifications] FCM foreground message received:', JSON.stringify(remoteMessage));
+        await this.displayNotification(
+          remoteMessage.notification?.title || remoteMessage.data?.senderName || 'New Message',
+          remoteMessage.notification?.body || 'You have a new message',
+          remoteMessage.data || {},
+        );
+      });
 
-      const data = remoteMessage.data;
-      if (!data) return;
+      this.onTokenRefreshUnsubscribe = onTokenRefresh(messaging, async (newToken: string) => {
+        console.log('[Notifications] FCM token refreshed');
+        this.fcmToken = newToken;
+        await this.registerTokenWithServer(newToken);
+      });
 
-      // Handle call notifications in foreground — these are handled by CallContext
-      if (data.type === 'call') {
-        // Call is handled by socket in foreground, skip notification
-        return;
-      }
+      console.log('[Notifications] Firebase listeners registered');
+    } catch (e) {
+      console.warn('[Notifications] Firebase listeners setup failed:', e);
+    }
+  }
 
-      // Suppress message notifications if user is in that chat
-      if (
-        (data.type === 'message' || data.type === 'group') &&
-        data.chatId === currentActiveChatId
-      ) {
-        return;
-      }
+  /**
+   * Display a local notification via Notifee (or Expo fallback).
+   * Called from:
+   *  1. FCM onMessage (when user comes online and gets push)
+   *  2. Socket new_message handler (when user is online but not in that chat)
+   */
+  async displayNotification(
+    title: string,
+    body: string,
+    data: Record<string, any>,
+  ): Promise<void> {
+    console.log('[Notifications] displayNotification called:', { title, body, data });
+    console.log('[Notifications] currentActiveChatId:', currentActiveChatId);
 
-      // Show notification via Notifee for better control
-      const notifee = await this.getNotifee();
-      if (notifee && !remoteMessage.notification) {
-        // Data-only message — display manually
-        await notifee.displayNotification({
-          title: remoteMessage.notification?.title || data.senderName || 'New Message',
-          body: remoteMessage.notification?.body || 'You have a new message',
-          data: data,
-          android: {
-            channelId: data.type === 'missed_call' ? 'calls' : 'messages',
-            smallIcon: 'ic_notification',
-            pressAction: { id: 'default' },
+    // Suppress if user is currently viewing this chat
+    if (data.chatId && data.chatId === currentActiveChatId) {
+      console.log('[Notifications] Suppressed — user is in this chat');
+      return;
+    }
+
+    // Suppress call notifications in foreground (handled by CallContext)
+    if (data.type === 'call') {
+      console.log('[Notifications] Suppressed — call handled by CallContext');
+      return;
+    }
+
+    try {
+      const notifee = require('@notifee/react-native').default;
+      console.log('[Notifications] Displaying via Notifee...');
+
+      const channelId = data.type === 'missed_call' ? 'calls' : 'messages';
+
+      await notifee.displayNotification({
+        title,
+        body,
+        data,
+        android: {
+          channelId,
+          color: '#25D366',
+          sound: 'default',
+          pressAction: { id: 'default' },
+        },
+      });
+
+      console.log('[Notifications] Notifee notification displayed successfully');
+    } catch (e) {
+      console.warn('[Notifications] Notifee display failed:', e);
+      console.log('[Notifications] Falling back to Expo notification...');
+
+      try {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title,
+            body,
+            data,
+            sound: true,
           },
+          trigger: null,
         });
+        console.log('[Notifications] Expo notification displayed successfully');
+      } catch (expoErr) {
+        console.error('[Notifications] Expo notification also failed:', expoErr);
       }
-      // If remoteMessage has notification key, Android shows it automatically
-    });
-
-    // Token refresh handler
-    messaging().onTokenRefresh(async (newToken: string) => {
-      console.log('FCM token refreshed');
-      this.fcmToken = newToken;
-      await this.registerTokenWithServer(newToken);
-    });
+    }
   }
 
   // Clean up listeners
   cleanup(): void {
-    if (this.notificationListener) {
-      this.notificationListener.remove();
-    }
     if (this.responseListener) {
       this.responseListener.remove();
     }
+    if (this.onMessageUnsubscribe) {
+      this.onMessageUnsubscribe();
+    }
+    if (this.onTokenRefreshUnsubscribe) {
+      this.onTokenRefreshUnsubscribe();
+    }
   }
 
-  // Handle notification tap (navigates to relevant screen)
+  // Handle notification tap
   private handleNotificationResponse = (response: Notifications.NotificationResponse): void => {
     const data = response.notification.request.content.data as unknown as NotificationData;
-    console.log('Notification tapped:', data);
+    console.log('[Notifications] Notification tapped:', data);
     this.navigateToNotification(data);
   };
 
@@ -327,41 +331,26 @@ class NotificationService {
     }
   }
 
-  // Get current FCM token
   getToken(): string | null {
     return this.fcmToken;
   }
 
-  // Schedule a local notification
-  async scheduleLocalNotification(
-    title: string,
-    body: string,
-    data?: NotificationData,
-  ): Promise<string> {
+  async scheduleLocalNotification(title: string, body: string, data?: NotificationData): Promise<string> {
     const id = await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        data: data as unknown as Record<string, unknown>,
-        sound: true,
-      },
+      content: { title, body, data: data as unknown as Record<string, unknown>, sound: true },
       trigger: null,
     });
     return id;
   }
 
-  // Cancel all notifications
   async cancelAllNotifications(): Promise<void> {
     await Notifications.cancelAllScheduledNotificationsAsync();
-
-    // Also cancel Notifee notifications
-    const notifee = await this.getNotifee();
-    if (notifee) {
+    try {
+      const notifee = require('@notifee/react-native').default;
       await notifee.cancelAllNotifications();
-    }
+    } catch (e) {}
   }
 
-  // Badge management
   async getBadgeCount(): Promise<number> {
     return Notifications.getBadgeCountAsync();
   }

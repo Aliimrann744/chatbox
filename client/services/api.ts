@@ -307,6 +307,10 @@ export const chatApi = {
     return request(`/chats/${chatId}/read`, { method: 'POST' });
   },
 
+  async markAsDelivered(chatId: string) {
+    return request(`/chats/${chatId}/deliver`, { method: 'POST' });
+  },
+
   async deleteMessage(messageId: string) {
     return request(`/chats/messages/${messageId}`, { method: 'DELETE' });
   },

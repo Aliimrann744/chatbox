@@ -70,6 +70,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await this.broadcastOnlineStatus(userId, true);
       console.log(`User ${userId} connected with socket ${client.id}`);
       client.emit('connected', { userId, socketId: client.id });
+
+      // Deliver pending messages (SENT → DELIVERED) and notify senders
+      try {
+        const delivered = await this.chatService.deliverPendingMessages(userId);
+        for (const msg of delivered) {
+          const senderSocketId = this.connectedUsers.get(msg.senderId);
+          if (senderSocketId) {
+            this.server.to(senderSocketId).emit('message_status', {
+              messageId: msg.messageId,
+              status: 'DELIVERED',
+            });
+          }
+        }
+        if (delivered.length > 0) {
+          console.log(`Delivered ${delivered.length} pending messages for user ${userId}`);
+        }
+      } catch (err) {
+        console.error('Failed to deliver pending messages:', err.message);
+      }
     } catch (error) {
       console.log('Connection error:', error.message);
       client.disconnect();

@@ -399,8 +399,17 @@ class SocketService {
 
   declineCall(callId: string): Promise<any> {
     return new Promise((resolve) => {
-      if (!this.callSocket) {
-        resolve({ success: false, error: 'Not connected' });
+      if (!this.callSocket?.connected) {
+        console.warn('Call socket not connected for decline');
+        this.callSocket?.connect();
+        // Wait briefly then try
+        setTimeout(() => {
+          if (this.callSocket?.connected) {
+            this.callSocket.emit('call_decline', { callId }, resolve);
+          } else {
+            resolve({ success: false, error: 'Call socket not connected' });
+          }
+        }, 1500);
         return;
       }
       this.callSocket.emit('call_decline', { callId }, resolve);
@@ -409,8 +418,16 @@ class SocketService {
 
   endCall(callId: string): Promise<any> {
     return new Promise((resolve) => {
-      if (!this.callSocket) {
-        resolve({ success: false, error: 'Not connected' });
+      if (!this.callSocket?.connected) {
+        console.warn('Call socket not connected for end');
+        this.callSocket?.connect();
+        setTimeout(() => {
+          if (this.callSocket?.connected) {
+            this.callSocket.emit('call_end', { callId }, resolve);
+          } else {
+            resolve({ success: false, error: 'Call socket not connected' });
+          }
+        }, 1500);
         return;
       }
       this.callSocket.emit('call_end', { callId }, resolve);

@@ -45,6 +45,7 @@ interface CallContextType {
   callState: CallState;
   initiateCall: (receiverId: string, receiverName: string, receiverAvatar: string | undefined, type: CallType) => Promise<void>;
   acceptCall: () => Promise<void>;
+  acceptCallFromNotification: (callData: { callId: string; callerId: string; callerName: string; callerAvatar?: string; callType: CallType }) => Promise<void>;
   declineCall: () => Promise<void>;
   endCall: () => Promise<void>;
   toggleMute: () => void;
@@ -437,29 +438,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const result = await socketService.initiateCall(receiverId, type);
 
         if (result.success) {
-          if (result.receiverOnline === true) {
-            setCallState((prev) => ({
-              ...prev,
-              callId: result.callId,
-              status: 'ringing',
-            }));
-          } else {
-            setCallState((prev) => ({
-              ...prev,
-              callId: result.callId,
-            }));
-          }
+          // Always set callId and ringing status — even if receiver appears offline,
+          // they may receive the call via FCM push notification (WhatsApp behavior)
+          setCallState((prev) => ({
+            ...prev,
+            callId: result.callId,
+            status: 'ringing',
+          }));
 
-          // Notify caller if receiver is offline
-          if (result.receiverOnline === false) {
-            setTimeout(async () => {
-              await socketService.endCall(result.callId);
-              resetCallState();
-              Alert.alert('User Unavailable', `${receiverName} is not available right now. Try again later.`);
-            }, 3000);
-            return;
-          }
-
+          // Timeout: if no answer within 60 seconds, end the call
           callTimeoutRef.current = setTimeout(async () => {
             if (callStateRef.current.status === 'calling' || callStateRef.current.status === 'ringing') {
               await socketService.endCall(result.callId);
@@ -517,10 +504,92 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, [resetCallState]);
 
+  // Accept call directly from background notification data
+  // (bypasses the socket incoming_call event which was missed while app was in background)
+  const acceptCallFromNotification = useCallback(async (callData: {
+    callId: string;
+    callerId: string;
+    callerName: string;
+    callerAvatar?: string;
+    callType: CallType;
+  }) => {
+    console.log('acceptCallFromNotification:', callData);
+
+    try {
+      // Set call state from notification data
+      setCallState({
+        callId: callData.callId,
+        type: callData.callType,
+        status: 'connecting',
+        direction: 'incoming',
+        participant: {
+          id: callData.callerId,
+          name: callData.callerName,
+          avatar: callData.callerAvatar,
+        },
+        startTime: null,
+        isMuted: false,
+        isSpeakerOn: false,
+        isVideoEnabled: callData.callType === 'VIDEO',
+      });
+
+      // Ensure socket is connected — use connect() NOT reconnect()
+      // reconnect() calls disconnect() first, which triggers server handleDisconnect
+      // which kills the active call before we can accept it
+      if (!socketService.isCallConnected) {
+        console.log('Call socket not connected, connecting...');
+        await socketService.connect();
+        // Wait for socket to connect
+        await new Promise<void>((resolve) => {
+          const checkInterval = setInterval(() => {
+            if (socketService.isCallConnected) {
+              clearInterval(checkInterval);
+              resolve();
+            }
+          }, 200);
+          // Timeout after 5 seconds
+          setTimeout(() => {
+            clearInterval(checkInterval);
+            resolve();
+          }, 5000);
+        });
+      }
+
+      if (!socketService.isCallConnected) {
+        throw new Error('Could not connect to call server');
+      }
+
+      console.log('Call socket connected, sending call_accept...');
+
+      // Accept the call via socket
+      const result = await socketService.acceptCall(callData.callId);
+      console.log('acceptCallFromNotification result:', result.success, 'has iceServers:', !!result.iceServers);
+
+      if (result.success && result.iceServers) {
+        iceServersRef.current = result.iceServers;
+
+        InCallManager.start({
+          media: callData.callType === 'VIDEO' ? 'video' : 'audio',
+        });
+        InCallManager.setForceSpeakerphoneOn(callData.callType === 'VIDEO');
+      } else {
+        throw new Error(result.error || 'Call is no longer available');
+      }
+    } catch (error: any) {
+      console.error('Error accepting call from notification:', error);
+      Alert.alert('Call Ended', 'The call is no longer available.');
+      resetCallState();
+    }
+  }, [resetCallState, setupPeerConnection]);
+
   // Decline incoming call
   const declineCall = useCallback(async () => {
     const currentCallId = callStateRef.current.callId;
-    if (!currentCallId) return;
+    if (!currentCallId) {
+      // No callId — just reset state (stale call)
+      resetCallState();
+      return;
+    }
 
     try {
       if (callTimeoutRef.current) {
@@ -528,26 +597,44 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         callTimeoutRef.current = null;
       }
 
+      // Ensure socket is connected before declining
+      if (!socketService.isCallConnected) {
+        console.log('Call socket not connected, reconnecting before decline...');
+        await socketService.reconnect();
+        // Wait briefly for reconnection
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+
       await socketService.declineCall(currentCallId);
-      resetCallState();
     } catch (error) {
       console.error('Error declining call:', error);
-      resetCallState();
     }
+    // Always reset state regardless of socket success
+    resetCallState();
   }, [resetCallState]);
 
   // End call
   const endCall = useCallback(async () => {
     const currentCallId = callStateRef.current.callId;
-    if (!currentCallId) return;
+    if (!currentCallId) {
+      resetCallState();
+      return;
+    }
 
     try {
+      // Ensure socket is connected before ending
+      if (!socketService.isCallConnected) {
+        console.log('Call socket not connected, reconnecting before end...');
+        await socketService.reconnect();
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+
       await socketService.endCall(currentCallId);
-      resetCallState();
     } catch (error) {
       console.error('Error ending call:', error);
-      resetCallState();
     }
+    // Always reset state regardless of socket success
+    resetCallState();
   }, [resetCallState]);
 
   // Toggle mute
@@ -609,6 +696,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         callState,
         initiateCall,
         acceptCall,
+        acceptCallFromNotification,
         declineCall,
         endCall,
         toggleMute,

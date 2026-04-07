@@ -148,6 +148,12 @@ export class ChatController {
     return this.chatService.markMessagesAsRead(chatId, user.id);
   }
 
+  // Mark all SENT messages in a chat as DELIVERED (called from background FCM handler)
+  @Post(':id/deliver')
+  async markAsDelivered(@CurrentUser() user: any, @Param('id') chatId: string) {
+    return this.chatService.markChatMessagesDelivered(chatId, user.id);
+  }
+
   @Delete(':id/clear')
   async clearChat(@CurrentUser() user: any, @Param('id') chatId: string) {
     return this.chatService.clearChat(chatId, user.id);

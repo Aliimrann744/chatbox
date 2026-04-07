@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { router } from 'expo-router';
 import { useCall } from '@/contexts/call-context';
 import { useNotificationContext } from '@/contexts/notification-context';
-import socketService from '@/services/socket';
 
 /**
  * This component listens for incoming calls and navigates to the incoming call screen.
@@ -10,10 +9,10 @@ import socketService from '@/services/socket';
  * It should be placed in the root layout to work globally.
  */
 export function IncomingCallListener() {
-  const { callState, acceptCall } = useCall();
+  const { callState, acceptCall, acceptCallFromNotification } = useCall();
   const { pendingCallAccept, clearPendingCall } = useNotificationContext();
 
-  // Navigate to incoming call screen when there's an incoming call
+  // Navigate to incoming call screen when there's an incoming call via socket
   useEffect(() => {
     if (callState.status === 'ringing' && callState.direction === 'incoming') {
       router.push('/call/incoming');
@@ -22,21 +21,29 @@ export function IncomingCallListener() {
 
   // Handle pending call accept from background notification
   useEffect(() => {
-    if (pendingCallAccept && callState.status === 'ringing' && callState.callId === pendingCallAccept.callId) {
-      // User accepted call from notification — auto-accept
+    if (!pendingCallAccept) return;
+
+    console.log('[IncomingCallListener] Pending call accept:', pendingCallAccept, 'callState:', callState.status);
+
+    if (callState.status === 'ringing' && callState.callId === pendingCallAccept.callId) {
+      // Socket incoming_call already arrived — accept normally
+      console.log('[IncomingCallListener] Call already ringing, accepting...');
       acceptCall();
       clearPendingCall();
       router.push('/call/active');
-    } else if (pendingCallAccept && callState.status === 'idle') {
-      // App launched from killed state with a pending call accept
-      // The incoming_call socket event hasn't arrived yet — wait briefly
-      const timer = setTimeout(() => {
-        if (callState.status === 'idle') {
-          // Socket event never came — call may have ended
-          clearPendingCall();
-        }
-      }, 5000);
-      return () => clearTimeout(timer);
+    } else if (callState.status === 'idle' || callState.status === 'ended') {
+      // Socket incoming_call was missed (app was in background) —
+      // accept directly from notification data without waiting for socket event
+      console.log('[IncomingCallListener] Accepting call directly from notification data...');
+      clearPendingCall();
+      acceptCallFromNotification({
+        callId: pendingCallAccept.callId,
+        callerId: pendingCallAccept.callerId,
+        callerName: pendingCallAccept.callerName,
+        callerAvatar: pendingCallAccept.callerAvatar,
+        callType: pendingCallAccept.callType as 'VOICE' | 'VIDEO',
+      });
+      router.push('/call/active');
     }
   }, [pendingCallAccept, callState.status, callState.callId]);
 
