@@ -774,9 +774,9 @@ function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoice
   // Show voice recorder when recording — WhatsApp style
   if (isRecording) {
     return (
-      <View style={{ backgroundColor: colors.backgroundSecondary }}>
+      <View>
         {replyPreview}
-        <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: bottomPadding }]}>
+        <View style={[styles.inputContainer, { paddingBottom: bottomPadding }]}>
           {/* Delete button */}
           <Pressable onPress={onVoiceCancel} style={styles.voiceDeleteButton}>
             <Ionicons name="trash" size={22} color="#FF3B30" />
@@ -800,14 +800,14 @@ function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoice
   }
 
   return (
-    <View style={{ backgroundColor: colors.backgroundSecondary }}>
+    <View>
       {replyPreview}
-      <View style={[styles.inputContainer, { backgroundColor: colors.backgroundSecondary, paddingBottom: bottomPadding }]}>
+      <View style={[styles.inputContainer, { paddingBottom: bottomPadding }]}>
       <View style={[styles.inputRow, { backgroundColor: colors.inputBackground }]}>
         <TextInput
           style={[styles.textInput, { color: colors.text }]} placeholder="Type a message..."
           placeholderTextColor={colors.textSecondary} value={value} onChangeText={handleTextChange}
-          multiline maxLength={1000}
+          multiline maxLength={1000} textAlignVertical="center"
         />
 
         <Pressable onPress={onAttachment} style={styles.inputIconButton}>
@@ -956,7 +956,7 @@ export default function ChatDetailScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
@@ -1050,9 +1050,8 @@ export default function ChatDetailScreen() {
       setHasMore(messagesData.pagination.hasMore);
       setPage(1);
 
-      // Cache results
+      // Cache chat detail (messages are auto-cached by the useEffect sync)
       cache.set(CacheKeys.chatDetail(chatId), chatData);
-      cache.set(CacheKeys.messages(chatId), messagesWithStarred);
 
       // Mark messages as read
       chatApi.markAsRead(chatId);
@@ -1083,6 +1082,13 @@ export default function ChatDetailScreen() {
     }
   }, [chatId, page, loadingMore, hasMore]);
 
+  // Sync messages to cache whenever they change (sent, received, status updates, etc.)
+  useEffect(() => {
+    if (chatId && messages.length > 0) {
+      cache.set(CacheKeys.messages(chatId), messages);
+    }
+  }, [chatId, messages]);
+
   // Initialize
   useEffect(() => {
     fetchData();
@@ -1100,24 +1106,17 @@ export default function ChatDetailScreen() {
     };
   }, [chatId, fetchData]);
 
-  // Re-fetch messages when screen regains focus (e.g., returning from call screen)
-  // Also track active chat for notification suppression
+  // Track active chat for notification suppression
   useFocusEffect(
     useCallback(() => {
       if (chatId) {
         setCurrentChatId(chatId);
       }
-      if (chatId && !loading) {
-        chatApi.getMessages(chatId, 1, 50).then((data) => {
-          setMessages(data.messages);
-          cache.set(CacheKeys.messages(chatId), data.messages);
-        }).catch(() => {});
-      }
 
       return () => {
         setCurrentChatId(null);
       };
-    }, [chatId, loading])
+    }, [chatId])
   );
 
   // Socket event listeners
@@ -1711,20 +1710,17 @@ export default function ChatDetailScreen() {
       console.error('Error deleting messages:', error);
     }
 
-    // Update cache after deletion
+    // Update local state after deletion (cache syncs automatically via useEffect)
     if (chatId) {
       const idSet = new Set(messageIds);
       if (forEveryone) {
-        // Keep messages but mark as deleted placeholders
-        const updated = messages.map(m =>
+        setMessages(prev => prev.map(m =>
           idSet.has(m.id)
             ? { ...m, isDeletedForEveryone: true, content: undefined, mediaUrl: undefined, type: 'TEXT' as const }
             : m
-        );
-        cache.set(CacheKeys.messages(chatId), updated);
+        ));
       } else {
-        const remaining = messages.filter(m => !idSet.has(m.id));
-        cache.set(CacheKeys.messages(chatId), remaining);
+        setMessages(prev => prev.filter(m => !idSet.has(m.id)));
       }
     }
   };
@@ -1851,7 +1847,7 @@ export default function ChatDetailScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.backgroundSecondary }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}>
       {/* Custom Header */}
       {isSelectionMode ? (
@@ -1894,7 +1890,7 @@ export default function ChatDetailScreen() {
         />
       )}
 
-      {/* Messages List with WhatsApp background */}
+      {/* Messages List with WhatsApp background — wraps both messages and input */}
       <ImageBackground
         source={require('@/assets/images/chat-background.jpg')}
         style={styles.messagesList}
@@ -1910,18 +1906,12 @@ export default function ChatDetailScreen() {
           style={styles.messagesListInner}
           onEndReached={loadMoreMessages}
           onEndReachedThreshold={0.5}
-          ListHeaderComponent={
-            loadingMore ? (
-              <ActivityIndicator size="small" color={colors.primary} style={styles.loadingMore} />
-            ) : null
-          }
           onContentSizeChange={() => {
             if (messages.length > 0 && page === 1) {
               flatListRef.current?.scrollToEnd({ animated: false });
             }
           }}
         />
-      </ImageBackground>
 
       <MessageInput
         value={messageText}
@@ -1940,6 +1930,7 @@ export default function ChatDetailScreen() {
         onCancelReply={() => setReplyingTo(null)}
         currentUserId={user?.id}
       />
+      </ImageBackground>
 
       {/* Attachment Menu */}
       <AttachmentMenu
@@ -2394,8 +2385,8 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
     fontSize: 16,
-    height: 40,
-    maxHeight: 120,
+    minHeight: 40,
+    maxHeight: 144,
     paddingHorizontal: 6,
     paddingVertical: 8,
   },

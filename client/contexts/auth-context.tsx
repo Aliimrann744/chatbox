@@ -13,8 +13,8 @@ interface AuthState {
 interface AuthContextType extends AuthState {
   sendOtp: (params: { phone?: string; countryCode?: string; email?: string }) => Promise<void>;
   verifyOtp: (params: { phone?: string; email?: string }, otp: string) => Promise<{ isNewUser: boolean }>;
-  googleLogin: () => Promise<{ isNewUser: boolean }>;
-  facebookLogin: () => Promise<{ isNewUser: boolean }>;
+  googleLogin: () => Promise<{ isNewUser: boolean; hasPhone: boolean }>;
+  facebookLogin: () => Promise<{ isNewUser: boolean; hasPhone: boolean }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -133,13 +133,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     GoogleSignin.configure({
       webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     });
+    // Sign out first so the account picker always shows (lets user switch accounts)
+    try { await GoogleSignin.signOut(); } catch {}
     const signInResult = await GoogleSignin.signIn();
     const idToken = signInResult?.data?.idToken;
     if (!idToken) throw new Error('Google sign-in failed: no ID token');
     const response = await authApi.googleLogin({ idToken });
     cache.set(CacheKeys.USER_PROFILE, response.user);
     setState({ user: response.user, isLoading: false, isAuthenticated: true });
-    return { isNewUser: response.isNewUser };
+    return { isNewUser: response.isNewUser, hasPhone: !!response.user.phone };
   }, []);
 
   const facebookLogin = useCallback(async () => {
@@ -151,7 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const response = await authApi.facebookLogin({ accessToken: tokenData.accessToken });
     cache.set(CacheKeys.USER_PROFILE, response.user);
     setState({ user: response.user, isLoading: false, isAuthenticated: true });
-    return { isNewUser: response.isNewUser };
+    return { isNewUser: response.isNewUser, hasPhone: !!response.user.phone };
   }, []);
 
   const logout = useCallback(async () => {
@@ -160,6 +162,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       // Ignore server errors — tokens are already cleared by authApi.logout's finally block
     }
+    // Sign out from Google so the account picker shows on next login
+    try {
+      const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+      await GoogleSignin.signOut();
+    } catch {}
     socketService.disconnect();
     cache.clearAll();
     setState({ user: null, isLoading: false, isAuthenticated: false });

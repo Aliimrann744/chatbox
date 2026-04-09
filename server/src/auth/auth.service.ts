@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, NotFoundException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -19,6 +19,26 @@ export class AuthService {
     private uploadService: UploadService,
     private mailService: MailService,
   ) {}
+
+  /**
+   * Detects which auth provider the user originally signed up with.
+   * Returns null if user has no linked provider (pure OTP user).
+   */
+  private getLinkedProvider(user: { googleId?: string | null; facebookId?: string | null; phone?: string | null; email?: string | null }): 'google' | 'facebook' | 'email' | 'phone' | null {
+    if (user.googleId) return 'google';
+    if (user.facebookId) return 'facebook';
+    return null;
+  }
+
+  private getProviderLabel(provider: string): string {
+    const labels: Record<string, string> = {
+      google: 'Google',
+      facebook: 'Facebook',
+      email: 'email verification',
+      phone: 'phone verification',
+    };
+    return labels[provider] || provider;
+  }
 
   private generateOtp(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
@@ -83,6 +103,15 @@ export class AuthService {
       let user = await this.prisma.user.findUnique({ where: { email } });
 
       if (user) {
+        // Check if this email is linked to a social provider
+        const linkedProvider = this.getLinkedProvider(user);
+        if (linkedProvider) {
+          throw new ConflictException({
+            message: `This email is associated with a ${this.getProviderLabel(linkedProvider)} account. Please sign in with ${this.getProviderLabel(linkedProvider)} instead.`,
+            authProvider: linkedProvider,
+          });
+        }
+
         await this.prisma.user.update({ where: { id: user.id }, data: { otp, otpExpiry } });
       } else {
         user = await this.prisma.user.create({ data: { email, otp, otpExpiry, isVerified: false } });
@@ -105,6 +134,15 @@ export class AuthService {
     let user = await this.prisma.user.findUnique({ where: { phone: phone! } });
 
     if (user) {
+      // Check if this phone is linked to a social provider
+      const linkedProvider = this.getLinkedProvider(user);
+      if (linkedProvider) {
+        throw new ConflictException({
+          message: `This phone number is associated with a ${this.getProviderLabel(linkedProvider)} account. Please sign in with ${this.getProviderLabel(linkedProvider)} instead.`,
+          authProvider: linkedProvider,
+        });
+      }
+
       await this.prisma.user.update({ where: { id: user.id }, data: { otp, otpExpiry }});
     } else {
       user = await this.prisma.user.create({ data: { phone: phone!, countryCode: countryCode || '+92', otp, otpExpiry, isVerified: false }});
@@ -242,12 +280,32 @@ export class AuthService {
     // 1. Find by provider ID
     let user = await this.prisma.user.findUnique({ where: { [providerField]: providerId } as any });
 
-    // 2. Find by email (link existing account)
+    // 2. Find by email — check for provider conflict instead of auto-linking
     if (!user && email) {
-      user = await this.prisma.user.findUnique({ where: { email } });
-      if (user) {
-        await this.prisma.user.update({ where: { id: user.id }, data: { [providerField]: providerId } });
-        user = { ...user, [providerField]: providerId };
+      const existingUser = await this.prisma.user.findUnique({ where: { email } });
+      if (existingUser) {
+        const linkedProvider = this.getLinkedProvider(existingUser);
+
+        if (linkedProvider && linkedProvider !== providerField.replace('Id', '')) {
+          // User signed up with a DIFFERENT social provider
+          throw new ConflictException({
+            message: `This email is already associated with a ${this.getProviderLabel(linkedProvider)} account. Please sign in with ${this.getProviderLabel(linkedProvider)} instead.`,
+            authProvider: linkedProvider,
+          });
+        }
+
+        if (!linkedProvider) {
+          // User signed up with OTP (email or phone) — no social provider linked
+          const method = existingUser.phone ? 'phone' : 'email';
+          throw new ConflictException({
+            message: `This email is already registered with ${this.getProviderLabel(method)}. Please sign in using ${this.getProviderLabel(method)} instead.`,
+            authProvider: method,
+          });
+        }
+
+        // Same provider but different providerId — shouldn't normally happen
+        // but handle gracefully by treating as the existing user
+        user = existingUser;
       }
     }
 

@@ -155,6 +155,49 @@ export default function LoginScreen() {
 
   // ─── Submit ─────────────────────────────────────────────────────────────
 
+  const getProviderActionLabel = (provider: string) => {
+    const labels: Record<string, string> = {
+      google: 'Sign in with Google',
+      facebook: 'Sign in with Facebook',
+      email: 'Use Email verification',
+      phone: 'Use Phone verification',
+    };
+    return labels[provider] || provider;
+  };
+
+  const handleProviderConflict = (error: any) => {
+    const provider = error.authProvider;
+    if (!provider) {
+      Alert.alert('Error', error.message || 'Something went wrong');
+      return;
+    }
+
+    const actionLabel = getProviderActionLabel(provider);
+    Alert.alert(
+      'Account Already Exists',
+      error.message,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        ...(provider === 'google' ? [{
+          text: actionLabel,
+          onPress: () => handleGoogleLogin(),
+        }] : []),
+        ...(provider === 'facebook' ? [{
+          text: actionLabel,
+          onPress: () => handleFacebookLogin(),
+        }] : []),
+        ...(provider === 'email' ? [{
+          text: actionLabel,
+          onPress: () => { setInputMode('email'); },
+        }] : []),
+        ...(provider === 'phone' ? [{
+          text: actionLabel,
+          onPress: () => { setInputMode('phone'); },
+        }] : []),
+      ],
+    );
+  };
+
   const handleNext = async () => {
     if (!isNextEnabled) return;
 
@@ -176,7 +219,11 @@ export default function LoginScreen() {
         });
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to send OTP');
+      if (error.statusCode === 409) {
+        handleProviderConflict(error);
+      } else {
+        Alert.alert('Error', error.message || 'Failed to send OTP');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -187,14 +234,16 @@ export default function LoginScreen() {
   const handleGoogleLogin = async () => {
     setSocialLoading('google');
     try {
-      const { isNewUser } = await googleLogin();
-      if (isNewUser) {
+      const { isNewUser, hasPhone } = await googleLogin();
+      if (isNewUser || !hasPhone) {
         router.replace({ pathname: '/(auth)/setup-profile', params: { loginMode: 'social' } });
       } else {
         router.replace('/(tabs)');
       }
     } catch (error: any) {
-      if (!error.message?.includes('cancelled') && !error.message?.includes('canceled')) {
+      if (error.statusCode === 409) {
+        handleProviderConflict(error);
+      } else if (!error.message?.includes('cancelled') && !error.message?.includes('canceled')) {
         Alert.alert('Error', error.message || 'Google login failed');
       }
     } finally {
@@ -205,14 +254,16 @@ export default function LoginScreen() {
   const handleFacebookLogin = async () => {
     setSocialLoading('facebook');
     try {
-      const { isNewUser } = await facebookLogin();
-      if (isNewUser) {
+      const { isNewUser, hasPhone } = await facebookLogin();
+      if (isNewUser || !hasPhone) {
         router.replace({ pathname: '/(auth)/setup-profile', params: { loginMode: 'social' } });
       } else {
         router.replace('/(tabs)');
       }
     } catch (error: any) {
-      if (!error.message?.includes('cancelled') && !error.message?.includes('canceled')) {
+      if (error.statusCode === 409) {
+        handleProviderConflict(error);
+      } else if (!error.message?.includes('cancelled') && !error.message?.includes('canceled')) {
         Alert.alert('Error', error.message || 'Facebook login failed');
       }
     } finally {

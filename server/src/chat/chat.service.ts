@@ -858,7 +858,7 @@ export class ChatService {
     return { success: true, messageIds };
   }
 
-  // Clear all messages in a chat for the user
+  // Clear all messages in a chat for the current user only (per-user, like WhatsApp)
   async clearChat(chatId: string, userId: string) {
     const membership = await this.prisma.chatMember.findUnique({
       where: {
@@ -870,14 +870,27 @@ export class ChatService {
       throw new ForbiddenException('You are not a member of this chat');
     }
 
-    // Soft delete all messages in this chat
-    await this.prisma.message.updateMany({
+    // Get all message IDs in this chat that haven't already been deleted for this user
+    const messages = await this.prisma.message.findMany({
       where: {
         chatId,
         deletedAt: null,
+        NOT: {
+          deletedForUsers: {
+            some: { userId },
+          },
+        },
       },
-      data: { deletedAt: new Date() },
+      select: { id: true },
     });
+
+    // Create per-user deletion records in bulk (only affects requesting user)
+    if (messages.length > 0) {
+      await this.prisma.deletedMessageForUser.createMany({
+        data: messages.map((m) => ({ messageId: m.id, userId })),
+        skipDuplicates: true,
+      });
+    }
 
     // Reset unread count
     await this.prisma.chatMember.update({

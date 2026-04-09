@@ -80,6 +80,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}, _isRetry 
     throw {
       message: data.message || 'An error occurred',
       statusCode: response.status,
+      authProvider: data.authProvider || undefined,
       ...data,
     };
   }
