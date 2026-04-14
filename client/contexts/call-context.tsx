@@ -105,15 +105,31 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const callStateRef = useRef(callState);
   callStateRef.current = callState;
 
-  // Request microphone permission and setup CallKeep on mount
+  // Request all essential permissions on mount (audio, camera, media library)
   useEffect(() => {
     if (Platform.OS === 'android') {
-      PermissionsAndroid.request(
+      PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-      ).then((result) => {
-        console.log('Audio permission:', result);
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        ...(Platform.Version >= 33
+          ? [
+              PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+              PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+            ]
+          : [PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE]),
+      ]).then((results) => {
+        console.log('Permissions:', results);
       }).catch((err) => {
-        console.warn('Audio permission request error:', err);
+        console.warn('Permission request error:', err);
+      });
+    } else {
+      // iOS: request camera and media library via expo APIs
+      import('expo-image-picker').then(({ requestCameraPermissionsAsync, requestMediaLibraryPermissionsAsync }) => {
+        requestCameraPermissionsAsync().catch(() => {});
+        requestMediaLibraryPermissionsAsync().catch(() => {});
+      });
+      import('expo-av').then(({ Audio }) => {
+        Audio.requestPermissionsAsync().catch(() => {});
       });
     }
 

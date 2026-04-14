@@ -30,6 +30,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { chatApi, contactApi, Chat, Contact, uploadApi } from '@/services/api';
 import socketService from '@/services/socket';
 import { cache, CacheKeys } from '@/services/cache';
+import { setImageEditorCallback } from '@/app/image-editor';
 
 type FilterType = 'All' | 'Unread' | 'Favorites' | 'Groups';
 const FILTERS: FilterType[] = ['All', 'Unread', 'Favorites', 'Groups'];
@@ -465,8 +466,21 @@ export default function ChatsScreen() {
         allowsEditing: false,
       });
       if (result.canceled || !result.assets?.[0]) return;
-      setCapturedPhoto(result.assets[0]);
-      setShowCameraPicker(true);
+
+      const asset = result.assets[0];
+
+      // Set callback: when user presses Send in the editor,
+      // we receive the final URI and open the contact picker.
+      setImageEditorCallback((editedUri: string, _caption: string) => {
+        setCapturedPhoto({ ...asset, uri: editedUri });
+        setShowCameraPicker(true);
+      });
+
+      // Navigate to the image editor screen instantly
+      router.push({
+        pathname: '/image-editor',
+        params: { uri: asset.uri },
+      });
     } catch (err: any) {
       console.error('Camera error', err);
       Alert.alert('Error', err?.message || 'Could not open camera');

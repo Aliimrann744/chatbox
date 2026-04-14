@@ -23,6 +23,7 @@ import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-p
 import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
 import { cache, CacheKeys } from '@/services/cache';
 import { useNotificationContext } from '@/contexts/notification-context';
+import { setImageEditorCallback } from '@/app/image-editor';
 
 type SenderLookupUser = { name?: string; phone?: string; countryCode?: string };
 
@@ -1353,12 +1354,56 @@ export default function ChatDetailScreen() {
     let media: PickedMedia | null = null;
 
     switch (type) {
-      case 'camera':
-        media = await takePhoto();
-        break;
-      case 'gallery':
+      case 'camera': {
+        // Launch camera without native editor — we use our own editor screen
+        const { status } = await (await import('expo-image-picker')).requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Camera permission is required to take photos.');
+          return;
+        }
+        const result = await (await import('expo-image-picker')).launchCameraAsync({
+          mediaTypes: (await import('expo-image-picker')).MediaTypeOptions.Images,
+          allowsEditing: false,
+          quality: 0.8,
+        });
+        if (result.canceled || !result.assets?.[0]) return;
+        const asset = result.assets[0];
+        const recipientName = otherUser?.name || chat?.name || 'Recipient';
+
+        // Open image editor, then send directly on callback
+        setImageEditorCallback((editedUri: string, _caption: string) => {
+          const pickedMedia: PickedMedia = {
+            uri: editedUri,
+            type: 'image',
+            mimeType: asset.mimeType || 'image/jpeg',
+            name: `photo_${Date.now()}.jpg`,
+            size: asset.fileSize,
+            width: asset.width,
+            height: asset.height,
+          };
+          sendMediaMessage(pickedMedia);
+        });
+        router.push({
+          pathname: '/image-editor',
+          params: { uri: asset.uri, recipient: recipientName },
+        });
+        return;
+      }
+      case 'gallery': {
         media = await pickImage();
+        if (media && media.type === 'image') {
+          const recipientName = otherUser?.name || chat?.name || 'Recipient';
+          setImageEditorCallback((editedUri: string, _caption: string) => {
+            sendMediaMessage({ ...media!, uri: editedUri });
+          });
+          router.push({
+            pathname: '/image-editor',
+            params: { uri: media.uri, recipient: recipientName },
+          });
+          return;
+        }
         break;
+      }
       case 'video':
         media = await pickVideo();
         break;

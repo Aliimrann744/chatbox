@@ -18,8 +18,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supportsTablet: true,
     googleServicesFile: './GoogleService-Info.plist',
     infoPlist: {
-      NSMicrophoneUsageDescription: 'WhatsApp needs microphone access for voice and video calls',
-      NSCameraUsageDescription: 'WhatsApp needs camera access for video calls',
+      NSMicrophoneUsageDescription: 'WhatsApp needs microphone access for voice messages and calls',
+      NSCameraUsageDescription: 'WhatsApp needs camera access for taking photos and video calls',
+      NSPhotoLibraryUsageDescription: 'WhatsApp needs photo library access to share photos and videos',
       ITSAppUsesNonExemptEncryption: false,
       UIBackgroundModes: ['voip', 'remote-notification', 'fetch'],
     },
@@ -36,6 +37,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     permissions: [
       'RECORD_AUDIO',
       'CAMERA',
+      'READ_EXTERNAL_STORAGE',
+      'READ_MEDIA_IMAGES',
+      'READ_MEDIA_VIDEO',
+      'READ_MEDIA_AUDIO',
       'FOREGROUND_SERVICE',
       'FOREGROUND_SERVICE_PHONE_CALL',
       'USE_FULL_SCREEN_INTENT',

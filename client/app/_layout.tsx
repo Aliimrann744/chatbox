@@ -192,6 +192,14 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen name="archived-chats" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="image-editor"
+          options={{
+            headerShown: false,
+            presentation: 'fullScreenModal',
+            animation: 'fade',
+          }}
+        />
         <Stack.Screen name="shared-messages" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
