@@ -346,6 +346,16 @@ class SocketService {
     });
   }
 
+  markAllRead(): Promise<{ success: boolean; count?: number; error?: string }> {
+    return new Promise((resolve) => {
+      if (!this.chatSocket) {
+        resolve({ success: false, error: 'Not connected' });
+        return;
+      }
+      this.chatSocket.emit('mark_all_read', {}, resolve);
+    });
+  }
+
   starMessage(messageId: string, starred: boolean): Promise<any> {
     return new Promise((resolve) => {
       if (!this.chatSocket) {

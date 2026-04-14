@@ -26,7 +26,7 @@ export const unstable_settings = {
 function RootLayoutNav() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -60,18 +60,32 @@ function RootLayoutNav() {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const currentScreen = segments[1];
+    // A profile is considered complete when the user has a phone number.
+    // Google/Facebook logins land without one, so we must detour through setup-profile.
+    const needsProfileSetup = isAuthenticated && !!user && !user.phone;
 
     if (!isAuthenticated && !inAuthGroup) {
       // Redirect to continue/welcome page if not authenticated
       router.replace('/(auth)/continue');
+    } else if (isAuthenticated && needsProfileSetup) {
+      // Force the user to setup-profile until they add a phone number,
+      // regardless of where expo-router currently has them.
+      if (currentScreen !== 'setup-profile') {
+        router.replace({
+          pathname: '/(auth)/setup-profile',
+          params: { loginMode: 'social' },
+        });
+      }
     } else if (isAuthenticated && inAuthGroup) {
-      // Allow staying on verify-otp (mid-navigation), loading, and setup-profile screens when authenticated
-      const currentScreen = segments[1];
-      if (currentScreen !== 'continue' && currentScreen !== 'verify-otp' && currentScreen !== 'loading' && currentScreen !== 'setup-profile') {
+      // Allow staying on transitional screens (verify-otp, loading) while the
+      // rest of the auth flow finishes. Everything else means the user is
+      // fully logged in and should be punted into the app.
+      if (currentScreen !== 'verify-otp' && currentScreen !== 'loading') {
         router.replace('/(tabs)');
       }
     }
-  }, [isAuthenticated, isLoading, segments]);
+  }, [isAuthenticated, isLoading, segments, user]);
 
   // Show loading screen while checking auth
   if (isLoading) {
@@ -177,6 +191,8 @@ function RootLayoutNav() {
             presentation: 'fullScreenModal',
           }}
         />
+        <Stack.Screen name="archived-chats" options={{ headerShown: false }} />
+        <Stack.Screen name="shared-messages" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <IncomingCallListener />

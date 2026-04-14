@@ -331,6 +331,16 @@ export class ContactService {
 
   // ==================== HELPER METHODS ====================
 
+  // Check if userId specifically blocked targetId (one-directional)
+  async didIBlock(userId: string, targetId: string): Promise<boolean> {
+    const blocked = await this.prisma.blockedUser.findUnique({
+      where: {
+        blockerId_blockedId: { blockerId: userId, blockedId: targetId },
+      },
+    });
+    return !!blocked;
+  }
+
   async isBlocked(userId: string, targetId: string): Promise<boolean> {
     const blocked = await this.prisma.blockedUser.findFirst({
       where: {

@@ -63,6 +63,21 @@ export class ChatController {
     return this.chatService.deleteMessageForEveryone(user.id, messageId);
   }
 
+  // Get every starred (shared) message across the user's chats.
+  // Used by the Shared screen in the menu. Returns enriched chat info.
+  @Get('starred/all')
+  async getAllStarredMessages(@CurrentUser() user: any) {
+    const messages = await this.chatService.getAllStarredMessages(user.id);
+    return { messages };
+  }
+
+  // Mark every unread message in every chat as read.
+  // Used by the "Read all" menu entry.
+  @Post('mark-all-read')
+  async markAllChatsAsRead(@CurrentUser() user: any) {
+    return this.chatService.markAllChatsAsRead(user.id);
+  }
+
   // ==================== PARAM ROUTES (:id) ====================
 
   @Get(':id/starred')
@@ -117,6 +132,34 @@ export class ChatController {
       body.isMuted,
       body.muteUntil ? new Date(body.muteUntil) : undefined,
     );
+  }
+
+  @Patch(':id/archive')
+  async archiveChat(
+    @CurrentUser() user: any,
+    @Param('id') chatId: string,
+    @Body('isArchived') isArchived: boolean,
+  ) {
+    return this.chatService.archiveChat(chatId, user.id, isArchived);
+  }
+
+  @Patch(':id/favorite')
+  async favoriteChat(
+    @CurrentUser() user: any,
+    @Param('id') chatId: string,
+    @Body('isFavorite') isFavorite: boolean,
+  ) {
+    return this.chatService.favoriteChat(chatId, user.id, isFavorite);
+  }
+
+  @Patch(':id/mark-unread')
+  async markChatUnread(@CurrentUser() user: any, @Param('id') chatId: string) {
+    return this.chatService.markChatUnread(chatId, user.id);
+  }
+
+  @Delete(':id')
+  async deleteChat(@CurrentUser() user: any, @Param('id') chatId: string) {
+    return this.chatService.hideChat(chatId, user.id);
   }
 
   @Get(':id/messages')

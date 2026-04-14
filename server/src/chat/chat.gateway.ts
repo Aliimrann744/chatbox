@@ -294,6 +294,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const contacts = await this.chatService.getUserContacts(userId);
 
     for (const contact of contacts) {
+      // Don't broadcast online status to blocked users (either direction)
+      const blocked = await this.chatService.isBlocked(userId, contact.contactId);
+      if (blocked) continue;
+
       const socketId = this.connectedUsers.get(contact.contactId);
       if (socketId) {
         this.server.to(socketId).emit('online_status', {
@@ -409,6 +413,43 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
         return { success: true };
       }
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('mark_all_read')
+  async handleMarkAllRead(@ConnectedSocket() client: Socket) {
+    const userId = client.data.userId;
+
+    try {
+      const { affected } = await this.chatService.markAllChatsAsRead(userId);
+
+      // Group affected messages by sender so each sender receives a single
+      // `messages_read` event per chat with the IDs that are now READ.
+      const bySenderChat = new Map<string, Map<string, string[]>>();
+      for (const item of affected) {
+        if (!bySenderChat.has(item.senderId)) {
+          bySenderChat.set(item.senderId, new Map());
+        }
+        const chatMap = bySenderChat.get(item.senderId)!;
+        if (!chatMap.has(item.chatId)) chatMap.set(item.chatId, []);
+        chatMap.get(item.chatId)!.push(item.messageId);
+      }
+
+      for (const [senderId, chatMap] of bySenderChat) {
+        const senderSocketId = this.connectedUsers.get(senderId);
+        if (!senderSocketId) continue;
+        for (const [chatId, messageIds] of chatMap) {
+          this.server.to(senderSocketId).emit('messages_read', {
+            chatId,
+            messageIds,
+            readBy: userId,
+          });
+        }
+      }
+
+      return { success: true, count: affected.length };
     } catch (error) {
       return { success: false, error: error.message };
     }

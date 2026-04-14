@@ -42,32 +42,24 @@ export function CallListItem({ call, onCallPress }: CallListItemProps) {
   const colors = Colors[colorScheme];
 
   const isMissed = call.status === 'MISSED' || call.status === 'DECLINED';
+  const isOutgoing = call.direction === 'outgoing';
 
-  const getCallIcon = () => {
-    if (isMissed) {
-      return {
-        name: 'phone.fill.arrow.down.left' as const,
-        color: '#e74c3c',
-      };
-    } else if (call.direction === 'incoming') {
-      return {
-        name: 'phone.fill.arrow.down.left' as const,
-        color: colors.online,
-      };
-    } else {
-      return {
-        name: 'phone.fill.arrow.up.right' as const,
-        color: colors.online,
-      };
-    }
+  // Always base arrow direction on call direction (outgoing ↑, incoming ↓).
+  // Only the color changes when the call was missed/declined.
+  const callIcon = {
+    name: (isOutgoing
+      ? ('phone.fill.arrow.up.right' as const)
+      : ('phone.fill.arrow.down.left' as const)),
+    color: isMissed ? '#e74c3c' : colors.online,
   };
-
-  const callIcon = getCallIcon();
   const durationStr = formatDuration(call.duration);
   const dateStr = formatRelativeDate(call.startedAt);
 
+  const handlePress = () => onCallPress?.(call);
+
   return (
     <Pressable
+      onPress={handlePress}
       style={({ pressed }) => [
         styles.container,
         {
@@ -102,7 +94,13 @@ export function CallListItem({ call, onCallPress }: CallListItemProps) {
         </View>
       </View>
 
-      <Pressable style={styles.callButton} onPress={() => onCallPress?.(call)} hitSlop={8}>
+      <Pressable
+        style={styles.callButton}
+        onPress={(e) => {
+          e.stopPropagation?.();
+          handlePress();
+        }}
+        hitSlop={12}>
         <Ionicons name={call.type === 'VIDEO' ? 'videocam' : 'call'} size={22} color={colors.accent} />
       </Pressable>
     </Pressable>

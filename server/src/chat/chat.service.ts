@@ -165,6 +165,7 @@ export class ChatService {
           some: {
             userId,
             leftAt: null,
+            isHidden: false,
           },
         },
       },
@@ -216,14 +217,24 @@ export class ChatService {
         const lastMessage = lastMessages[0] || null;
 
         // For private chats, use the other user's info as chat info
+        // For private chats, use the other user's info.
+        // If the other member was deleted (cascade removed their row),
+        // otherMembers will be empty — show "Deleted Account" placeholder.
         const chatInfo =
-          chat.type === ChatType.PRIVATE && otherMembers.length > 0
-            ? {
-                name: otherMembers[0].user.name,
-                avatar: otherMembers[0].user.avatar,
-                isOnline: otherMembers[0].user.isOnline,
-                lastSeen: otherMembers[0].user.lastSeen,
-              }
+          chat.type === ChatType.PRIVATE
+            ? otherMembers.length > 0
+              ? {
+                  name: otherMembers[0].user.name,
+                  avatar: otherMembers[0].user.avatar,
+                  isOnline: otherMembers[0].user.isOnline,
+                  lastSeen: otherMembers[0].user.lastSeen,
+                }
+              : {
+                  name: 'Deleted Account',
+                  avatar: null,
+                  isOnline: false,
+                  lastSeen: null,
+                }
             : {
                 name: chat.name,
                 avatar: chat.avatar,
@@ -238,6 +249,9 @@ export class ChatService {
           unreadCount: currentMember?.unreadCount || 0,
           isPinned: currentMember?.isPinned || false,
           isMuted: currentMember?.isMuted || false,
+          isArchived: currentMember?.isArchived || false,
+          isFavorite: currentMember?.isFavorite || false,
+          isMarkedUnread: currentMember?.isMarkedUnread || false,
           members: chat.members,
           createdAt: chat.createdAt,
           updatedAt: chat.updatedAt,
@@ -261,6 +275,8 @@ export class ChatService {
                 about: true,
                 isOnline: true,
                 lastSeen: true,
+                phone: true,
+                countryCode: true,
               },
             },
           },
@@ -272,13 +288,18 @@ export class ChatService {
       throw new NotFoundException('Chat not found');
     }
 
-    // Verify user is a member
-    const isMember = chat.members.some((m) => m.userId === userId);
-    if (!isMember) {
+    const currentMember = chat.members.find((m) => m.userId === userId);
+    if (!currentMember) {
       throw new ForbiddenException('You are not a member of this chat');
     }
 
-    return chat;
+    return {
+      ...chat,
+      isPinned: currentMember.isPinned,
+      isMuted: currentMember.isMuted,
+      isArchived: currentMember.isArchived,
+      isFavorite: currentMember.isFavorite,
+    };
   }
 
   // ==================== MESSAGE OPERATIONS ====================
@@ -363,7 +384,8 @@ export class ChatService {
       data: { updatedAt: new Date() },
     });
 
-    // Increment unread count for other members
+    // Increment unread count for other members and unhide the chat
+    // so deleted chats reappear when a new message arrives.
     await this.prisma.chatMember.updateMany({
       where: {
         chatId: dto.chatId,
@@ -372,6 +394,7 @@ export class ChatService {
       },
       data: {
         unreadCount: { increment: 1 },
+        isHidden: false,
       },
     });
 
@@ -531,7 +554,7 @@ export class ChatService {
       skipDuplicates: true,
     });
 
-    // Reset unread count
+    // Reset unread count and clear manual unread marker
     await this.prisma.chatMember.update({
       where: {
         chatId_userId: {
@@ -539,7 +562,7 @@ export class ChatService {
           userId,
         },
       },
-      data: { unreadCount: 0, lastReadAt: new Date() },
+      data: { unreadCount: 0, lastReadAt: new Date(), isMarkedUnread: false },
     });
 
     return unreadMessages;
@@ -801,6 +824,126 @@ export class ChatService {
     return starredMessages.map(s => s.message);
   }
 
+  // Get all starred messages across every chat the user participates in.
+  // Used by the Shared screen — returns each message enriched with chat
+  // info (name/avatar/type) so the UI can render a global list.
+  async getAllStarredMessages(userId: string) {
+    const starred = await this.prisma.starredMessage.findMany({
+      where: { userId },
+      include: {
+        message: {
+          include: {
+            sender: {
+              select: { id: true, name: true, avatar: true },
+            },
+            chat: {
+              include: {
+                members: {
+                  where: { leftAt: null },
+                  include: {
+                    user: {
+                      select: { id: true, name: true, avatar: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return starred
+      // Skip messages the current user deleted for themselves, as well as
+      // any "deleted for everyone" rows — they have no content left.
+      .filter((s) => !!s.message && !s.message.isDeletedForEveryone)
+      .map((s) => {
+        const message = s.message;
+        const chat = message.chat;
+        const otherMember =
+          chat.type === ChatType.PRIVATE
+            ? chat.members.find((m) => m.userId !== userId)
+            : null;
+
+        const chatInfo =
+          chat.type === ChatType.PRIVATE && otherMember
+            ? {
+                id: chat.id,
+                type: chat.type,
+                name: otherMember.user.name,
+                avatar: otherMember.user.avatar,
+              }
+            : {
+                id: chat.id,
+                type: chat.type,
+                name: chat.name,
+                avatar: chat.avatar,
+              };
+
+        // Strip chat.members to keep the response small.
+        const { chat: _chat, ...messageRest } = message as any;
+        return {
+          ...messageRest,
+          starredAt: s.createdAt,
+          chat: chatInfo,
+        };
+      });
+  }
+
+  // ==================== MARK ALL CHATS AS READ ====================
+  // Used by the "Read all" menu entry. Marks every unread incoming message
+  // across every chat the user participates in as READ and resets each
+  // chat's unread counter. Returns the affected messages grouped by sender
+  // so the gateway can emit read receipts to the right sockets.
+  async markAllChatsAsRead(userId: string) {
+    const memberships = await this.prisma.chatMember.findMany({
+      where: { userId, leftAt: null },
+      select: { chatId: true },
+    });
+
+    const chatIds = memberships.map((m) => m.chatId);
+    if (chatIds.length === 0) {
+      return { affected: [] as { messageId: string; senderId: string; chatId: string }[] };
+    }
+
+    const unreadMessages = await this.prisma.message.findMany({
+      where: {
+        chatId: { in: chatIds },
+        senderId: { not: userId },
+        status: { not: MessageStatus.READ },
+        isDeletedForEveryone: false,
+      },
+      select: { id: true, senderId: true, chatId: true },
+    });
+
+    if (unreadMessages.length > 0) {
+      await this.prisma.message.updateMany({
+        where: { id: { in: unreadMessages.map((m) => m.id) } },
+        data: { status: MessageStatus.READ },
+      });
+
+      await this.prisma.messageReadReceipt.createMany({
+        data: unreadMessages.map((m) => ({ messageId: m.id, userId })),
+        skipDuplicates: true,
+      });
+    }
+
+    // Reset unread counters for every chat the user belongs to.
+    await this.prisma.chatMember.updateMany({
+      where: { userId, leftAt: null },
+      data: { unreadCount: 0, lastReadAt: new Date() },
+    });
+
+    return {
+      affected: unreadMessages.map((m) => ({
+        messageId: m.id,
+        senderId: m.senderId,
+        chatId: m.chatId,
+      })),
+    };
+  }
+
   // Delete message for everyone
   async deleteMessageForEveryone(userId: string, messageId: string) {
     const message = await this.prisma.message.findUnique({
@@ -900,6 +1043,44 @@ export class ChatService {
       data: { unreadCount: 0 },
     });
 
+    return { success: true };
+  }
+
+  // Archive/unarchive a chat
+  async archiveChat(chatId: string, userId: string, isArchived: boolean) {
+    await this.prisma.chatMember.update({
+      where: { chatId_userId: { chatId, userId } },
+      data: { isArchived },
+    });
+    return { success: true };
+  }
+
+  // Favorite/unfavorite a chat
+  async favoriteChat(chatId: string, userId: string, isFavorite: boolean) {
+    await this.prisma.chatMember.update({
+      where: { chatId_userId: { chatId, userId } },
+      data: { isFavorite },
+    });
+    return { success: true };
+  }
+
+  // Mark chat as unread
+  async markChatUnread(chatId: string, userId: string) {
+    await this.prisma.chatMember.update({
+      where: { chatId_userId: { chatId, userId } },
+      data: { isMarkedUnread: true },
+    });
+    return { success: true };
+  }
+
+  // Delete (hide) a chat from the user's list.
+  // The chat reappears automatically when a new message arrives
+  // (createMessage unsets isHidden for all members).
+  async hideChat(chatId: string, userId: string) {
+    await this.prisma.chatMember.update({
+      where: { chatId_userId: { chatId, userId } },
+      data: { isHidden: true, unreadCount: 0 },
+    });
     return { success: true };
   }
 

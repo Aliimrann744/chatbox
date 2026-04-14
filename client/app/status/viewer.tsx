@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
   Image,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -16,9 +18,10 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { ContactPickerModal } from '@/components/chat/contact-picker-modal';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { statusApi, Status, StatusViewInfo } from '@/services/api';
+import { chatApi, statusApi, Contact, Status, StatusViewInfo } from '@/services/api';
 import { useAuth } from '@/contexts/auth-context';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -45,6 +48,9 @@ export default function StatusViewerScreen() {
   const [isPaused, setIsPaused] = useState(false);
   const [viewers, setViewers] = useState<StatusViewInfo[]>([]);
   const [showViewers, setShowViewers] = useState(false);
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+  const [showForwardPicker, setShowForwardPicker] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressRef = useRef(0);
@@ -168,6 +174,97 @@ export default function StatusViewerScreen() {
   const canGoPrev = currentIndex > 0 || (allGroups.length > 0 && currentGroupIndex > 0);
   const canGoNext = currentIndex < statusList.length - 1 || (allGroups.length > 0 && currentGroupIndex < allGroups.length - 1);
 
+  // ─── Option menu handlers ─────────────────────────────────────────────────
+
+  const openOptionsMenu = useCallback(() => {
+    setIsPaused(true);
+    setShowOptionsMenu(true);
+  }, []);
+
+  const closeOptionsMenu = useCallback(() => {
+    setShowOptionsMenu(false);
+    setIsPaused(false);
+  }, []);
+
+  const handleDeletePress = useCallback(() => {
+    closeOptionsMenu();
+    if (!currentStatus) return;
+
+    Alert.alert(
+      'Delete status?',
+      'This status will be permanently removed and will no longer be visible to others.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (!currentStatus) return;
+            setIsBusy(true);
+            try {
+              await statusApi.deleteStatus(currentStatus.id);
+
+              // Remove the deleted status from the list and advance the viewer.
+              const remaining = statusList.filter((s) => s.id !== currentStatus.id);
+              if (remaining.length === 0) {
+                router.back();
+                return;
+              }
+              setStatusList(remaining);
+              setCurrentIndex((idx) => Math.min(idx, remaining.length - 1));
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to delete status');
+            } finally {
+              setIsBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [closeOptionsMenu, currentStatus, statusList, router]);
+
+  const handleForwardPress = useCallback(() => {
+    if (!currentStatus) return;
+    setShowOptionsMenu(false);
+    setShowForwardPicker(true);
+    setIsPaused(true);
+  }, [currentStatus]);
+
+  const handleForwardConfirm = useCallback(
+    async (contacts: Contact[]) => {
+      if (!currentStatus || contacts.length === 0) return;
+
+      setShowForwardPicker(false);
+      setIsBusy(true);
+      try {
+        // Fan out the status as a regular image/video message to every
+        // selected contact — create (or fetch) a private chat first,
+        // then reuse the mediaUrl from the status so nothing is re-uploaded.
+        await Promise.all(
+          contacts.map(async (contact) => {
+            try {
+              const chat = await chatApi.createChat(contact.contactId);
+              await chatApi.sendMessage(chat.id, {
+                type: currentStatus.type, // 'IMAGE' | 'VIDEO'
+                mediaUrl: currentStatus.mediaUrl,
+                thumbnail: currentStatus.thumbnail,
+                content: currentStatus.caption,
+                isForwarded: true,
+              });
+            } catch (err) {
+              console.error('Failed to forward status to contact', contact.contactId, err);
+            }
+          })
+        );
+        Alert.alert('Sent', `Status forwarded to ${contacts.length} contact${contacts.length > 1 ? 's' : ''}.`);
+      } finally {
+        setIsBusy(false);
+        setIsPaused(false);
+      }
+    },
+    [currentStatus]
+  );
+
   if (!currentStatus) {
     return (
       <View style={[styles.container, { backgroundColor: '#000' }]}>
@@ -242,6 +339,9 @@ export default function StatusViewerScreen() {
           <Text style={styles.headerName}>{currentStatus.user?.name || 'Unknown'}</Text>
           <Text style={styles.headerTime}>{formatTimeAgo(currentStatus.createdAt)}</Text>
         </View>
+        <Pressable onPress={openOptionsMenu} style={styles.menuButton} hitSlop={10}>
+          <Ionicons name="ellipsis-vertical" size={22} color="#fff" />
+        </Pressable>
       </View>
 
       {/* Left/Right Arrow Navigation */}
@@ -278,6 +378,51 @@ export default function StatusViewerScreen() {
           )}
         </View>
       )}
+
+      {/* Options menu (forward / delete) */}
+      <Modal
+        visible={showOptionsMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={closeOptionsMenu}>
+        <Pressable style={styles.menuOverlay} onPress={closeOptionsMenu}>
+          <View
+            style={[
+              styles.menuDropdown,
+              { top: insets.top + 56, backgroundColor: colors.cardBackground || '#202C33' },
+            ]}>
+            <Pressable style={styles.menuItem} onPress={handleForwardPress}>
+              <Ionicons name="arrow-redo-outline" size={20} color="#fff" />
+              <Text style={styles.menuItemText}>Forward</Text>
+            </Pressable>
+            {isOwnStatus && (
+              <Pressable style={styles.menuItem} onPress={handleDeletePress}>
+                <Ionicons name="trash-outline" size={20} color="#fff" />
+                <Text style={styles.menuItemText}>Delete</Text>
+              </Pressable>
+            )}
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Busy overlay */}
+      {isBusy && (
+        <View style={styles.busyOverlay} pointerEvents="auto">
+          <ActivityIndicator size="large" color="#fff" />
+        </View>
+      )}
+
+      {/* Forward to contacts picker */}
+      <ContactPickerModal
+        visible={showForwardPicker}
+        onClose={() => {
+          setShowForwardPicker(false);
+          setIsPaused(false);
+        }}
+        onConfirm={handleForwardConfirm}
+        title="Forward status to..."
+        confirmLabel="Forward"
+      />
 
       {/* Viewers List (own statuses only) */}
       {showViewers && isOwnStatus && (
@@ -398,6 +543,47 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     fontSize: 12,
     marginTop: 1,
+  },
+  menuButton: {
+    padding: 8,
+    marginLeft: 4,
+  },
+  menuOverlay: {
+    flex: 1,
+  },
+  menuDropdown: {
+    position: 'absolute',
+    right: 10,
+    minWidth: 170,
+    borderRadius: 10,
+    paddingVertical: 6,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  menuItemText: {
+    color: '#fff',
+    fontSize: 15,
+  },
+  busyOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 50,
   },
 
   // Navigation arrows

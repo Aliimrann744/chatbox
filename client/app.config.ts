@@ -28,6 +28,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package: 'com.chatbox.app',
     googleServicesFile: './google-services.json',
+    softwareKeyboardLayoutMode: 'resize',
     adaptiveIcon: {
       foregroundImage: './assets/images/icon.jpeg',
       backgroundColor: '#25D366',

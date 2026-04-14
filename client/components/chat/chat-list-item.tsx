@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -11,10 +12,13 @@ import { useAuth } from '@/contexts/auth-context';
 
 interface ChatListItemProps {
   chat: Chat;
+  isSelected?: boolean;
+  isSelectionMode?: boolean;
+  onLongPress?: (chatId: string) => void;
+  onSelect?: (chatId: string) => void;
   onAvatarPress?: (user: { id: string; name: string; avatar?: string }) => void;
 }
 
-// Format timestamp to relative time
 function formatTime(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -32,19 +36,41 @@ function formatTime(dateString: string): string {
   }
 }
 
-export function ChatListItem({ chat, onAvatarPress }: ChatListItemProps) {
+const isDeletedAccount = (chat: Chat) =>
+  chat.type === 'PRIVATE' && (!chat.name || chat.name === 'Deleted Account');
+
+export function ChatListItem({
+  chat,
+  isSelected = false,
+  isSelectionMode = false,
+  onLongPress,
+  onSelect,
+  onAvatarPress,
+}: ChatListItemProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { user } = useAuth();
 
-  const handlePress = () => {
-    router.push({ pathname: '/chat/[id]', params: { id: chat.id } });
-  };
+  const displayName = chat.name || 'Deleted Account';
 
-  const handleAvatarPress = () => {
+  const handlePress = useCallback(() => {
+    if (isSelectionMode) {
+      onSelect?.(chat.id);
+    } else {
+      router.push({ pathname: '/chat/[id]', params: { id: chat.id } });
+    }
+  }, [isSelectionMode, chat.id, onSelect]);
+
+  const handleLongPress = useCallback(() => {
+    onLongPress?.(chat.id);
+  }, [chat.id, onLongPress]);
+
+  const handleAvatarPress = useCallback(() => {
+    if (isSelectionMode) {
+      onSelect?.(chat.id);
+      return;
+    }
     if (onAvatarPress && chat.type === 'PRIVATE' && chat.members?.length >= 2) {
-      // For private chats, chat.name and chat.avatar already represent the other user
-      // Find their ID from members - it's the one whose name matches chat.name
       const otherMember = chat.members.find(m => m.user.name === chat.name) || chat.members[1];
       onAvatarPress({
         id: otherMember.user.id,
@@ -52,17 +78,15 @@ export function ChatListItem({ chat, onAvatarPress }: ChatListItemProps) {
         avatar: chat.avatar || otherMember.user.avatar,
       });
     }
-  };
+  }, [isSelectionMode, chat, onSelect, onAvatarPress]);
 
   const isLastMessageMine = !!chat.lastMessage && chat.lastMessage.senderId === user?.id;
 
   const renderMessageStatus = () => {
     if (!chat.lastMessage) return null;
-    // No tick for "deleted for everyone" placeholders
     if (chat.lastMessage.isDeletedForEveryone) return null;
+    if (!isLastMessageMine) return null;
 
-    // Only show status for sent messages (we need to check if current user is sender)
-    // For now, we'll check based on status
     const { status } = chat.lastMessage;
 
     if (status === 'READ') {
@@ -85,26 +109,19 @@ export function ChatListItem({ chat, onAvatarPress }: ChatListItemProps) {
     const isVoice = info.callType === 'VOICE';
     const label = isVoice ? 'Voice call' : 'Video call';
 
-    if (info.callStatus === 'MISSED') {
-      return `${label} • Missed`;
-    }
-    if (info.callStatus === 'DECLINED') {
-      return `${label} • Declined`;
-    }
+    if (info.callStatus === 'MISSED') return `${label} \u2022 Missed`;
+    if (info.callStatus === 'DECLINED') return `${label} \u2022 Declined`;
     if (info.callStatus === 'ENDED' && info.duration) {
       const mins = Math.floor(info.duration / 60);
       const secs = info.duration % 60;
-      return `${label} • ${mins}:${secs.toString().padStart(2, '0')}`;
+      return `${label} \u2022 ${mins}:${secs.toString().padStart(2, '0')}`;
     }
     return label;
   };
 
   const renderMessagePreview = () => {
-    if (!chat.lastMessage) {
-      return 'No messages yet';
-    }
+    if (!chat.lastMessage) return 'No messages yet';
 
-    // "Deleted for everyone" placeholder — show before group-sender prefix
     if (chat.lastMessage.isDeletedForEveryone) {
       return isLastMessageMine ? 'You deleted this message' : 'This message was deleted';
     }
@@ -113,53 +130,27 @@ export function ChatListItem({ chat, onAvatarPress }: ChatListItemProps) {
     let prefix = '';
     let text = content || '';
 
-    // System messages (group events) are rendered as-is, without a sender prefix.
-    if (type === 'SYSTEM') {
-      return content || '';
-    }
+    if (type === 'SYSTEM') return content || '';
 
-    // For group chats, show sender name
     if (chat.type === 'GROUP' && sender) {
       prefix = `${sender.name}: `;
     }
 
     switch (type) {
-      case 'IMAGE':
-        text = '📷 Photo';
-        break;
-      case 'AUDIO':
-        text = '🎤 Voice message';
-        break;
-      case 'VIDEO':
-        text = '🎥 Video';
-        break;
-      case 'DOCUMENT':
-        text = '📄 Document';
-        break;
-      case 'LOCATION':
-        text = '📍 Location';
-        break;
-      case 'CONTACT':
-        text = '👤 Contact';
-        break;
-      case 'STICKER':
-        text = '🎨 Sticker';
-        break;
-      case 'CALL':
-        // Call events are stored as JSON in content — never expose raw JSON
-        text = formatCallPreview(content);
-        break;
+      case 'IMAGE': text = '\ud83d\udcf7 Photo'; break;
+      case 'AUDIO': text = '\ud83c\udfa4 Voice message'; break;
+      case 'VIDEO': text = '\ud83c\udfa5 Video'; break;
+      case 'DOCUMENT': text = '\ud83d\udcc4 Document'; break;
+      case 'LOCATION': text = '\ud83d\udccd Location'; break;
+      case 'CONTACT': text = '\ud83d\udc64 Contact'; break;
+      case 'STICKER': text = '\ud83c\udfa8 Sticker'; break;
+      case 'CALL': text = formatCallPreview(content); break;
       case 'TEXT':
       default:
-        // Guard against accidental JSON/object content for unknown types
         if (typeof text !== 'string') {
           text = '';
         } else if (text.startsWith('{') && text.endsWith('}')) {
-          try {
-            JSON.parse(text);
-            // It's valid JSON that wasn't handled above — hide raw JSON from UI
-            text = '';
-          } catch {}
+          try { JSON.parse(text); text = ''; } catch {}
         }
         break;
     }
@@ -174,42 +165,62 @@ export function ChatListItem({ chat, onAvatarPress }: ChatListItemProps) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
 
-  const InitialsAvatar = ({ name }: { name?: string }) => {
-    const initials = getInitials(name);
-    return (
-      <View style={styles.initialsAvatar}>
-        <Text style={styles.initialsText}>{initials}</Text>
-      </View>
-    );
-  };
+  const hasUnread = (chat.unreadCount > 0) || chat.isMarkedUnread;
 
   return (
-    <Pressable onPress={handlePress} style={({ pressed }) => [
+    <Pressable
+      onPress={handlePress}
+      onLongPress={handleLongPress}
+      delayLongPress={400}
+      style={({ pressed }) => [
         styles.container,
         {
-          backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
+          backgroundColor: isSelected
+            ? colorScheme === 'dark' ? '#1a3a2a' : '#d9f2e6'
+            : pressed
+              ? colors.backgroundSecondary
+              : colors.background,
         },
-      ]}>
+      ]}
+    >
+      {/* Selection checkbox / Avatar */}
       <Pressable onPress={handleAvatarPress}>
-        {chat?.avatar ? (
-          <Avatar uri={chat.avatar} size={52} showOnlineStatus={chat.type === 'PRIVATE'} isOnline={chat.isOnline} />
-        ) : (
-          <InitialsAvatar name={chat?.name} />
-        )}
+        <View>
+          {chat?.avatar ? (
+            <Avatar uri={chat.avatar} size={52} showOnlineStatus={chat.type === 'PRIVATE' && !isDeletedAccount(chat)} isOnline={chat.isOnline} />
+          ) : (
+            <View style={[styles.initialsAvatar, isDeletedAccount(chat) && { backgroundColor: '#808080' }]}>
+              <Text style={styles.initialsText}>
+                {isDeletedAccount(chat) ? '?' : getInitials(chat?.name)}
+              </Text>
+            </View>
+          )}
+          {isSelected && (
+            <View style={styles.checkBadge}>
+              <Ionicons name="checkmark" size={14} color="#fff" />
+            </View>
+          )}
+        </View>
       </Pressable>
 
       <View style={styles.content}>
         <View style={styles.topRow}>
           <Text
-            style={[styles.name, { color: colors.text }]}
-            numberOfLines={1}>
-            {chat.name || 'Unknown'}
+            style={[
+              styles.name,
+              { color: isDeletedAccount(chat) ? colors.textSecondary : colors.text },
+              isDeletedAccount(chat) && { fontStyle: 'italic' },
+            ]}
+            numberOfLines={1}
+          >
+            {displayName}
           </Text>
           <Text
             style={[
               styles.time,
-              { color: chat.unreadCount > 0 ? colors.accent : colors.textSecondary },
-            ]}>
+              { color: hasUnread ? colors.accent : colors.textSecondary },
+            ]}
+          >
             {chat.lastMessage ? formatTime(chat.lastMessage.createdAt) : ''}
           </Text>
         </View>
@@ -219,36 +230,39 @@ export function ChatListItem({ chat, onAvatarPress }: ChatListItemProps) {
             {renderMessageStatus()}
             <Text
               style={[styles.lastMessage, { color: colors.textSecondary }]}
-              numberOfLines={1}>
+              numberOfLines={1}
+            >
               {renderMessagePreview()}
             </Text>
           </View>
 
-          {chat.unreadCount > 0 && (
-            <View style={[styles.unreadBadge, { backgroundColor: colors.accent }]}>
-              <Text style={styles.unreadCount}>
-                {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
-              </Text>
-            </View>
-          )}
+          <View style={styles.badges}>
+            {hasUnread && (
+              <View style={[styles.unreadBadge, { backgroundColor: chat.isMuted ? colors.textSecondary : colors.accent }]}>
+                <Text style={styles.unreadCount}>
+                  {chat.unreadCount > 99 ? '99+' : chat.unreadCount > 0 ? chat.unreadCount : ' '}
+                </Text>
+              </View>
+            )}
 
-          {chat.isMuted && (
-            <IconSymbol
-              name="speaker.slash.fill"
-              size={14}
-              color={colors.textSecondary}
-              style={styles.mutedIcon}
-            />
-          )}
+            {chat.isMuted && (
+              <IconSymbol
+                name="speaker.slash.fill"
+                size={14}
+                color={colors.textSecondary}
+                style={styles.mutedIcon}
+              />
+            )}
 
-          {chat.isPinned && (
-            <IconSymbol
-              name="pin.fill"
-              size={14}
-              color={colors.textSecondary}
-              style={styles.pinnedIcon}
-            />
-          )}
+            {chat.isPinned && (
+              <IconSymbol
+                name="pin.fill"
+                size={14}
+                color={colors.textSecondary}
+                style={styles.pinnedIcon}
+              />
+            )}
+          </View>
         </View>
       </View>
     </Pressable>
@@ -285,6 +299,19 @@ const styles = StyleSheet.create({
     fontSize: 19,
     fontWeight: '600',
   },
+  checkBadge: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#25D366',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
   name: {
     fontSize: 17,
     fontWeight: '600',
@@ -310,6 +337,10 @@ const styles = StyleSheet.create({
   lastMessage: {
     fontSize: 14,
     flex: 1,
+  },
+  badges: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   unreadBadge: {
     minWidth: 20,

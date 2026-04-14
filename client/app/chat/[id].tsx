@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import React, { useState, useEffect, useRef, useCallback, use, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Alert, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Video, ResizeMode } from 'expo-av';
@@ -606,7 +606,7 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
   );
 }
 
-function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall, onUserInfoPress }: { chat: any; isTyping: boolean; onBack: () => void; onCall: () => void; onVideoCall: () => void; onUserInfoPress?: () => void; }) {
+function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall, onUserInfoPress, onMenuPress }: { chat: any; isTyping: boolean; onBack: () => void; onCall: () => void; onVideoCall: () => void; onUserInfoPress?: () => void; onMenuPress?: () => void; }) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
@@ -652,6 +652,9 @@ function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall, onUserInfoPre
         </Pressable>
         <Pressable onPress={onCall} style={styles.headerActionButton} hitSlop={8}>
           <Ionicons name="call" size={20} color={colors.headerText} />
+        </Pressable>
+        <Pressable onPress={onMenuPress} style={styles.headerActionButton} hitSlop={8}>
+          <Ionicons name="ellipsis-vertical" size={20} color={colors.headerText} />
         </Pressable>
       </View>
     </View>
@@ -948,11 +951,12 @@ export default function ChatDetailScreen() {
 
   const [cachedChat] = useState(() => chatId ? cache.get<Chat>(CacheKeys.chatDetail(chatId)) : null);
   const [cachedMessages] = useState(() => chatId ? cache.get<Message[]>(CacheKeys.messages(chatId)) : null);
+  const hasCachedMessages = cachedMessages && cachedMessages.length > 0;
   const [chat, setChat] = useState<Chat | null>(cachedChat);
   const [messages, setMessages] = useState<Message[]>(cachedMessages || []);
   const [messageText, setMessageText] = useState('');
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
-  const [loading, setLoading] = useState(!cachedMessages);
+  const [loading, setLoading] = useState(!hasCachedMessages);
   const [loadingMore, setLoadingMore] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [page, setPage] = useState(1);
@@ -966,6 +970,8 @@ export default function ChatDetailScreen() {
   const [showForwardModal, setShowForwardModal] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [showChatMenu, setShowChatMenu] = useState(false);
+  const [iBlockedThem, setIBlockedThem] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   // Get the other participant for PRIVATE chats
   const otherMember = chat?.members?.find((m) => m.user.id !== user?.id);
@@ -1018,6 +1024,16 @@ export default function ChatDetailScreen() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  // Check block status for private chats
+  useEffect(() => {
+    if (!otherUser?.id || chat?.type !== 'PRIVATE') return;
+    let cancelled = false;
+    contactApi.checkBlocked(otherUser.id)
+      .then((result) => { if (!cancelled) setIBlockedThem(result.iBlockedThem); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [otherUser?.id, chat?.type]);
 
   // Voice recording
   const { recording: voiceRecording, startRecording, stopRecording, cancelRecording } = useVoiceRecorder();
@@ -1083,9 +1099,14 @@ export default function ChatDetailScreen() {
   }, [chatId, page, loadingMore, hasMore]);
 
   // Sync messages to cache whenever they change (sent, received, status updates, etc.)
+  // When messages is empty (e.g. after clear chat), delete the cache entry
+  // so stale data doesn't flash on next open.
   useEffect(() => {
-    if (chatId && messages.length > 0) {
+    if (!chatId) return;
+    if (messages.length > 0) {
       cache.set(CacheKeys.messages(chatId), messages);
+    } else {
+      cache.delete(CacheKeys.messages(chatId));
     }
   }, [chatId, messages]);
 
@@ -1796,6 +1817,181 @@ export default function ChatDetailScreen() {
     handleCancelSelection();
   };
 
+  // ─── Chat Menu Handlers ────────────────────────────────────────────────────
+
+  const handleMenuViewContact = useCallback(() => {
+    setShowChatMenu(false);
+    if (!chatId) return;
+    if (chat?.type === 'GROUP') {
+      router.push({ pathname: '/group/[id]/info' as any, params: { id: chatId } });
+    } else if (otherUser) {
+      router.push({ pathname: '/chat/user-info' as any, params: { chatId, userId: otherUser.id } });
+    } else {
+      Alert.alert('Deleted Account', 'This user has deleted their account.');
+    }
+  }, [chatId, chat?.type, otherUser]);
+
+  const handleMenuMediaLinks = useCallback(() => {
+    setShowChatMenu(false);
+    if (!chatId) return;
+    if (chat?.type === 'GROUP') {
+      router.push({ pathname: '/group/[id]/info' as any, params: { id: chatId } });
+    } else if (otherUser) {
+      router.push({ pathname: '/chat/user-info' as any, params: { chatId, userId: otherUser.id } });
+    }
+  }, [chatId, chat?.type, otherUser]);
+
+  const handleMenuMute = useCallback(async () => {
+    setShowChatMenu(false);
+    if (!chatId || !chat) return;
+    const newMuted = !chat.isMuted;
+    try {
+      await chatApi.muteChat(chatId, newMuted);
+      setChat((prev) => prev ? { ...prev, isMuted: newMuted } : prev);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update mute');
+    }
+  }, [chatId, chat]);
+
+  const handleMenuBlock = useCallback(() => {
+    setShowChatMenu(false);
+    if (!otherUser) {
+      Alert.alert('Cannot block', 'This user has deleted their account.');
+      return;
+    }
+
+    if (iBlockedThem) {
+      // Unblock flow
+      Alert.alert(
+        'Unblock this contact?',
+        `Unblock ${otherUser.name}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Unblock',
+            onPress: async () => {
+              try {
+                await contactApi.unblockUser(otherUser.id);
+                setIBlockedThem(false);
+                // Add local-only event message
+                const eventMsg: Message = {
+                  id: `unblock_${Date.now()}`,
+                  chatId: chatId!,
+                  senderId: user!.id,
+                  type: 'SYSTEM',
+                  content: 'You unblocked this contact',
+                  status: 'READ',
+                  isForwarded: false,
+                  createdAt: new Date().toISOString(),
+                  sender: { id: user!.id, name: user!.name, avatar: user?.avatar },
+                };
+                setMessages((prev) => [...prev, eventMsg]);
+              } catch (err: any) {
+                Alert.alert('Error', err?.message || 'Failed to unblock user');
+              }
+            },
+          },
+        ],
+      );
+    } else {
+      // Block flow
+      Alert.alert(
+        'Block user?',
+        `Block ${otherUser.name}? They will no longer be able to send you messages.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Block',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await contactApi.blockUser(otherUser.id);
+                setIBlockedThem(true);
+                // Add local-only event message
+                const eventMsg: Message = {
+                  id: `block_${Date.now()}`,
+                  chatId: chatId!,
+                  senderId: user!.id,
+                  type: 'SYSTEM',
+                  content: 'You blocked this contact',
+                  status: 'READ',
+                  isForwarded: false,
+                  createdAt: new Date().toISOString(),
+                  sender: { id: user!.id, name: user!.name, avatar: user?.avatar },
+                };
+                setMessages((prev) => [...prev, eventMsg]);
+              } catch (err: any) {
+                Alert.alert('Error', err?.message || 'Failed to block user');
+              }
+            },
+          },
+        ],
+      );
+    }
+  }, [otherUser, iBlockedThem, chatId, user]);
+
+  const handleMenuClearChat = useCallback(() => {
+    setShowChatMenu(false);
+    if (!chatId) return;
+    Alert.alert(
+      'Clear this chat?',
+      'All messages will be removed for you. Other participants will still see them.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Clear local state and cache IMMEDIATELY so no stale data flashes
+              setMessages([]);
+              cache.delete(CacheKeys.messages(chatId));
+
+              // Then call the API
+              await chatApi.clearChat(chatId);
+
+              // Also update the chat list cache so the preview clears
+              const cachedChats = cache.get<Chat[]>(CacheKeys.CHATS);
+              if (cachedChats) {
+                cache.set(
+                  CacheKeys.CHATS,
+                  cachedChats.map((c) =>
+                    c.id === chatId ? { ...c, lastMessage: undefined, unreadCount: 0 } : c,
+                  ),
+                );
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to clear chat');
+              // Refetch to recover
+              fetchData();
+            }
+          },
+        },
+      ],
+    );
+  }, [chatId, fetchData]);
+
+  const handleMenuPin = useCallback(async () => {
+    setShowChatMenu(false);
+    if (!chatId || !chat) return;
+    const newPinned = !chat.isPinned;
+    try {
+      await chatApi.pinChat(chatId, newPinned);
+      setChat((prev) => prev ? { ...prev, isPinned: newPinned } : prev);
+
+      // Also update the chat list cache
+      const cachedChats = cache.get<Chat[]>(CacheKeys.CHATS);
+      if (cachedChats) {
+        cache.set(
+          CacheKeys.CHATS,
+          cachedChats.map((c) => (c.id === chatId ? { ...c, isPinned: newPinned } : c)),
+        );
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update pin');
+    }
+  }, [chatId, chat]);
+
   const isGroupChat = chat?.type === 'GROUP';
 
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
@@ -1847,7 +2043,9 @@ export default function ChatDetailScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.backgroundSecondary }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      // On Android, edge-to-edge mode swallows the default adjustResize, so we
+      // pad the container ourselves to keep the message input above the keyboard.
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}>
       {/* Custom Header */}
       {isSelectionMode ? (
@@ -1867,7 +2065,7 @@ export default function ChatDetailScreen() {
       ) : (
         <ChatHeader
           chat={chat?.type === 'PRIVATE' ? {
-            name: otherUser?.name,
+            name: otherUser?.name || 'Deleted Account',
             avatar: otherUser?.avatar,
             isOnline: otherUser?.isOnline,
             lastSeen: otherUser?.lastSeen,
@@ -1879,6 +2077,7 @@ export default function ChatDetailScreen() {
           onBack={handleBack}
           onCall={handleCall}
           onVideoCall={handleVideoCall}
+          onMenuPress={() => setShowChatMenu(true)}
           onUserInfoPress={() => {
             if (!chatId) return;
             if (chat?.type === 'GROUP') {
@@ -1913,23 +2112,67 @@ export default function ChatDetailScreen() {
           }}
         />
 
-      <MessageInput
-        value={messageText}
-        onChange={setMessageText}
-        onSend={handleSend}
-        onAttachment={handleAttachment}
-        onSelect={handleAttachmentSelect}
-        onVoiceStart={handleVoiceStart}
-        onVoiceStop={handleVoiceStop}
-        onVoiceCancel={handleVoiceCancel}
-        isRecording={voiceRecording.isRecording}
-        recordingDuration={voiceRecording.duration}
-        onTypingStart={handleTypingStart}
-        onTypingStop={handleTypingStop}
-        replyingTo={replyingTo}
-        onCancelReply={() => setReplyingTo(null)}
-        currentUserId={user?.id}
-      />
+      {iBlockedThem && chat?.type === 'PRIVATE' ? (
+        <Pressable
+          style={styles.blockedBanner}
+          onPress={() => {
+            Alert.alert(
+              'Unblock this contact?',
+              `Unblock ${otherUser?.name || 'this contact'} to send messages.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Unblock',
+                  onPress: async () => {
+                    if (!otherUser) return;
+                    try {
+                      await contactApi.unblockUser(otherUser.id);
+                      setIBlockedThem(false);
+                      const eventMsg: Message = {
+                        id: `unblock_${Date.now()}`,
+                        chatId: chatId!,
+                        senderId: user!.id,
+                        type: 'SYSTEM',
+                        content: 'You unblocked this contact',
+                        status: 'READ',
+                        isForwarded: false,
+                        createdAt: new Date().toISOString(),
+                        sender: { id: user!.id, name: user!.name, avatar: user?.avatar },
+                      };
+                      setMessages((prev) => [...prev, eventMsg]);
+                    } catch (err: any) {
+                      Alert.alert('Error', err?.message || 'Failed to unblock');
+                    }
+                  },
+                },
+              ],
+            );
+          }}
+        >
+          <Ionicons name="ban-outline" size={18} color="#FF3B30" />
+          <Text style={styles.blockedBannerText}>
+            You blocked this contact. Tap to unblock.
+          </Text>
+        </Pressable>
+      ) : (
+        <MessageInput
+          value={messageText}
+          onChange={setMessageText}
+          onSend={handleSend}
+          onAttachment={handleAttachment}
+          onSelect={handleAttachmentSelect}
+          onVoiceStart={handleVoiceStart}
+          onVoiceStop={handleVoiceStop}
+          onVoiceCancel={handleVoiceCancel}
+          isRecording={voiceRecording.isRecording}
+          recordingDuration={voiceRecording.duration}
+          onTypingStart={handleTypingStart}
+          onTypingStop={handleTypingStop}
+          replyingTo={replyingTo}
+          onCancelReply={() => setReplyingTo(null)}
+          currentUserId={user?.id}
+        />
+      )}
       </ImageBackground>
 
       {/* Attachment Menu */}
@@ -2010,6 +2253,48 @@ export default function ChatDetailScreen() {
         onClose={() => { setShowForwardModal(false); }}
         onForward={handleForwardTo}
       />
+
+      {/* ─── Chat Detail Menu (3-dot) ──────────────────────────────────────── */}
+      <Modal visible={showChatMenu} transparent animationType="fade">
+        <Pressable style={styles.chatMenuOverlay} onPress={() => setShowChatMenu(false)}>
+          <View style={[styles.chatMenuDropdown, { backgroundColor: colors.cardBackground }]}>
+            <Pressable style={styles.chatMenuItem} onPress={handleMenuViewContact}>
+              <Ionicons name="person-outline" size={20} color={colors.text} style={styles.chatMenuIcon} />
+              <Text style={[styles.chatMenuItemText, { color: colors.text }]}>
+                {chat?.type === 'GROUP' ? 'Group info' : 'View contact'}
+              </Text>
+            </Pressable>
+            <Pressable style={styles.chatMenuItem} onPress={handleMenuMediaLinks}>
+              <Ionicons name="images-outline" size={20} color={colors.text} style={styles.chatMenuIcon} />
+              <Text style={[styles.chatMenuItemText, { color: colors.text }]}>Media & links</Text>
+            </Pressable>
+            <Pressable style={styles.chatMenuItem} onPress={handleMenuMute}>
+              <Ionicons name={chat?.isMuted ? 'volume-high-outline' : 'volume-mute-outline'} size={20} color={colors.text} style={styles.chatMenuIcon} />
+              <Text style={[styles.chatMenuItemText, { color: colors.text }]}>
+                {chat?.isMuted ? 'Unmute notifications' : 'Mute notifications'}
+              </Text>
+            </Pressable>
+            <Pressable style={styles.chatMenuItem} onPress={handleMenuClearChat}>
+              <Ionicons name="chatbox-outline" size={20} color={colors.text} style={styles.chatMenuIcon} />
+              <Text style={[styles.chatMenuItemText, { color: colors.text }]}>Clear chat</Text>
+            </Pressable>
+            <Pressable style={styles.chatMenuItem} onPress={handleMenuPin}>
+              <Ionicons name={chat?.isPinned ? 'pin-outline' : 'pin'} size={20} color={colors.text} style={styles.chatMenuIcon} />
+              <Text style={[styles.chatMenuItemText, { color: colors.text }]}>
+                {chat?.isPinned ? 'Unpin chat' : 'Pin chat'}
+              </Text>
+            </Pressable>
+            {chat?.type === 'PRIVATE' && (
+              <Pressable style={styles.chatMenuItem} onPress={handleMenuBlock}>
+                <Ionicons name={iBlockedThem ? 'ban' : 'ban-outline'} size={20} color={iBlockedThem ? colors.primary : '#e74c3c'} style={styles.chatMenuIcon} />
+                <Text style={[styles.chatMenuItemText, { color: iBlockedThem ? colors.primary : '#e74c3c' }]}>
+                  {iBlockedThem ? 'Unblock' : 'Block'}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -2628,5 +2913,51 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '500',
+  },
+
+  // ─── Blocked Banner ────────────────────────────────────────────────────────
+  blockedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  blockedBannerText: {
+    fontSize: 14,
+    color: '#FF3B30',
+    fontWeight: '500',
+  },
+
+  // ─── Chat Detail Menu (3-dot) ──────────────────────────────────────────────
+  chatMenuOverlay: {
+    flex: 1,
+  },
+  chatMenuDropdown: {
+    position: 'absolute',
+    top: 90,
+    right: 12,
+    borderRadius: 8,
+    paddingVertical: 4,
+    minWidth: 220,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  chatMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  chatMenuIcon: {
+    marginRight: 14,
+  },
+  chatMenuItemText: {
+    fontSize: 15,
   },
 });

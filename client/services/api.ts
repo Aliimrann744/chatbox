@@ -348,6 +348,28 @@ export const chatApi = {
     return request<{ success: boolean }>(`/chats/${chatId}/clear`, { method: 'DELETE' });
   },
 
+  async archiveChat(chatId: string, isArchived: boolean) {
+    return request(`/chats/${chatId}/archive`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isArchived }),
+    });
+  },
+
+  async favoriteChat(chatId: string, isFavorite: boolean) {
+    return request(`/chats/${chatId}/favorite`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isFavorite }),
+    });
+  },
+
+  async markChatUnread(chatId: string) {
+    return request(`/chats/${chatId}/mark-unread`, { method: 'PATCH' });
+  },
+
+  async deleteChat(chatId: string) {
+    return request<{ success: boolean }>(`/chats/${chatId}`, { method: 'DELETE' });
+  },
+
   async getSharedMedia(chatId: string, type?: string, page = 1, limit = 50) {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     if (type) params.append('type', type);
@@ -357,7 +379,34 @@ export const chatApi = {
   async getStarredMessages(chatId: string) {
     return request<{ messages: Message[] }>(`/chats/${chatId}/starred`);
   },
+
+  // All starred (shared) messages across every chat for the current user.
+  // Used by the Shared screen. Each message is enriched with its owning chat.
+  async getAllStarredMessages() {
+    return request<{ messages: SharedMessage[] }>('/chats/starred/all');
+  },
+
+  // Mark every unread message in every chat as read. Used by "Read all".
+  async markAllChatsAsRead() {
+    return request<{ affected: { messageId: string; senderId: string; chatId: string }[] }>(
+      '/chats/mark-all-read',
+      { method: 'POST' },
+    );
+  },
 };
+
+// Shape returned by GET /chats/starred/all — a message plus a lightweight
+// chat descriptor (id/type/name/avatar) resolved server-side so the
+// Shared screen doesn't need to cross-reference the chat list.
+export interface SharedMessage extends Message {
+  starredAt: string;
+  chat: {
+    id: string;
+    type: 'PRIVATE' | 'GROUP';
+    name?: string | null;
+    avatar?: string | null;
+  };
+}
 
 // Contact API
 export const contactApi = {
@@ -396,6 +445,10 @@ export const contactApi = {
 
   async getBlockedUsers() {
     return request<BlockedUser[]>('/contacts/blocked');
+  },
+
+  async checkBlocked(userId: string) {
+    return request<{ isBlocked: boolean; iBlockedThem: boolean }>(`/contacts/blocked/check/${userId}`);
   },
 
   async searchUsers(query: string) {
@@ -660,6 +713,9 @@ export interface Chat {
   unreadCount: number;
   isPinned: boolean;
   isMuted: boolean;
+  isArchived: boolean;
+  isFavorite: boolean;
+  isMarkedUnread: boolean;
   isOnline?: boolean;
   lastSeen?: string;
   members: ChatMember[];

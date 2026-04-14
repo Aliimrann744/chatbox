@@ -165,6 +165,12 @@ model ChatMember {
   muteUntil   DateTime?
   isPinned    Boolean        @default(false)
 
+  // Chat management
+  isArchived     Boolean     @default(false)
+  isFavorite     Boolean     @default(false)
+  isMarkedUnread Boolean     @default(false)
+  isHidden       Boolean     @default(false)
+
   joinedAt    DateTime       @default(now())
   leftAt      DateTime?
 

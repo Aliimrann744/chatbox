@@ -78,6 +78,14 @@ export class ContactController {
     return this.contactService.getBlockedUsers(user.id);
   }
 
+  @Get('blocked/check/:userId')
+  async isBlocked(@CurrentUser() user: any, @Param('userId') targetId: string) {
+    const blocked = await this.contactService.isBlocked(user.id, targetId);
+    // Also check direction: did I block them?
+    const iBlockedThem = await this.contactService.didIBlock(user.id, targetId);
+    return { isBlocked: blocked, iBlockedThem };
+  }
+
   // ==================== SEARCH ====================
 
   @Get('search')
