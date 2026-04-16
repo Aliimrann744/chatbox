@@ -3,10 +3,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ActivityIndicator, Dimensions, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { chatApi, SharedMedia } from '@/services/api';
+import { cache, CacheKeys } from '@/services/cache';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const NUM_COLUMNS = 3;
@@ -43,6 +45,20 @@ export default function MediaGalleryScreen() {
   }, [chatId, activeTab]);
 
   useEffect(() => { fetchMedia(); }, [fetchMedia]);
+
+  // Re-fetch when screen gains focus (e.g. after clear chat from user-info)
+  useFocusEffect(
+    useCallback(() => {
+      // If the messages cache was wiped (clear chat), wipe media and re-fetch
+      if (chatId) {
+        const cachedMessages = cache.get(CacheKeys.messages(chatId));
+        if (!cachedMessages) {
+          setMedia([]);
+          fetchMedia();
+        }
+      }
+    }, [chatId, fetchMedia])
+  );
 
   const renderMediaItem = ({ item }: { item: SharedMedia }) => (
     <Pressable style={styles.mediaItem} onPress={() => item.mediaUrl && setPreviewUrl(item.mediaUrl)}>

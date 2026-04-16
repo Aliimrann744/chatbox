@@ -38,11 +38,7 @@ type SenderLookupUser = { name?: string; phone?: string; countryCode?: string };
 type GroupReadState = 'single' | 'double_gray' | 'double_blue';
 type EligibleMember = { userId: string; joinedAtMs: number; leftAtMs: number | null };
 
-function computeGroupReadState(
-  message: Message,
-  eligibleMembers: EligibleMember[],
-  senderId: string,
-): GroupReadState {
+function computeGroupReadState(message: Message, eligibleMembers: EligibleMember[], senderId: string): GroupReadState {
   const sentMs = new Date(message.createdAt).getTime();
 
   // Denominator = members present at send time, excluding the sender.
@@ -634,13 +630,11 @@ function EncryptionBanner() {
   return (
     <View style={styles.e2eBannerWrapper} pointerEvents="box-none">
       <View style={styles.e2eBanner}>
-        <Ionicons name="lock-closed" size={12} color="#8d6e19" style={{ marginRight: 6 }} />
         <Text style={styles.e2eBannerText}>
+          <Ionicons name="lock-closed" size={12} color="'#262626'" style={{ paddingHorizontal: 6 }} />
+          {'  '}
           Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them.{' '}
-          <Text
-            style={styles.e2eBannerLink}
-            onPress={() => Linking.openURL('https://faq.whatsapp.com/791574747982248')}
-          >
+          <Text style={styles.e2eBannerLink} onPress={() => Linking.openURL('https://faq.whatsapp.com/791574747982248')}>
             Learn more.
           </Text>
         </Text>
@@ -1181,17 +1175,25 @@ export default function ChatDetailScreen() {
     };
   }, [chatId, fetchData]);
 
-  // Track active chat for notification suppression
+  // Track active chat for notification suppression + re-sync after returning
+  // from user-info (e.g. after clear chat). If the messages cache was wiped
+  // while we were off-screen, clear local state and re-fetch.
   useFocusEffect(
     useCallback(() => {
       if (chatId) {
         setCurrentChatId(chatId);
+
+        const cached = cache.get<Message[]>(CacheKeys.messages(chatId));
+        if (!cached && messages.length > 0) {
+          setMessages([]);
+          fetchData();
+        }
       }
 
       return () => {
         setCurrentChatId(null);
       };
-    }, [chatId])
+    }, [chatId, messages.length, fetchData])
   );
 
   // Socket event listeners
@@ -2251,13 +2253,8 @@ export default function ChatDetailScreen() {
         />
       )}
 
-      {/* Messages List with WhatsApp background — wraps both messages and input */}
-      <ImageBackground
-        source={require('@/assets/images/chat-background.jpg')}
-        style={styles.messagesList}
-        resizeMode="cover"
-      >
-        {!isSelectionMode && <EncryptionBanner />}
+      <ImageBackground source={require('@/assets/images/chat-background.jpg')} style={styles.messagesList} resizeMode="cover">
+        {/* {!isSelectionMode && <EncryptionBanner />} */}
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -2267,6 +2264,7 @@ export default function ChatDetailScreen() {
           contentContainerStyle={styles.messagesContent}
           style={styles.messagesListInner}
           onEndReached={loadMoreMessages}
+          ListHeaderComponent={!isSelectionMode ? <EncryptionBanner /> : null}
           onEndReachedThreshold={0.5}
           onContentSizeChange={() => {
             if (messages.length > 0 && page === 1) {
@@ -2339,11 +2337,7 @@ export default function ChatDetailScreen() {
       </ImageBackground>
 
       {/* Attachment Menu */}
-      <AttachmentMenu
-        visible={showAttachmentMenu}
-        onClose={() => setShowAttachmentMenu(false)}
-        onSelect={handleAttachmentSelect}
-      />
+      <AttachmentMenu visible={showAttachmentMenu} onClose={() => setShowAttachmentMenu(false)} onSelect={handleAttachmentSelect} />
 
       {/* Image Preview Modal */}
       {previewImageUrl && (() => {
@@ -3300,27 +3294,23 @@ const styles = StyleSheet.create({
 
   // ─── E2E Banner ─────────────────────────────────────────────────────────
   e2eBannerWrapper: {
-    alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 4,
     paddingTop: 10,
     paddingBottom: 4,
   },
   e2eBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fdf5c9',
+    backgroundColor: '#262626',
     borderRadius: 6,
     paddingHorizontal: 10,
-    paddingVertical: 8,
-    width: '60%',
+    paddingVertical: 2,
+    width: '70%',
     alignSelf: 'center',
   },
   e2eBannerText: {
     fontSize: 11.5,
-    color: '#54656f',
-    flex: 1,
+    color: '#d4bf03',
     lineHeight: 15,
-    textAlign: 'center',
   },
   e2eBannerLink: {
     color: '#027eb5',

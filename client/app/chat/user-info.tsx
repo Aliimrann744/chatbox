@@ -192,11 +192,20 @@ export default function UserInfoScreen() {
         {
           text: 'Clear', style: 'destructive', onPress: async () => {
             try {
+              // 1. Call the server to mark all messages as deleted for this user
               await chatApi.clearChat(chatId);
-              // Clear local media + caches in real time
+
+              // 2. Immediately wipe local UI state so user sees empty
               setSharedMedia([]);
               setMediaCount(0);
+              setPreviewUrl(null);
+
+              // 3. Wipe ALL caches related to this chat
               cache.delete(CacheKeys.messages(chatId));
+              cache.delete(CacheKeys.chatDetail(chatId));
+              cache.delete(CacheKeys.sharedMedia(chatId));
+
+              // 4. Update the chat list cache (clear lastMessage / unread)
               const cachedChats = cache.get<Chat[]>(CacheKeys.CHATS);
               if (cachedChats) {
                 cache.set(
@@ -204,12 +213,7 @@ export default function UserInfoScreen() {
                   cachedChats.map(c => c.id === chatId ? { ...c, lastMessage: undefined, unreadCount: 0 } : c),
                 );
               }
-              // Trigger media API refresh to confirm server has cleared
-              try {
-                const refreshed = await chatApi.getSharedMedia(chatId, undefined, 1, 8);
-                setSharedMedia(refreshed.media.filter(m => m.type === 'IMAGE' || m.type === 'VIDEO'));
-                setMediaCount(refreshed.pagination.total);
-              } catch {}
+
               Alert.alert('Done', 'Chat cleared successfully');
             } catch { Alert.alert('Error', 'Failed to clear chat'); }
           },
@@ -325,9 +329,9 @@ export default function UserInfoScreen() {
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </View>
           </View>
-          {sharedMedia.length > 0 && (
+          {sharedMedia?.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaPreviewRow}>
-              {sharedMedia.map(item => (
+              {sharedMedia?.map(item => (
                 <Pressable key={item.id} onPress={() => setPreviewUrl(item.mediaUrl)} style={styles.mediaThumb}>
                   <Image source={{ uri: item.thumbnail || item.mediaUrl }} style={styles.mediaThumbImage} contentFit="cover" />
                 </Pressable>

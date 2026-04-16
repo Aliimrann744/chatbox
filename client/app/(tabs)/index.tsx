@@ -82,6 +82,10 @@ export default function ChatsScreen() {
     }
     try {
       const data = await chatApi.getChats();
+      data.sort((a, b) => {
+        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
       setChats(data);
       cache.set(CacheKeys.CHATS, data);
     } catch (error) {
@@ -219,6 +223,11 @@ export default function ChatsScreen() {
         result = result.filter((c) => String(c.type).toUpperCase() === 'GROUP');
         break;
     }
+
+    result.sort((a, b) => {
+      if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
 
     return result;
   })();
@@ -666,33 +675,16 @@ export default function ChatsScreen() {
             </View>
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.filtersScroll}
-            contentContainerStyle={styles.filtersRow}
-            keyboardShouldPersistTaps="handled"
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll} contentContainerStyle={styles.filtersRow} keyboardShouldPersistTaps="handled">
             {FILTERS?.map((filter) => (
-              <Pressable
-                key={filter}
-                onPress={() => setActiveFilter(filter)}
-                style={[
-                  styles.filterChip,
-                  { backgroundColor: activeFilter === filter ? '#139047' : colors.inputBackground },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    { color: activeFilter === filter ? '#ffffff' : colors.text },
-                  ]}
-                >
+              <Pressable key={filter} onPress={() => setActiveFilter(filter)} style={[styles.filterChip, { backgroundColor: activeFilter === filter ? '#139047' : colors.inputBackground }]}>
+                <Text style={[styles.filterChipText, { color: activeFilter === filter ? '#ffffff' : colors.text }]}>
                   {filter}
                 </Text>
               </Pressable>
             ))}
-            <Pressable style={[styles.filterAddButton, { backgroundColor: colors.inputBackground }]}>
+
+            <Pressable onPress={handleNewChat} style={[styles.filterAddButton, { backgroundColor: colors.inputBackground }]}>
               <Ionicons name="add" size={18} color={colors.text} />
             </Pressable>
           </ScrollView>

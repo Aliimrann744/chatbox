@@ -1156,14 +1156,22 @@ export class ChatService {
 
     const skip = (page - 1) * limit;
 
+    const mediaWhere = {
+      chatId,
+      type: { in: mediaTypes as any },
+      deletedAt: null,
+      isDeletedForEveryone: false,
+      mediaUrl: { not: null },
+      NOT: {
+        deletedForUsers: {
+          some: { userId },
+        },
+      },
+    };
+
     const [media, total] = await Promise.all([
       this.prisma.message.findMany({
-        where: {
-          chatId,
-          type: { in: mediaTypes as any },
-          deletedAt: null,
-          mediaUrl: { not: null },
-        },
+        where: mediaWhere,
         select: {
           id: true,
           type: true,
@@ -1185,12 +1193,7 @@ export class ChatService {
         take: limit,
       }),
       this.prisma.message.count({
-        where: {
-          chatId,
-          type: { in: mediaTypes as any },
-          deletedAt: null,
-          mediaUrl: { not: null },
-        },
+        where: mediaWhere,
       }),
     ]);
 

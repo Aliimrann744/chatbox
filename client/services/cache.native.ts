@@ -64,4 +64,5 @@ export const CacheKeys = {
   USER_PROFILE: 'cache:user-profile',
   messages: (chatId: string) => `cache:messages:${chatId}`,
   chatDetail: (chatId: string) => `cache:chat:${chatId}`,
+  sharedMedia: (chatId: string) => `cache:media:${chatId}`,
 };
