@@ -170,6 +170,7 @@ model ChatMember {
   isFavorite     Boolean     @default(false)
   isMarkedUnread Boolean     @default(false)
   isHidden       Boolean     @default(false)
+  mediaVisibility Boolean    @default(true)
 
   joinedAt    DateTime       @default(now())
   leftAt      DateTime?
@@ -223,6 +224,10 @@ model Message {
 
   // Deletion
   isDeletedForEveryone Boolean @default(false)
+
+  // Edit
+  isEdited    Boolean       @default(false)
+  editedAt    DateTime?
 
   // Timestamps
   createdAt   DateTime      @default(now())

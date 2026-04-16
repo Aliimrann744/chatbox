@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Alert, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
+import { Alert, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,7 +18,7 @@ import socketService from '@/services/socket';
 import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '@/contexts/auth-context';
 import { useCall } from '@/contexts/call-context';
-import { pickImage, pickVideo, pickDocument, takePhoto, PickedMedia, getMessageTypeFromMimeType } from '@/utils/media-picker';
+import { pickImage, pickVideo, pickDocument, takePhoto, pickMultipleMedia, PickedMedia, getMessageTypeFromMimeType } from '@/utils/media-picker';
 import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-picker';
 import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
 import { cache, CacheKeys } from '@/services/cache';
@@ -291,7 +291,17 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
         return (
           <View style={styles.mediaContainer}>
             {message.mediaUrl ? (
-              <Pressable onPress={() => onImagePress?.(message.mediaUrl!)}>
+              <Pressable
+                onPress={() => {
+                  if (isSelectionMode && onSelect) {
+                    onSelect();
+                  } else {
+                    onImagePress?.(message.mediaUrl!);
+                  }
+                }}
+                onLongPress={onLongPress}
+                delayLongPress={400}
+              >
                 <Image
                   source={{ uri: message.mediaUrl }}
                   style={styles.imagePreview}
@@ -318,7 +328,17 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
       case 'VIDEO':
         return (
           <View style={styles.mediaContainer}>
-            <Pressable onPress={() => message.mediaUrl && onVideoPress?.(message.mediaUrl)}>
+            <Pressable
+              onPress={() => {
+                if (isSelectionMode && onSelect) {
+                  onSelect();
+                } else if (message.mediaUrl) {
+                  onVideoPress?.(message.mediaUrl);
+                }
+              }}
+              onLongPress={onLongPress}
+              delayLongPress={400}
+            >
               <View style={styles.videoContainer}>
                 {message.thumbnail ? (
                   <Image
@@ -549,6 +569,9 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
               {message.isStarred && (
                 <Ionicons name="star" size={10} color={timeColor} />
               )}
+              {message.isEdited && (
+                <Text style={[styles.messageTime, { color: timeColor, fontStyle: 'italic' }]}>Edited</Text>
+              )}
               <Text style={[styles.messageTime, { color: timeColor }]}>
                 {formatTime(message.createdAt)}
               </Text>
@@ -604,6 +627,25 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
     <SwipeToReply enabled={!isSelectionMode && !!onReply} isMe={isMe} onReply={() => onReply && onReply(message)}>
       {bubblePressable}
     </SwipeToReply>
+  );
+}
+
+function EncryptionBanner() {
+  return (
+    <View style={styles.e2eBannerWrapper} pointerEvents="box-none">
+      <View style={styles.e2eBanner}>
+        <Ionicons name="lock-closed" size={12} color="#8d6e19" style={{ marginRight: 6 }} />
+        <Text style={styles.e2eBannerText}>
+          Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them.{' '}
+          <Text
+            style={styles.e2eBannerLink}
+            onPress={() => Linking.openURL('https://faq.whatsapp.com/791574747982248')}
+          >
+            Learn more.
+          </Text>
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -833,7 +875,7 @@ function MessageInput({ value, onChange, onSend, onAttachment, onSelect, onVoice
   );
 }
 
-function SelectionHeader({ count, onCancel, onStar, onDelete, onCopy, onForward, onReply, allStarred }: {
+function SelectionHeader({ count, onCancel, onStar, onDelete, onCopy, onForward, onReply, onEdit, canEdit, allStarred }: {
   count: number;
   onCancel: () => void;
   onStar: () => void;
@@ -841,6 +883,8 @@ function SelectionHeader({ count, onCancel, onStar, onDelete, onCopy, onForward,
   onCopy: () => void;
   onForward: () => void;
   onReply: () => void;
+  onEdit?: () => void;
+  canEdit?: boolean;
   allStarred?: boolean;
 }) {
   const colorScheme = useColorScheme() ?? 'light';
@@ -857,6 +901,11 @@ function SelectionHeader({ count, onCancel, onStar, onDelete, onCopy, onForward,
       {count === 1 && (
         <Pressable onPress={onReply} style={styles.selectionAction} hitSlop={8}>
           <Ionicons name="arrow-undo-outline" size={22} color={colors.headerText} />
+        </Pressable>
+      )}
+      {count === 1 && canEdit && onEdit && (
+        <Pressable onPress={onEdit} style={styles.selectionAction} hitSlop={8}>
+          <Ionicons name="pencil" size={20} color={colors.headerText} />
         </Pressable>
       )}
       <Pressable onPress={onStar} style={styles.selectionAction} hitSlop={8}>
@@ -966,6 +1015,10 @@ export default function ChatDetailScreen() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<PickedMedia | null>(null);
+  const [pendingMediaList, setPendingMediaList] = useState<PickedMedia[]>([]);
+  const [pendingMediaIndex, setPendingMediaIndex] = useState(0);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [editingText, setEditingText] = useState('');
   const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [showForwardModal, setShowForwardModal] = useState(false);
@@ -1242,6 +1295,16 @@ export default function ChatDetailScreen() {
       }
     });
 
+    // Message edited
+    const unsubscribeMessageEdited = socketService.on('message_edited', (data: any) => {
+      if (data.chatId !== chatId) return;
+      setMessages((prev) => prev.map((msg) =>
+        msg.id === data.messageId
+          ? { ...msg, content: data.content, isEdited: true, editedAt: data.editedAt }
+          : msg
+      ));
+    });
+
     // Online status
     const unsubscribeOnlineStatus = socketService.on('online_status', (data: any) => {
       setChat((prev) =>
@@ -1258,6 +1321,7 @@ export default function ChatDetailScreen() {
       unsubscribeTyping();
       unsubscribeMessageDeleted();
       unsubscribeMessageDeletedForEveryone();
+      unsubscribeMessageEdited();
       unsubscribeOnlineStatus();
     };
   }, [chatId]);
@@ -1390,19 +1454,12 @@ export default function ChatDetailScreen() {
         return;
       }
       case 'gallery': {
-        media = await pickImage();
-        if (media && media.type === 'image') {
-          const recipientName = otherUser?.name || chat?.name || 'Recipient';
-          setImageEditorCallback((editedUri: string, _caption: string) => {
-            sendMediaMessage({ ...media!, uri: editedUri });
-          });
-          router.push({
-            pathname: '/image-editor',
-            params: { uri: media.uri, recipient: recipientName },
-          });
-          return;
+        const picked = await pickMultipleMedia();
+        if (picked.length > 0) {
+          setPendingMediaList(picked);
+          setPendingMediaIndex(0);
         }
-        break;
+        return;
       }
       case 'video':
         media = await pickVideo();
@@ -1835,6 +1892,64 @@ export default function ChatDetailScreen() {
     setShowForwardModal(true);
   };
 
+  // ─── Edit message ────────────────────────────────────────────────────────
+  const handleEditFromSelection = () => {
+    if (selectedMessages.size !== 1) return;
+    const [id] = Array.from(selectedMessages);
+    const msg = messages.find((m) => m.id === id);
+    if (!msg || msg.senderId !== user?.id || msg.type !== 'TEXT' || msg.isDeletedForEveryone) return;
+    setEditingMessage(msg);
+    setEditingText(msg.content || '');
+    handleCancelSelection();
+  };
+
+  const handleConfirmEdit = async () => {
+    if (!editingMessage) return;
+    const trimmed = editingText.trim();
+    if (!trimmed) return;
+
+    const messageId = editingMessage.id;
+    const nowIso = new Date().toISOString();
+
+    // Optimistic local update
+    setMessages((prev) => prev.map((m) =>
+      m.id === messageId ? { ...m, content: trimmed, isEdited: true, editedAt: nowIso } : m
+    ));
+    setEditingMessage(null);
+    setEditingText('');
+
+    try {
+      if (socketService.isConnected) {
+        const res = await socketService.editMessage(messageId, trimmed);
+        if (res && res.success === false && res.error) {
+          Alert.alert('Cannot edit', res.error);
+        }
+      } else {
+        await chatApi.editMessage(messageId, trimmed);
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to edit message');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessage(null);
+    setEditingText('');
+  };
+
+  // Determine if the single selected message is editable (own, TEXT, not deleted, <15min)
+  const selectedEditable = (() => {
+    if (selectedMessages.size !== 1) return false;
+    const [id] = Array.from(selectedMessages);
+    const msg = messages.find((m) => m.id === id);
+    if (!msg) return false;
+    if (msg.senderId !== user?.id) return false;
+    if (msg.type !== 'TEXT') return false;
+    if (msg.isDeletedForEveryone) return false;
+    const minutes = (Date.now() - new Date(msg.createdAt).getTime()) / 60000;
+    return minutes <= 15;
+  })();
+
   const handleForwardTo = async (targetChatId: string) => {
     const selected = messages.filter(m => selectedMessages.has(m.id));
 
@@ -2102,6 +2217,8 @@ export default function ChatDetailScreen() {
           onCopy={handleCopyMessages}
           onForward={handleForwardMessages}
           onReply={handleReplyFromSelection}
+          onEdit={handleEditFromSelection}
+          canEdit={selectedEditable}
           allStarred={Array.from(selectedMessages).every(id => {
             const msg = messages.find(m => m.id === id);
             return msg?.isStarred;
@@ -2140,6 +2257,7 @@ export default function ChatDetailScreen() {
         style={styles.messagesList}
         resizeMode="cover"
       >
+        {!isSelectionMode && <EncryptionBanner />}
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -2228,20 +2346,76 @@ export default function ChatDetailScreen() {
       />
 
       {/* Image Preview Modal */}
-      {previewImageUrl && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setPreviewImageUrl(null)}>
-          <View style={styles.imagePreviewOverlay}>
-            <Pressable style={styles.imagePreviewClose} onPress={() => setPreviewImageUrl(null)}>
-              <Ionicons name="close" size={28} color="#ffffff" />
-            </Pressable>
-            <Image
-              source={{ uri: previewImageUrl }}
-              style={styles.imagePreviewFull}
-              contentFit="contain"
-            />
-          </View>
-        </Modal>
-      )}
+      {previewImageUrl && (() => {
+        const previewMsg = messages.find((m) => m.mediaUrl === previewImageUrl);
+        const ownPreview = previewMsg?.senderId === user?.id;
+        const closePreview = () => setPreviewImageUrl(null);
+        const onPreviewForward = () => {
+          if (!previewMsg) return;
+          setSelectedMessages(new Set([previewMsg.id]));
+          setIsSelectionMode(true);
+          closePreview();
+          setShowForwardModal(true);
+        };
+        const onPreviewDelete = () => {
+          if (!previewMsg) return;
+          const buttons: any[] = [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Delete for me',
+              style: 'destructive',
+              onPress: async () => {
+                closePreview();
+                setMessages((prev) => prev.filter((m) => m.id !== previewMsg.id));
+                await performDelete([previewMsg.id], false);
+              },
+            },
+          ];
+          if (ownPreview) {
+            buttons.push({
+              text: 'Delete for everyone',
+              style: 'destructive',
+              onPress: async () => {
+                closePreview();
+                setMessages((prev: any) => prev.map((m: any) =>
+                  m.id === previewMsg.id
+                    ? { ...m, isDeletedForEveryone: true, content: null, mediaUrl: null, type: 'TEXT' }
+                    : m
+                ));
+                await performDelete([previewMsg.id], true);
+              },
+            });
+          }
+          Alert.alert('Delete message?', '', buttons);
+        };
+        return (
+          <Modal visible transparent animationType="fade" onRequestClose={closePreview}>
+            <View style={styles.imagePreviewOverlay}>
+              <View style={styles.imagePreviewTopBar}>
+                <Pressable onPress={closePreview} hitSlop={10} style={styles.imagePreviewIconBtn}>
+                  <Ionicons name="arrow-back" size={24} color="#ffffff" />
+                </Pressable>
+                <View style={{ flex: 1 }} />
+                {previewMsg && (
+                  <>
+                    <Pressable onPress={onPreviewForward} hitSlop={10} style={styles.imagePreviewIconBtn}>
+                      <Ionicons name="arrow-redo-outline" size={22} color="#ffffff" />
+                    </Pressable>
+                    <Pressable onPress={onPreviewDelete} hitSlop={10} style={styles.imagePreviewIconBtn}>
+                      <Ionicons name="trash-outline" size={22} color="#ffffff" />
+                    </Pressable>
+                  </>
+                )}
+              </View>
+              <Image
+                source={{ uri: previewImageUrl }}
+                style={styles.imagePreviewFull}
+                contentFit="contain"
+              />
+            </View>
+          </Modal>
+        );
+      })()}
 
       {/* Video Player Modal */}
       {previewVideoUrl && (
@@ -2287,6 +2461,124 @@ export default function ChatDetailScreen() {
                 }}>
                 <Ionicons name="send" size={22} color="#fff" />
               </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Multi-media Carousel Preview (before sending) */}
+      {pendingMediaList.length > 0 && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setPendingMediaList([])}>
+          <View style={styles.mediaCarouselOverlay}>
+            <View style={styles.mediaCarouselTopBar}>
+              <Pressable onPress={() => setPendingMediaList([])} hitSlop={10} style={styles.imagePreviewIconBtn}>
+                <Ionicons name="arrow-back" size={24} color="#ffffff" />
+              </Pressable>
+              <Text style={styles.mediaCarouselCounter}>
+                {pendingMediaIndex + 1} / {pendingMediaList.length}
+              </Text>
+            </View>
+
+            <View style={styles.mediaCarouselContent}>
+              {pendingMediaIndex > 0 && (
+                <Pressable
+                  style={[styles.mediaCarouselArrow, { left: 12 }]}
+                  onPress={() => setPendingMediaIndex((i) => Math.max(0, i - 1))}
+                >
+                  <Ionicons name="chevron-back" size={28} color="#ffffff" />
+                </Pressable>
+              )}
+              {pendingMediaList[pendingMediaIndex]?.type === 'video' ? (
+                <Video
+                  source={{ uri: pendingMediaList[pendingMediaIndex].uri }}
+                  style={styles.mediaCarouselPreview}
+                  useNativeControls
+                  resizeMode={ResizeMode.CONTAIN}
+                />
+              ) : (
+                <Image
+                  source={{ uri: pendingMediaList[pendingMediaIndex]?.uri }}
+                  style={styles.mediaCarouselPreview}
+                  contentFit="contain"
+                />
+              )}
+              {pendingMediaIndex < pendingMediaList.length - 1 && (
+                <Pressable
+                  style={[styles.mediaCarouselArrow, { right: 12 }]}
+                  onPress={() => setPendingMediaIndex((i) => Math.min(pendingMediaList.length - 1, i + 1))}
+                >
+                  <Ionicons name="chevron-forward" size={28} color="#ffffff" />
+                </Pressable>
+              )}
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.mediaCarouselThumbs}
+              contentContainerStyle={{ paddingHorizontal: 10, gap: 8 }}
+            >
+              {pendingMediaList.map((m, i) => (
+                <Pressable key={`${m.uri}-${i}`} onPress={() => setPendingMediaIndex(i)}>
+                  <View style={[styles.mediaCarouselThumb, i === pendingMediaIndex && styles.mediaCarouselThumbActive]}>
+                    <Image source={{ uri: m.uri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                    {m.type === 'video' && (
+                      <View style={styles.mediaCarouselThumbPlay}>
+                        <Ionicons name="play" size={14} color="#ffffff" />
+                      </View>
+                    )}
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <View style={styles.mediaCarouselFooter}>
+              <Text style={styles.mediaPreviewRecipient} numberOfLines={1}>
+                {otherUser?.name || chat?.name || 'Recipient'}
+              </Text>
+              <Pressable
+                style={[styles.mediaPreviewSendBtn, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  const list = pendingMediaList;
+                  setPendingMediaList([]);
+                  setPendingMediaIndex(0);
+                  list.forEach((m) => sendMediaMessage(m));
+                }}
+              >
+                <Ionicons name="send" size={22} color="#fff" />
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Edit Message Modal */}
+      {editingMessage && (
+        <Modal visible transparent animationType="fade" onRequestClose={handleCancelEdit}>
+          <View style={styles.editModalOverlay}>
+            <View style={[styles.editModalCard, { backgroundColor: colors.cardBackground }]}>
+              <Text style={[styles.editModalTitle, { color: colors.text }]}>Edit message</Text>
+              <TextInput
+                style={[styles.editModalInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBackground }]}
+                value={editingText}
+                onChangeText={setEditingText}
+                multiline
+                autoFocus
+                placeholder="Message"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <View style={styles.editModalActions}>
+                <Pressable style={styles.editModalBtn} onPress={handleCancelEdit}>
+                  <Text style={[styles.editModalBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.editModalBtn}
+                  onPress={handleConfirmEdit}
+                  disabled={!editingText.trim()}
+                >
+                  <Text style={[styles.editModalBtnText, { color: editingText.trim() ? colors.primary : colors.textSecondary, opacity: editingText.trim() ? 1 : 0.5 }]}>OK</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
         </Modal>
@@ -3004,5 +3296,161 @@ const styles = StyleSheet.create({
   },
   chatMenuItemText: {
     fontSize: 15,
+  },
+
+  // ─── E2E Banner ─────────────────────────────────────────────────────────
+  e2eBannerWrapper: {
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  e2eBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fdf5c9',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    width: '60%',
+    alignSelf: 'center',
+  },
+  e2eBannerText: {
+    fontSize: 11.5,
+    color: '#54656f',
+    flex: 1,
+    lineHeight: 15,
+    textAlign: 'center',
+  },
+  e2eBannerLink: {
+    color: '#027eb5',
+    textDecorationLine: 'underline',
+  },
+
+  // ─── Image preview top bar ──────────────────────────────────────────────
+  imagePreviewTopBar: {
+    position: 'absolute',
+    top: 40,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    zIndex: 10,
+  },
+  imagePreviewIconBtn: {
+    padding: 10,
+  },
+
+  // ─── Media Carousel ─────────────────────────────────────────────────────
+  mediaCarouselOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+  },
+  mediaCarouselTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 40,
+    paddingHorizontal: 8,
+    paddingBottom: 8,
+  },
+  mediaCarouselCounter: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '500',
+    marginLeft: 12,
+  },
+  mediaCarouselContent: {
+    flex: 1,
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaCarouselPreview: {
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height * 0.6,
+  },
+  mediaCarouselArrow: {
+    position: 'absolute',
+    top: '50%',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  mediaCarouselThumbs: {
+    maxHeight: 72,
+    paddingVertical: 8,
+  },
+  mediaCarouselThumb: {
+    width: 54,
+    height: 54,
+    borderRadius: 6,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  mediaCarouselThumbActive: {
+    borderColor: '#25D366',
+  },
+  mediaCarouselThumbPlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  mediaCarouselFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    paddingBottom: 34,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+
+  // ─── Edit Modal ─────────────────────────────────────────────────────────
+  editModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  editModalCard: {
+    width: '100%',
+    borderRadius: 10,
+    padding: 20,
+  },
+  editModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 14,
+  },
+  editModalInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    minHeight: 80,
+    fontSize: 15,
+    textAlignVertical: 'top',
+  },
+  editModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 16,
+    gap: 8,
+  },
+  editModalBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  editModalBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

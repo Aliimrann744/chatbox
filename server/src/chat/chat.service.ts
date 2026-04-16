@@ -9,6 +9,7 @@ import { CreateChatDto, SendMessageDto } from './dto';
 import {
   ChatType,
   MessageStatus,
+  MessageType,
   MemberRole,
   GroupPermissionRole,
 } from '@prisma/client';
@@ -299,6 +300,7 @@ export class ChatService {
       isMuted: currentMember.isMuted,
       isArchived: currentMember.isArchived,
       isFavorite: currentMember.isFavorite,
+      mediaVisibility: currentMember.mediaVisibility,
     };
   }
 
@@ -942,6 +944,58 @@ export class ChatService {
         chatId: m.chatId,
       })),
     };
+  }
+
+  // Edit a message (only sender, only TEXT, within 15 minutes)
+  async editMessage(userId: string, messageId: string, content: string) {
+    const trimmed = (content || '').trim();
+    if (!trimmed) {
+      throw new BadRequestException('Message content cannot be empty');
+    }
+
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: { chat: { include: { members: true } } },
+    });
+    if (!message) throw new NotFoundException('Message not found');
+    if (message.senderId !== userId) {
+      throw new ForbiddenException('You can only edit your own messages');
+    }
+    if (message.isDeletedForEveryone) {
+      throw new BadRequestException('Cannot edit a deleted message');
+    }
+    if (message.type !== MessageType.TEXT) {
+      throw new BadRequestException('Only text messages can be edited');
+    }
+
+    const minutesSinceSent = (Date.now() - new Date(message.createdAt).getTime()) / (1000 * 60);
+    if (minutesSinceSent > 15) {
+      throw new BadRequestException('You can only edit messages within 15 minutes of sending');
+    }
+
+    const editedAt = new Date();
+    await this.prisma.message.update({
+      where: { id: messageId },
+      data: { content: trimmed, isEdited: true, editedAt },
+    });
+
+    return {
+      messageId,
+      chatId: message.chatId,
+      senderId: message.senderId,
+      content: trimmed,
+      editedAt: editedAt.toISOString(),
+      memberUserIds: message.chat.members.map((m) => m.userId),
+    };
+  }
+
+  // Set media visibility for a chat member (controls auto-save of incoming media)
+  async setMediaVisibility(chatId: string, userId: string, mediaVisibility: boolean) {
+    await this.prisma.chatMember.update({
+      where: { chatId_userId: { chatId, userId } },
+      data: { mediaVisibility },
+    });
+    return { success: true, mediaVisibility };
   }
 
   // Delete message for everyone

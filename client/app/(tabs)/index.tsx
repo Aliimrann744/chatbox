@@ -790,7 +790,7 @@ export default function ChatsScreen() {
         </View>
       )}
 
-      {!isSelectionMode && <FloatingActionButton onPress={handleNewChat} icon="message.fill" />}
+      {!isSelectionMode && <FloatingActionButton onPress={handleNewChat} icon="plus" />}
 
       {/* ─── Normal Mode Menu ────────────────────────────────────────────────── */}
       <Modal visible={showMenu} transparent animationType="fade">

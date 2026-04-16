@@ -356,6 +356,16 @@ class SocketService {
     });
   }
 
+  editMessage(messageId: string, content: string): Promise<any> {
+    return new Promise((resolve) => {
+      if (!this.chatSocket) {
+        resolve({ success: false, error: 'Not connected' });
+        return;
+      }
+      this.chatSocket.emit('edit_message', { messageId, content }, resolve);
+    });
+  }
+
   starMessage(messageId: string, starred: boolean): Promise<any> {
     return new Promise((resolve) => {
       if (!this.chatSocket) {

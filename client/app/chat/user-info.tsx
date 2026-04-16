@@ -12,6 +12,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/auth-context';
 import { useCall } from '@/contexts/call-context';
 import { chatApi, contactApi, Chat, SharedMedia, User } from '@/services/api';
+import { cache, CacheKeys } from '@/services/cache';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MEDIA_THUMB_SIZE = (SCREEN_WIDTH - 48) / 4;
@@ -57,6 +58,9 @@ export default function UserInfoScreen() {
     try {
       const chatData = await chatApi.getChat(chatId);
       setChat(chatData);
+      if (typeof chatData?.mediaVisibility === 'boolean') {
+        setMediaVisibility(chatData.mediaVisibility);
+      }
 
       // Fetch media separately so it doesn't block the page if it fails
       try {
@@ -65,12 +69,12 @@ export default function UserInfoScreen() {
         setMediaCount(mediaData.pagination.total);
       } catch {}
 
-      // Check if blocked
+      // Check if blocked (use checkBlocked — one-directional, matches chat/[id].tsx)
       const targetId = userId || chatData?.members?.find((m: any) => m.user.id !== currentUser?.id)?.user?.id;
       if (targetId) {
         try {
-          const blockedUsers = await contactApi.getBlockedUsers();
-          setIsBlocked(blockedUsers.some(b => b.user.id === targetId));
+          const result = await contactApi.checkBlocked(targetId);
+          setIsBlocked(!!result?.iBlockedThem);
         } catch {}
       }
     } catch (error) {
@@ -85,11 +89,39 @@ export default function UserInfoScreen() {
   // Re-check blocked state when otherUser becomes available
   useEffect(() => {
     if (otherUser?.id) {
-      contactApi.getBlockedUsers().then(blockedUsers => {
-        setIsBlocked(blockedUsers.some(b => b.user.id === otherUser.id));
+      contactApi.checkBlocked(otherUser.id).then(result => {
+        setIsBlocked(!!result?.iBlockedThem);
       }).catch(() => {});
     }
   }, [otherUser?.id]);
+
+  const handleToggleMediaVisibility = async (value: boolean) => {
+    if (!chatId) return;
+    setMediaVisibility(value);
+    try {
+      await chatApi.setMediaVisibility(chatId, value);
+    } catch (err: any) {
+      // Revert on error
+      setMediaVisibility(!value);
+      Alert.alert('Error', err?.message || 'Failed to update media visibility');
+    }
+  };
+
+  const handleFavoriteChat = async () => {
+    if (!chatId) return;
+    const newFav = !chat?.isFavorite;
+    try {
+      await chatApi.favoriteChat(chatId, newFav);
+      setChat(prev => prev ? { ...prev, isFavorite: newFav } : prev);
+      // Sync chat list cache
+      const cachedChats = cache.get<Chat[]>(CacheKeys.CHATS);
+      if (cachedChats) {
+        cache.set(CacheKeys.CHATS, cachedChats.map(c => c.id === chatId ? { ...c, isFavorite: newFav } : c));
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update favorites');
+    }
+  };
 
   const handleAudioCall = async () => {
     if (otherUser?.id) {
@@ -161,6 +193,23 @@ export default function UserInfoScreen() {
           text: 'Clear', style: 'destructive', onPress: async () => {
             try {
               await chatApi.clearChat(chatId);
+              // Clear local media + caches in real time
+              setSharedMedia([]);
+              setMediaCount(0);
+              cache.delete(CacheKeys.messages(chatId));
+              const cachedChats = cache.get<Chat[]>(CacheKeys.CHATS);
+              if (cachedChats) {
+                cache.set(
+                  CacheKeys.CHATS,
+                  cachedChats.map(c => c.id === chatId ? { ...c, lastMessage: undefined, unreadCount: 0 } : c),
+                );
+              }
+              // Trigger media API refresh to confirm server has cleared
+              try {
+                const refreshed = await chatApi.getSharedMedia(chatId, undefined, 1, 8);
+                setSharedMedia(refreshed.media.filter(m => m.type === 'IMAGE' || m.type === 'VIDEO'));
+                setMediaCount(refreshed.pagination.total);
+              } catch {}
               Alert.alert('Done', 'Chat cleared successfully');
             } catch { Alert.alert('Error', 'Failed to clear chat'); }
           },
@@ -297,7 +346,7 @@ export default function UserInfoScreen() {
             </View>
             <Switch
               value={mediaVisibility}
-              onValueChange={setMediaVisibility}
+              onValueChange={handleToggleMediaVisibility}
               trackColor={{ false: '#767577', true: '#075E54' }}
               thumbColor="#fff"
             />
@@ -314,10 +363,17 @@ export default function UserInfoScreen() {
           </Pressable>
 
           {/* Add to favorites */}
-          <Pressable style={styles.menuItem} onPress={handlePinChat}>
-            <Ionicons name="heart-outline" size={22} color={colors.textSecondary} style={styles.menuIcon} />
+          <Pressable style={styles.menuItem} onPress={handleFavoriteChat}>
+            <Ionicons
+              name={chat?.isFavorite ? 'heart' : 'heart-outline'}
+              size={22}
+              color={chat?.isFavorite ? '#e11d48' : colors.textSecondary}
+              style={styles.menuIcon}
+            />
             <View style={styles.menuItemContent}>
-              <Text style={[styles.menuItemTitle, { color: colors.text }]}>Add to Favorites</Text>
+              <Text style={[styles.menuItemTitle, { color: colors.text }]}>
+                {chat?.isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
+              </Text>
             </View>
           </Pressable>
         </View>

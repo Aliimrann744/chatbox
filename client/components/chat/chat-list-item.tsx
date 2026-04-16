@@ -254,14 +254,21 @@ export function ChatListItem({
               />
             )}
 
-            {chat.isPinned && (
+            {chat.isFavorite ? (
+              <Ionicons
+                name="heart"
+                size={14}
+                color="#e11d48"
+                style={styles.pinnedIcon}
+              />
+            ) : chat.isPinned ? (
               <IconSymbol
                 name="pin.fill"
                 size={14}
                 color={colors.textSecondary}
                 style={styles.pinnedIcon}
               />
-            )}
+            ) : null}
           </View>
         </View>
       </View>

@@ -63,6 +63,15 @@ export class ChatController {
     return this.chatService.deleteMessageForEveryone(user.id, messageId);
   }
 
+  @Patch('messages/:messageId')
+  async editMessage(
+    @CurrentUser() user: any,
+    @Param('messageId') messageId: string,
+    @Body('content') content: string,
+  ) {
+    return this.chatService.editMessage(user.id, messageId, content);
+  }
+
   // Get every starred (shared) message across the user's chats.
   // Used by the Shared screen in the menu. Returns enriched chat info.
   @Get('starred/all')
@@ -200,5 +209,14 @@ export class ChatController {
   @Delete(':id/clear')
   async clearChat(@CurrentUser() user: any, @Param('id') chatId: string) {
     return this.chatService.clearChat(chatId, user.id);
+  }
+
+  @Patch(':id/media-visibility')
+  async setMediaVisibility(
+    @CurrentUser() user: any,
+    @Param('id') chatId: string,
+    @Body('mediaVisibility') mediaVisibility: boolean,
+  ) {
+    return this.chatService.setMediaVisibility(chatId, user.id, mediaVisibility);
   }
 }

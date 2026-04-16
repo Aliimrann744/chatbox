@@ -362,6 +362,23 @@ export const chatApi = {
     });
   },
 
+  async setMediaVisibility(chatId: string, mediaVisibility: boolean) {
+    return request<{ success: boolean; mediaVisibility: boolean }>(
+      `/chats/${chatId}/media-visibility`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ mediaVisibility }),
+      },
+    );
+  },
+
+  async editMessage(messageId: string, content: string) {
+    return request<Message>(`/chats/messages/${messageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content }),
+    });
+  },
+
   async markChatUnread(chatId: string) {
     return request(`/chats/${chatId}/mark-unread`, { method: 'PATCH' });
   },
@@ -716,6 +733,7 @@ export interface Chat {
   isArchived: boolean;
   isFavorite: boolean;
   isMarkedUnread: boolean;
+  mediaVisibility?: boolean;
   isOnline?: boolean;
   lastSeen?: string;
   members: ChatMember[];
@@ -765,6 +783,8 @@ export interface Message {
   isForwarded: boolean;
   isStarred?: boolean;
   isDeletedForEveryone?: boolean;
+  isEdited?: boolean;
+  editedAt?: string;
   status: 'SENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
   createdAt: string;
   sender: {
