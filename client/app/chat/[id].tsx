@@ -1177,7 +1177,9 @@ export default function ChatDetailScreen() {
 
   // Track active chat for notification suppression + re-sync after returning
   // from user-info (e.g. after clear chat). If the messages cache was wiped
-  // while we were off-screen, clear local state and re-fetch.
+  // while we were off-screen, clear local state and re-fetch. If it was
+  // mutated (e.g. user-info appended a "You blocked this contact" event),
+  // pull those changes into local state.
   useFocusEffect(
     useCallback(() => {
       if (chatId) {
@@ -1187,13 +1189,26 @@ export default function ChatDetailScreen() {
         if (!cached && messages.length > 0) {
           setMessages([]);
           fetchData();
+        } else if (cached) {
+          const lastCachedId = cached[cached.length - 1]?.id;
+          const lastLocalId = messages[messages.length - 1]?.id;
+          if (cached.length !== messages.length || lastCachedId !== lastLocalId) {
+            setMessages(cached);
+          }
+        }
+
+        // Block status may have been toggled from user-info — refresh it.
+        if (otherUser?.id && chat?.type === 'PRIVATE') {
+          contactApi.checkBlocked(otherUser.id)
+            .then((result) => setIBlockedThem(result.iBlockedThem))
+            .catch(() => {});
         }
       }
 
       return () => {
         setCurrentChatId(null);
       };
-    }, [chatId, messages.length, fetchData])
+    }, [chatId, messages, fetchData, otherUser?.id, chat?.type])
   );
 
   // Socket event listeners

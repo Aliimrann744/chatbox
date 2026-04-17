@@ -86,6 +86,9 @@ export default function ActiveCallScreen() {
   };
 
   const getStatusText = () => {
+    if (callState.isPeerReconnecting && callState.status === 'connected') {
+      return `Reconnecting… · ${formatDuration(duration)}`;
+    }
     switch (callState.status) {
       case 'calling':
         return 'Calling...';
@@ -125,6 +128,25 @@ export default function ActiveCallScreen() {
                   {!isConnected && (<Text style={styles.connectingText}>{getStatusText()}</Text>)}
                 </>
               )}
+
+              {/* Remote muted indicator (video call) */}
+              {isConnected && callState.isRemoteMuted && (
+                <View style={styles.remoteMutedBadge}>
+                  <IconSymbol name="mic.slash.fill" size={14} color="#ffffff" />
+                  <Text style={styles.remoteMutedText}>
+                    {callState.participant?.name
+                      ? `${callState.participant.name} is muted`
+                      : 'Muted'}
+                  </Text>
+                </View>
+              )}
+
+              {/* Peer temporarily disconnected (screen lock / transient network) */}
+              {isConnected && callState.isPeerReconnecting && (
+                <View style={styles.reconnectingBadge}>
+                  <Text style={styles.reconnectingText}>Reconnecting…</Text>
+                </View>
+              )}
             </View>
 
             {/* Local video PiP */}
@@ -144,11 +166,21 @@ export default function ActiveCallScreen() {
           </View>
         ) : (
           <View style={styles.voiceContainer}>
-            <Avatar uri={callState.participant?.avatar || ""} size={140} showOnlineStatus={false} />
+            <View>
+              <Avatar uri={callState.participant?.avatar || ""} size={140} showOnlineStatus={false} />
+              {isConnected && callState.isRemoteMuted && (
+                <View style={styles.voiceAvatarMuteBadge}>
+                  <IconSymbol name="mic.slash.fill" size={18} color="#ffffff" />
+                </View>
+              )}
+            </View>
             <Text style={styles.participantName}>
               {callState.participant?.name || 'Unknown'}
             </Text>
             <Text style={styles.callStatus}>{getStatusText()}</Text>
+            {isConnected && callState.isRemoteMuted && (
+              <Text style={styles.remoteMutedInlineText}>Muted</Text>
+            )}
           </View>
         )}
       </View>
@@ -377,5 +409,55 @@ const styles = StyleSheet.create({
   buttonPressed: {
     opacity: 0.8,
     transform: [{ scale: 0.95 }],
+  },
+  remoteMutedBadge: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 110 : 90,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  remoteMutedText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  voiceAvatarMuteBadge: {
+    position: 'absolute',
+    right: -4,
+    bottom: -4,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#1a1a2e',
+  },
+  remoteMutedInlineText: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#ff9999',
+    fontWeight: '500',
+  },
+  reconnectingBadge: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 150 : 130,
+    alignSelf: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 149, 0, 0.85)',
+  },
+  reconnectingText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

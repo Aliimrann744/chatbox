@@ -70,6 +70,17 @@ class SocketService {
   private callSocket: Socket | null = null;
   private listeners: Map<string, Set<Function>> = new Map();
   private isRefreshingToken = false;
+  // When a call is in progress, disconnect() preserves the call socket so a
+  // screen lock or app backgrounding doesn't kill the call on the server.
+  private callActive = false;
+
+  setCallActive(active: boolean) {
+    this.callActive = active;
+  }
+
+  get isCallActiveSession(): boolean {
+    return this.callActive;
+  }
 
   // ==================== CONNECTION ====================
 
@@ -114,12 +125,14 @@ class SocketService {
     await this.connect();
   }
 
-  disconnect() {
+  disconnect(options: { force?: boolean } = {}) {
     if (this.chatSocket) {
       this.chatSocket.disconnect();
       this.chatSocket = null;
     }
-    if (this.callSocket) {
+    // Preserve the call socket while a call is active (e.g. screen lock) unless
+    // the caller explicitly forces a full teardown (logout, unrecoverable error).
+    if (this.callSocket && (options.force || !this.callActive)) {
       this.callSocket.disconnect();
       this.callSocket = null;
     }
@@ -262,6 +275,26 @@ class SocketService {
 
     this.callSocket.on('call_missed', (data) => {
       this.emit('call_missed', data);
+    });
+
+    this.callSocket.on('call_mute_status', (data) => {
+      this.emit('call_mute_status', data);
+    });
+
+    this.callSocket.on('call_video_status', (data) => {
+      this.emit('call_video_status', data);
+    });
+
+    this.callSocket.on('call_peer_disconnected', (data) => {
+      this.emit('call_peer_disconnected', data);
+    });
+
+    this.callSocket.on('call_peer_reconnected', (data) => {
+      this.emit('call_peer_reconnected', data);
+    });
+
+    this.callSocket.on('call_resumed', (data) => {
+      this.emit('call_resumed', data);
     });
   }
 
@@ -467,6 +500,26 @@ class SocketService {
   sendIceCandidate(callId: string, candidate: any) {
     if (!this.callSocket) return;
     this.callSocket.emit('call_ice_candidate', { callId, candidate });
+  }
+
+  rejoinCall(callId: string): Promise<{ success: boolean; ended?: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      if (!this.callSocket?.connected) {
+        resolve({ success: false, error: 'Call socket not connected' });
+        return;
+      }
+      this.callSocket.emit('call_rejoin', { callId }, resolve);
+    });
+  }
+
+  sendMuteStatus(callId: string, isMuted: boolean) {
+    if (!this.callSocket) return;
+    this.callSocket.emit('call_mute_status', { callId, isMuted });
+  }
+
+  sendVideoStatus(callId: string, isVideoEnabled: boolean) {
+    if (!this.callSocket) return;
+    this.callSocket.emit('call_video_status', { callId, isVideoEnabled });
   }
 
   // ==================== EVENT EMITTER ====================

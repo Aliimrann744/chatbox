@@ -39,6 +39,12 @@ interface CallState {
   isMuted: boolean;
   isSpeakerOn: boolean;
   isVideoEnabled: boolean;
+  isRemoteMuted: boolean;
+  isRemoteVideoEnabled: boolean;
+  // True when the remote participant's signaling socket has dropped (e.g.
+  // screen lock) but we're still inside the server's grace period. The
+  // media connection usually keeps flowing — this is purely a UI cue.
+  isPeerReconnecting: boolean;
 }
 
 interface CallContextType {
@@ -66,6 +72,9 @@ const initialCallState: CallState = {
   isMuted: false,
   isSpeakerOn: false,
   isVideoEnabled: true,
+  isRemoteMuted: false,
+  isRemoteVideoEnabled: true,
+  isPeerReconnecting: false,
 };
 
 const CallContext = createContext<CallContextType | undefined>(undefined);
@@ -189,6 +198,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               // Report call as connected to native call UI
               if (prev.callId) {
                 reportConnectedCall(prev.callId);
+                // Sync current local media status to peer in case it was toggled
+                // before peer connection completed
+                socketService.sendMuteStatus(prev.callId, prev.isMuted);
+                if (prev.type === 'VIDEO') {
+                  socketService.sendVideoStatus(prev.callId, prev.isVideoEnabled);
+                }
               }
               return {
                 ...prev,
@@ -289,6 +304,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         isMuted: false,
         isSpeakerOn: false,
         isVideoEnabled: data.type === 'VIDEO',
+        isRemoteMuted: false,
+        isRemoteVideoEnabled: data.type === 'VIDEO',
+        isPeerReconnecting: false,
       });
 
       // Show native incoming call UI via CallKeep
@@ -418,6 +436,30 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    // Remote mute/video state updates from the peer
+    const unsubscribeMuteStatus = socketService.on('call_mute_status', (data: any) => {
+      if (data.callId !== callStateRef.current.callId) return;
+      setCallState((prev) => ({ ...prev, isRemoteMuted: !!data.isMuted }));
+    });
+
+    const unsubscribeVideoStatus = socketService.on('call_video_status', (data: any) => {
+      if (data.callId !== callStateRef.current.callId) return;
+      setCallState((prev) => ({ ...prev, isRemoteVideoEnabled: !!data.isVideoEnabled }));
+    });
+
+    // Peer socket dropped (e.g. they locked the screen). Server is holding
+    // the call in a grace period — show "Reconnecting..." to this user.
+    const unsubscribePeerDisconnected = socketService.on('call_peer_disconnected', (data: any) => {
+      if (data.callId !== callStateRef.current.callId) return;
+      setCallState((prev) => ({ ...prev, isPeerReconnecting: true }));
+    });
+
+    // Peer came back within the grace period — clear the reconnecting flag.
+    const unsubscribePeerReconnected = socketService.on('call_peer_reconnected', (data: any) => {
+      if (data.callId !== callStateRef.current.callId) return;
+      setCallState((prev) => ({ ...prev, isPeerReconnecting: false }));
+    });
+
     return () => {
       unsubscribeIncomingCall();
       unsubscribeCallAccepted();
@@ -428,8 +470,46 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       unsubscribeCallBusy();
       unsubscribeCallEnded();
       unsubscribeCallMissed();
+      unsubscribeMuteStatus();
+      unsubscribeVideoStatus();
+      unsubscribePeerDisconnected();
+      unsubscribePeerReconnected();
     };
   }, [resetCallState, setupPeerConnection, drainPendingCandidates]);
+
+  // Keep the socket service aware of whether a call is currently active. When
+  // active, the chat socket may still disconnect on backgrounding but the
+  // call socket is preserved, so the server doesn't see the user as gone
+  // just because they locked their screen.
+  useEffect(() => {
+    const inCall = callState.status !== 'idle';
+    socketService.setCallActive(inCall);
+  }, [callState.status]);
+
+  // When the call socket (re)connects, re-sync state with the server.
+  // If we're mid-call on the client but the server has already ended the
+  // call (e.g. the grace period elapsed before we came back), the server
+  // will emit 'call_ended' in response and our normal handler resets state.
+  useEffect(() => {
+    const unsubscribe = socketService.on('call_connected', () => {
+      const currentCallId = callStateRef.current.callId;
+      const status = callStateRef.current.status;
+      if (currentCallId && (status === 'connected' || status === 'connecting')) {
+        socketService.rejoinCall(currentCallId).catch(() => {});
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  // Server confirms the call is still live on the server side — clear any
+  // leftover "Reconnecting..." cue from the receiving end.
+  useEffect(() => {
+    const unsubscribe = socketService.on('call_resumed', (data: any) => {
+      if (data?.callId !== callStateRef.current.callId) return;
+      setCallState((prev) => ({ ...prev, isPeerReconnecting: false }));
+    });
+    return unsubscribe;
+  }, []);
 
   // Initiate a call
   const initiateCall = useCallback(
@@ -449,6 +529,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           isMuted: false,
           isSpeakerOn: false,
           isVideoEnabled: type === 'VIDEO',
+          isRemoteMuted: false,
+          isRemoteVideoEnabled: type === 'VIDEO',
+          isPeerReconnecting: false,
         });
 
         const result = await socketService.initiateCall(receiverId, type);
@@ -547,6 +630,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         isMuted: false,
         isSpeakerOn: false,
         isVideoEnabled: callData.callType === 'VIDEO',
+        isRemoteMuted: false,
+        isRemoteVideoEnabled: callData.callType === 'VIDEO',
+        isPeerReconnecting: false,
       });
 
       // Ensure socket is connected — use connect() NOT reconnect()
@@ -667,6 +753,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       isMuted: newMuted,
     }));
+
+    // Notify peer so their UI can show a muted indicator
+    const callId = callStateRef.current.callId;
+    if (callId) {
+      socketService.sendMuteStatus(callId, newMuted);
+    }
   }, []);
 
   // Toggle speaker
@@ -693,6 +785,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       isVideoEnabled: newEnabled,
     }));
+
+    // Notify peer so their UI can reflect the video track state
+    const callId = callStateRef.current.callId;
+    if (callId) {
+      socketService.sendVideoStatus(callId, newEnabled);
+    }
   }, []);
 
   // Switch camera

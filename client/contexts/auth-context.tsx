@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // This is the ONLY path that forces the user back to login
   useEffect(() => {
     setOnAuthFailure(() => {
-      socketService.disconnect();
+      socketService.disconnect({ force: true });
       setState({ user: null, isLoading: false, isAuthenticated: false });
     });
     return () => setOnAuthFailure(null);
@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (state.isAuthenticated && !state.isLoading) {
       socketService.connect();
     } else if (!state.isAuthenticated && !state.isLoading) {
-      socketService.disconnect();
+      socketService.disconnect({ force: true });
     }
   }, [state.isAuthenticated, state.isLoading]);
 
@@ -167,7 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { GoogleSignin } = require('@react-native-google-signin/google-signin');
       await GoogleSignin.signOut();
     } catch {}
-    socketService.disconnect();
+    socketService.disconnect({ force: true });
     cache.clearAll();
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
@@ -182,7 +182,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Only mark unauthenticated if tokens were cleared (refresh definitively failed)
       const hasToken = await authApi.isAuthenticated();
       if (!hasToken) {
-        socketService.disconnect();
+        socketService.disconnect({ force: true });
         setState({ user: null, isLoading: false, isAuthenticated: false });
       }
       // Otherwise silently fail — profile will refresh when network returns

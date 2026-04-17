@@ -11,7 +11,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/auth-context';
 import { useCall } from '@/contexts/call-context';
-import { chatApi, contactApi, Chat, SharedMedia, User } from '@/services/api';
+import { chatApi, contactApi, Chat, Message, SharedMedia, User } from '@/services/api';
 import { cache, CacheKeys } from '@/services/cache';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -147,6 +147,26 @@ export default function UserInfoScreen() {
     }
   };
 
+  // Append a local-only SYSTEM event message into the chat's messages cache
+  // so chat/[id].tsx reflects the block/unblock exactly as if the action
+  // had been taken from the chat screen itself.
+  const appendBlockEventToChatCache = (content: string) => {
+    if (!chatId || !currentUser) return;
+    const eventMsg: Message = {
+      id: `${content.startsWith('You blocked') ? 'block' : 'unblock'}_${Date.now()}`,
+      chatId,
+      senderId: currentUser.id,
+      type: 'SYSTEM',
+      content,
+      status: 'READ',
+      isForwarded: false,
+      createdAt: new Date().toISOString(),
+      sender: { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar },
+    };
+    const cached = cache.get<Message[]>(CacheKeys.messages(chatId)) || [];
+    cache.set(CacheKeys.messages(chatId), [...cached, eventMsg]);
+  };
+
   const handleBlockUser = () => {
     const targetId = otherUser?.id || userId;
     if (!targetId) return;
@@ -159,6 +179,7 @@ export default function UserInfoScreen() {
             try {
               await contactApi.unblockUser(targetId);
               setIsBlocked(false);
+              appendBlockEventToChatCache('You unblocked this contact');
             } catch { Alert.alert('Error', 'Failed to unblock user'); }
           },
         },
@@ -174,6 +195,7 @@ export default function UserInfoScreen() {
               try {
                 await contactApi.blockUser(targetId);
                 setIsBlocked(true);
+                appendBlockEventToChatCache('You blocked this contact');
               } catch { Alert.alert('Error', 'Failed to block user'); }
             },
           },

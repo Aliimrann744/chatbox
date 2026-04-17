@@ -12,6 +12,7 @@ import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { CallProvider } from '@/contexts/call-context';
 import { NotificationProvider } from '@/contexts/notification-context';
 import { IncomingCallListener } from '@/components/call/incoming-call-listener';
+import { ActiveCallBanner } from '@/components/call/active-call-banner';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 // Register background handlers at module level (before React tree mounts)
@@ -204,6 +205,7 @@ function RootLayoutNav() {
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <IncomingCallListener />
+      <ActiveCallBanner />
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'light'} />
     </ThemeProvider>
   );
