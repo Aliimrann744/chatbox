@@ -1,27 +1,22 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-interface SettingsItemProps {
-  icon: IconSymbolName;
-  iconColor?: string;
+type IonIconName = keyof typeof Ionicons.glyphMap;
+
+interface SettingsRowProps {
+  icon: IonIconName;
   title: string;
-  subtitle?: string;
-  onPress?: () => void;
-  showArrow?: boolean;
+  subtitle: string;
+  onPress: () => void;
 }
 
-function SettingsItem({
-  icon,
-  iconColor,
-  title,
-  subtitle,
-  onPress,
-  showArrow = true,
-}: SettingsItemProps) {
+function SettingsRow({ icon, title, subtitle, onPress }: SettingsRowProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
@@ -29,187 +24,168 @@ function SettingsItem({
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
-        styles.settingsItem,
-        {
-          backgroundColor: pressed ? colors.backgroundSecondary : colors.background,
-        },
+        styles.row,
+        pressed && { backgroundColor: colors.backgroundSecondary },
       ]}>
-      <View
-        style={[
-          styles.iconContainer,
-          { backgroundColor: iconColor || colors.primary },
-        ]}>
-        <IconSymbol name={icon} size={20} color="#ffffff" />
+      <Ionicons name={icon} size={24} color={colors.text} style={styles.rowIcon} />
+      <View style={styles.rowBody}>
+        <Text style={[styles.rowTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.rowSubtitle, { color: colors.textSecondary }]} numberOfLines={2}>
+          {subtitle}
+        </Text>
       </View>
-      <View style={styles.settingsItemContent}>
-        <Text style={[styles.settingsItemTitle, { color: colors.text }]}>{title}</Text>
-        {subtitle && (
-          <Text style={[styles.settingsItemSubtitle, { color: colors.textSecondary }]}>
-            {subtitle}
-          </Text>
-        )}
-      </View>
-      {showArrow && (
-        <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
-      )}
     </Pressable>
-  );
-}
-
-function SettingsSection({
-  title,
-  children,
-}: {
-  title?: string;
-  children: React.ReactNode;
-}) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
-
-  return (
-    <View style={styles.section}>
-      {title && (
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{title}</Text>
-      )}
-      <View style={[styles.sectionContent, { backgroundColor: colors.cardBackground }]}>
-        {children}
-      </View>
-    </View>
   );
 }
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
+
+  const go = (path: string) => () => router.push(path as any);
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.backgroundSecondary }]}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}>
-      {/* Account Settings */}
-      <SettingsSection>
-        <SettingsItem
-          icon="person.fill"
-          iconColor="#5856D6"
-          title="Account"
-          subtitle="Privacy, security, change number"
-        />
-      </SettingsSection>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + 8, backgroundColor: colors.background },
+        ]}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
+        <Pressable hitSlop={10} style={styles.headerBtn} onPress={() => {}}>
+          <Ionicons name="search" size={22} color={colors.text} />
+        </Pressable>
+      </View>
 
-      {/* App Settings */}
-      <SettingsSection>
-        <SettingsItem
-          icon="message.fill"
-          iconColor="#34C759"
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 40, paddingTop: 4 }}>
+        <SettingsRow
+          icon="person-add-outline"
+          title="Invite a friend"
+          subtitle="Invite people to chat on WhatsApp"
+          onPress={go('/settings/invite')}
+        />
+        <SettingsRow
+          icon="key-outline"
+          title="Account"
+          subtitle="Security notifications, change number"
+          onPress={go('/settings/account')}
+        />
+        <SettingsRow
+          icon="lock-closed-outline"
+          title="Privacy"
+          subtitle="Blocked accounts, disappearing messages"
+          onPress={go('/settings/privacy')}
+        />
+        <SettingsRow
+          icon="albums-outline"
+          title="Lists"
+          subtitle="Manage people and groups"
+          onPress={go('/settings/lists')}
+        />
+        <SettingsRow
+          icon="chatbubble-outline"
           title="Chats"
           subtitle="Theme, wallpapers, chat history"
+          onPress={go('/settings/chats')}
         />
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <SettingsItem
-          icon="phone.fill"
-          iconColor="#FF9500"
+        <SettingsRow
+          icon="megaphone-outline"
+          title="Broadcasts"
+          subtitle="Manage lists and send broadcasts"
+          onPress={go('/settings/broadcasts')}
+        />
+        <SettingsRow
+          icon="notifications-outline"
           title="Notifications"
           subtitle="Message, group & call tones"
+          onPress={go('/settings/notifications')}
         />
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <SettingsItem
-          icon="photo"
-          iconColor="#007AFF"
-          title="Storage and Data"
+        <SettingsRow
+          icon="sync-circle-outline"
+          title="Storage and data"
           subtitle="Network usage, auto-download"
+          onPress={go('/settings/storage')}
         />
-      </SettingsSection>
-
-      {/* Help & Info */}
-      <SettingsSection>
-        <SettingsItem
-          icon="doc.fill"
-          iconColor="#FF3B30"
-          title="Help"
+        <SettingsRow
+          icon="accessibility-outline"
+          title="Accessibility"
+          subtitle="Increase contrast, animation"
+          onPress={go('/settings/accessibility')}
+        />
+        <SettingsRow
+          icon="globe-outline"
+          title="App language"
+          subtitle="English (device's language)"
+          onPress={go('/settings/language')}
+        />
+        <SettingsRow
+          icon="help-circle-outline"
+          title="Help and feedback"
           subtitle="Help center, contact us, privacy policy"
+          onPress={go('/settings/help')}
         />
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <SettingsItem
-          icon="person.2.fill"
-          iconColor="#007AFF"
-          title="Invite a Friend"
-          showArrow={false}
-        />
-      </SettingsSection>
 
-      {/* App Info */}
-      <View style={styles.appInfo}>
-        <Text style={[styles.appName, { color: colors.textSecondary }]}>WhatsApp</Text>
-        <Text style={[styles.appVersion, { color: colors.textSecondary }]}>
-          Version 1.0.0
-        </Text>
-      </View>
-    </ScrollView>
+        <View style={styles.appInfo}>
+          <Text style={[styles.appVersion, { color: colors.textSecondary }]}>
+            from Meta
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    paddingVertical: 20,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginHorizontal: 16,
-    marginBottom: 8,
-  },
-  sectionContent: {
-    marginHorizontal: 0,
-  },
-  settingsItem: {
+  container: { flex: 1 },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingBottom: 14,
   },
-  iconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    justifyContent: 'center',
+  headerTitle: {
+    flex: 1,
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  headerBtn: {
+    width: 40,
+    height: 40,
     alignItems: 'center',
-    marginRight: 14,
+    justifyContent: 'center',
   },
-  settingsItemContent: {
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  rowIcon: {
+    width: 28,
+    marginRight: 22,
+    textAlign: 'center',
+  },
+  rowBody: {
     flex: 1,
   },
-  settingsItemTitle: {
-    fontSize: 16,
+  rowTitle: {
+    fontSize: 17,
     fontWeight: '500',
   },
-  settingsItemSubtitle: {
+  rowSubtitle: {
     fontSize: 13,
-    marginTop: 2,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: 62,
+    marginTop: 3,
+    lineHeight: 18,
   },
   appInfo: {
     alignItems: 'center',
-    marginTop: 20,
-    paddingBottom: 40,
-  },
-  appName: {
-    fontSize: 14,
-    fontWeight: '600',
+    paddingTop: 30,
+    paddingBottom: 10,
   },
   appVersion: {
     fontSize: 12,
-    marginTop: 4,
   },
 });

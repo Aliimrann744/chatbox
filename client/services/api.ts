@@ -147,7 +147,7 @@ async function refreshToken(): Promise<boolean> {
 
 // Auth API
 export const authApi = {
-  async sendOtp(data: { phone?: string; countryCode?: string; email?: string }) {
+  async sendOtp(data: { phone?: string; countryCode?: string; email?: string; fcmToken?: string }) {
     return request<{ message: string; otp?: string; }>('/auth/send-otp', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -273,6 +273,10 @@ export const authApi = {
       throw { message: result.message || 'Failed to update profile', ...result };
     }
     return result as User;
+  },
+
+  async removeAvatar() {
+    return request<User>('/auth/avatar', { method: 'DELETE' });
   },
 };
 

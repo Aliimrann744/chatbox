@@ -118,7 +118,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const sendOtp = useCallback(async (params: { phone?: string; countryCode?: string; email?: string }) => {
-    await authApi.sendOtp(params);
+    // For phone-based OTP we deliver the code via FCM push, so attach the
+    // device's current FCM token to the request. The server requires it.
+    let fcmToken: string | undefined;
+    if (params.phone) {
+      try {
+        const messagingModule = require('@react-native-firebase/messaging').default;
+        const messaging = messagingModule();
+        const authStatus = await messaging.requestPermission();
+        const enabled =
+          authStatus === 1 /* AUTHORIZED */ ||
+          authStatus === 2 /* PROVISIONAL */;
+        if (enabled) {
+          fcmToken = await messaging.getToken();
+        }
+      } catch (err) {
+        // Fall through — server will reject with a clear message if fcmToken is missing.
+        console.warn('[auth] Could not obtain FCM token:', err);
+      }
+    }
+    await authApi.sendOtp({ ...params, fcmToken });
   }, []);
 
   const verifyOtp = useCallback(async (params: { phone?: string; email?: string }, otp: string) => {

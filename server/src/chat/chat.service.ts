@@ -693,7 +693,9 @@ export class ChatService {
   }
 
   async setUserOnline(userId: string, isOnline: boolean) {
-    await this.prisma.user.update({
+    // updateMany() silently matches 0 rows if the user was deleted while their
+    // socket was still connected, avoiding a noisy "No record was found" throw.
+    await this.prisma.user.updateMany({
       where: { id: userId },
       data: {
         isOnline,

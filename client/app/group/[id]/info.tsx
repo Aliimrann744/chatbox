@@ -1,7 +1,9 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/ui/avatar';
@@ -10,8 +12,8 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/auth-context';
 import { contactApi, groupApi, uploadApi, Contact, GroupChat, GroupMember } from '@/services/api';
-import { pickImage } from '@/utils/media-picker';
 import { getInitials } from '@/utils/helpers';
+import { setAvatarEditorCallback } from '@/app/avatar-editor';
 
 function resolveMemberDisplayName(member: GroupMember, contactsById: Record<string, Contact>, myId?: string): string {
   if (member.userId === myId) return 'You';
@@ -35,6 +37,7 @@ export default function GroupInfoScreen() {
   const [busy, setBusy] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+  const [avatarSheetVisible, setAvatarSheetVisible] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -79,17 +82,24 @@ export default function GroupInfoScreen() {
     !!myMembership &&
     (group?.addMembersRole === 'ALL_MEMBERS' || amAdmin);
 
-  const handleChangeAvatar = async () => {
-    if (!group || !canEditInfo) {
-      if (!canEditInfo) Alert.alert('Not allowed', 'Only admins can change the group icon.');
+  const openAvatarSheet = () => {
+    if (!group) return;
+    if (!canEditInfo) {
+      Alert.alert('Not allowed', 'Only admins can change the group icon.');
       return;
     }
+    setAvatarSheetVisible(true);
+  };
+
+  const uploadGroupAvatarFromUri = async (uri: string) => {
+    if (!group) return;
+    setBusy(true);
     try {
-      const picked = await pickImage();
-      if (!picked) return;
-      setBusy(true);
+      const ext = (uri.split('.').pop() || 'jpg').toLowerCase().split('?')[0];
+      const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      const safeExt = ['png', 'webp'].includes(ext) ? ext : 'jpg';
       const uploaded = await uploadApi.uploadFile(
-        { uri: picked.uri, type: picked.mimeType, name: picked.name },
+        { uri, type, name: `group-avatar.${safeExt}` },
         'group-avatars',
       );
       const updated = await groupApi.updateGroup(group.id, { avatar: uploaded.url });
@@ -99,6 +109,68 @@ export default function GroupInfoScreen() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const openAvatarEditorWithUri = (uri: string) => {
+    setAvatarEditorCallback((finalUri) => {
+      uploadGroupAvatarFromUri(finalUri);
+    });
+    router.push({ pathname: '/avatar-editor', params: { uri } });
+  };
+
+  const handleOpenCamera = async () => {
+    setAvatarSheetVisible(false);
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission required', 'Camera permission is needed to take a photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    openAvatarEditorWithUri(result.assets[0].uri);
+  };
+
+  const handleOpenGallery = async () => {
+    setAvatarSheetVisible(false);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    openAvatarEditorWithUri(result.assets[0].uri);
+  };
+
+  const handleDeleteGroupAvatar = () => {
+    if (!group) return;
+    Alert.alert(
+      'Remove group icon',
+      'Are you sure you want to remove the group icon?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setAvatarSheetVisible(false);
+            setBusy(true);
+            try {
+              // Server treats `avatar: ''` as "no icon" (falsy in UI).
+              const updated = await groupApi.updateGroup(group.id, { avatar: '' });
+              setGroup(updated);
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Failed to remove icon.');
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleSaveName = async () => {
@@ -260,7 +332,7 @@ export default function GroupInfoScreen() {
           <View>
             {/* Avatar + name */}
             <View style={[styles.profileSection, { backgroundColor: colors.background }]}>
-              <Pressable onPress={handleChangeAvatar} disabled={busy} style={styles.avatarWrap}>
+              <Pressable onPress={openAvatarSheet} disabled={busy} style={styles.avatarWrap}>
                 {group.avatar ? (
                   <Image source={{ uri: group.avatar }} style={styles.avatarImg} contentFit="cover" />
                 ) : (
@@ -270,12 +342,26 @@ export default function GroupInfoScreen() {
                     </Text>
                   </View>
                 )}
-                {canEditInfo && (
-                  <View style={[styles.cameraBadge, { backgroundColor: colors.primary }]}>
-                    <IconSymbol name="camera.fill" size={14} color="#ffffff" />
+                {busy && (
+                  <View style={styles.avatarUploadingOverlay}>
+                    <ActivityIndicator size="small" color="#ffffff" />
                   </View>
                 )}
               </Pressable>
+
+              {canEditInfo && (
+                <Pressable
+                  onPress={openAvatarSheet}
+                  disabled={busy}
+                  style={({ pressed }) => [
+                    styles.editAvatarPill,
+                    { backgroundColor: pressed ? colors.backgroundSecondary : 'transparent' },
+                    busy && { opacity: 0.5 },
+                  ]}>
+                  <Ionicons name="pencil-outline" size={14} color={colors.primary} />
+                  <Text style={[styles.editAvatarText, { color: colors.primary }]}>Edit</Text>
+                </Pressable>
+              )}
 
               {editingName ? (
                 <View style={styles.nameEditRow}>
@@ -406,6 +492,62 @@ export default function GroupInfoScreen() {
           </View>
         }
       />
+
+      {/* Group icon action sheet */}
+      <Modal
+        visible={avatarSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAvatarSheetVisible(false)}>
+        <Pressable
+          style={styles.sheetBackdrop}
+          onPress={() => setAvatarSheetVisible(false)}>
+          <Pressable
+            style={[styles.sheet, { backgroundColor: colors.background }]}
+            onPress={() => {}}>
+            <View style={styles.sheetHeader}>
+              <Pressable
+                onPress={() => setAvatarSheetVisible(false)}
+                hitSlop={10}
+                style={styles.sheetIconBtn}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </Pressable>
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>
+                Group icon
+              </Text>
+              {group.avatar ? (
+                <Pressable
+                  onPress={handleDeleteGroupAvatar}
+                  hitSlop={10}
+                  style={styles.sheetIconBtn}>
+                  <Ionicons name="trash-outline" size={22} color={colors.text} />
+                </Pressable>
+              ) : (
+                <View style={styles.sheetIconBtn} />
+              )}
+            </View>
+
+            <View style={styles.sheetOptions}>
+              <Pressable
+                onPress={handleOpenCamera}
+                style={({ pressed }) => [styles.sheetOption, pressed && { opacity: 0.7 }]}>
+                <View style={[styles.sheetOptionIcon, { backgroundColor: colors.backgroundSecondary }]}>
+                  <Ionicons name="camera-outline" size={26} color={colors.primary} />
+                </View>
+                <Text style={[styles.sheetOptionLabel, { color: colors.text }]}>Camera</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleOpenGallery}
+                style={({ pressed }) => [styles.sheetOption, pressed && { opacity: 0.7 }]}>
+                <View style={[styles.sheetOptionIcon, { backgroundColor: colors.backgroundSecondary }]}>
+                  <Ionicons name="image-outline" size={26} color={colors.primary} />
+                </View>
+                <Text style={[styles.sheetOptionLabel, { color: colors.text }]}>Gallery</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -432,17 +574,77 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarInitials: { fontSize: 44, fontWeight: '600' },
-  cameraBadge: {
-    position: 'absolute',
-    right: 4,
-    bottom: 4,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  avatarUploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 60,
+    backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#ffffff',
+  },
+  editAvatarPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  editAvatarText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  sheetBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  sheet: {
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 32,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  sheetIconBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sheetTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  sheetOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 8,
+  },
+  sheetOption: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+  },
+  sheetOptionIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sheetOptionLabel: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   nameDisplay: {
     flexDirection: 'row',

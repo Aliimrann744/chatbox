@@ -193,8 +193,27 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen name="archived-chats" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/invite" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/account" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/privacy" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/lists" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/chats" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/broadcasts" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/notifications" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/storage" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/accessibility" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/language" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/help" options={{ headerShown: false }} />
         <Stack.Screen
           name="image-editor"
+          options={{
+            headerShown: false,
+            presentation: 'fullScreenModal',
+            animation: 'fade',
+          }}
+        />
+        <Stack.Screen
+          name="avatar-editor"
           options={{
             headerShown: false,
             presentation: 'fullScreenModal',

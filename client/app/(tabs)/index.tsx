@@ -591,8 +591,11 @@ export default function ChatsScreen() {
       case 'read-all':
         handleMarkAllRead();
         break;
-      case 'settings':
+      case 'profile':
         router.push('/(tabs)/profile');
+        break;
+      case 'settings':
+        router.push('/(tabs)/settings');
         break;
       case 'linked-devices':
       case 'switch-account':
@@ -799,6 +802,9 @@ export default function ChatsScreen() {
             </Pressable>
             <Pressable style={styles.menuItem} onPress={() => handleMenuOption('read-all')}>
               <Text style={[styles.menuItemText, { color: colors.text }]}>Read all</Text>
+            </Pressable>
+            <Pressable style={styles.menuItem} onPress={() => handleMenuOption('profile')}>
+              <Text style={[styles.menuItemText, { color: colors.text }]}>Profile</Text>
             </Pressable>
             <Pressable style={styles.menuItem} onPress={() => handleMenuOption('settings')}>
               <Text style={[styles.menuItemText, { color: colors.text }]}>Settings</Text>

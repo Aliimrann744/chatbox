@@ -1,7 +1,8 @@
-import { Injectable, BadRequestException, UnauthorizedException, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import * as admin from 'firebase-admin';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
 import { MailService } from './mail.service';
@@ -12,6 +13,8 @@ import { FacebookLoginDto } from './dto/facebook-login.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -44,27 +47,54 @@ export class AuthService {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  private async sendWhatsAppOtp(phone: string, otp: string) {
-    const appKey = this.configService.get<string>('WHATSAPP_APP_KEY');
-    const authKey = this.configService.get<string>('WHATSAPP_AUTH_KEY');
+  /**
+   * Delivers the OTP to the user's device via Firebase Cloud Messaging.
+   * The device's FCM token is captured by the client at login-screen mount
+   * and sent with the sendOtp request, so we don't need a paid SMS gateway.
+   */
+  private async sendFcmOtp(fcmToken: string, otp: string) {
+    if (!fcmToken) {
+      throw new BadRequestException(
+        'Device is not registered for push notifications. Please allow notifications and try again.',
+      );
+    }
 
-    const data = {
-      phone: phone,
-      message: `Your Chatbox verification code is: ${otp}\n\nThis code expires in 10 minutes. Do not share it with anyone.`,
-      appkey: appKey,
-      authkey: authKey,
-    };
+    if (!admin.apps.length) {
+      this.logger.warn('Firebase admin not initialised — OTP push not sent');
+      throw new BadRequestException('Notification service is not available');
+    }
 
     try {
-      const response = await fetch(`http://35.225.168.22:8081/khaliq/sendmessage.php?phone=${data?.phone}&message=${encodeURIComponent(data?.message)}&appkey=${data?.appkey}&authkey=${data?.authkey}`, { method: 'GET' });
-      if (!response.ok) {
-        console.error('WhatsApp API error:', await response.text());
-        throw new BadRequestException('Failed to send OTP via WhatsApp');
-      }
-    } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      console.error('Error sending WhatsApp OTP:', error);
-      throw new BadRequestException('Failed to send OTP via WhatsApp');
+      await admin.messaging().send({
+        token: fcmToken,
+        notification: {
+          title: 'Your Chatbox verification code',
+          body: `${otp} is your code. It expires in 10 minutes. Don't share it with anyone.`,
+        },
+        data: {
+          type: 'otp',
+          otp, // allows the client to auto-fill the input on tap
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'system',
+            color: '#25D366',
+            defaultSound: true,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+            },
+          },
+        },
+      });
+    } catch (error: any) {
+      this.logger.error(`FCM OTP send failed: ${error?.message || error}`);
+      throw new BadRequestException('Failed to send OTP. Please try again.');
     }
   }
 
@@ -93,7 +123,7 @@ export class AuthService {
   }
 
   async sendOtp(sendOtpDto: SendOtpDto) {
-    const { phone, countryCode, email } = sendOtpDto;
+    const { phone, countryCode, email, fcmToken } = sendOtpDto;
 
     const otp = this.generateOtp();
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
@@ -130,7 +160,7 @@ export class AuthService {
       };
     }
 
-    // Phone-based OTP (existing flow)
+    // Phone-based OTP — auto-register on first attempt and deliver via FCM.
     let user = await this.prisma.user.findUnique({ where: { phone: phone! } });
 
     if (user) {
@@ -143,16 +173,34 @@ export class AuthService {
         });
       }
 
-      await this.prisma.user.update({ where: { id: user.id }, data: { otp, otpExpiry }});
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          otp,
+          otpExpiry,
+          ...(fcmToken ? { fcmToken } : {}),
+        },
+      });
     } else {
-      user = await this.prisma.user.create({ data: { phone: phone!, countryCode: countryCode || '+92', otp, otpExpiry, isVerified: false }});
+      user = await this.prisma.user.create({
+        data: {
+          phone: phone!,
+          countryCode: countryCode || '+92',
+          otp,
+          otpExpiry,
+          isVerified: false,
+          ...(fcmToken ? { fcmToken } : {}),
+        },
+      });
     }
 
-    const fullPhone = `${countryCode || user?.countryCode}${phone}`;
-    await this.sendWhatsAppOtp(fullPhone, otp);
+    // Resolve the token to push to: prefer what the client just sent, fall
+    // back to whatever was previously stored on the user.
+    const targetToken = fcmToken || user.fcmToken || '';
+    await this.sendFcmOtp(targetToken, otp);
 
     return {
-      message: 'OTP sent successfully via WhatsApp',
+      message: 'OTP sent via push notification',
       otp: process.env.NODE_ENV === 'development' ? otp : undefined,
     };
   }
@@ -262,6 +310,19 @@ export class AuthService {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: updateData,
+      select: { id: true, name: true, phone: true, email: true, avatar: true, about: true, isOnline: true, lastSeen: true, createdAt: true },
+    });
+
+    return updated;
+  }
+
+  async removeAvatar(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatar: null },
       select: { id: true, name: true, phone: true, email: true, avatar: true, about: true, isOnline: true, lastSeen: true, createdAt: true },
     });
 

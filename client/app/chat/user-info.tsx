@@ -1,9 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  ActivityIndicator, Alert, Dimensions, FlatList, Modal, Pressable,
-  ScrollView, StyleSheet, Switch, Text, TextInput, View,
-} from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, FlatList, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -49,9 +46,15 @@ export default function UserInfoScreen() {
 
   // Derive user info from chat
   const otherMember = chat?.members?.find(m => m.user.id !== currentUser?.id);
-  const otherUser = otherMember ? (otherMember.user as typeof otherMember.user & { about?: string; phone?: string; email?: string }) : undefined;
+  const otherUser = otherMember ? (otherMember.user as typeof otherMember.user & { about?: string; phone?: string; countryCode?: string; email?: string }) : undefined;
   const userName = otherUser?.name || chat?.name || 'User';
   const userAvatar = otherUser?.avatar || chat?.avatar;
+  const userPhone = otherUser?.phone
+    ? `${otherUser.countryCode || ''}${otherUser.phone}`.trim()
+    : '';
+  console.log("otherUser", otherUser?.phone);
+  console.log("chat0", chat?.members[0]?.user);
+  console.log("chat1", chat?.members[1]?.user);
 
   const fetchData = useCallback(async () => {
     if (!chatId) return;
@@ -312,6 +315,9 @@ export default function UserInfoScreen() {
             )}
           </Pressable>
           <Text style={[styles.userName, { color: colors.text }]}>{userName}</Text>
+          {userPhone ? (
+            <Text style={[styles.userPhone, { color: colors.textSecondary }]}>{userPhone}</Text>
+          ) : null}
           {otherUser?.about && (
             <Text style={[styles.userAbout, { color: colors.textSecondary }]}>{otherUser.about}</Text>
           )}
@@ -579,6 +585,11 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '600',
     marginTop: 12,
+  },
+  userPhone: {
+    fontSize: 15,
+    marginTop: 4,
+    letterSpacing: 0.2,
   },
   userAbout: {
     fontSize: 14,

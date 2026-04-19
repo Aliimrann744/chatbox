@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Put,
+  Delete,
   Body,
   Get,
   UseGuards,
@@ -94,5 +95,12 @@ export class AuthController {
     @UploadedFile() file?: Express.Multer.File,
   ) {
     return this.authService.updateProfile(req.user.id, body, file);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('avatar')
+  @HttpCode(HttpStatus.OK)
+  async removeAvatar(@Request() req) {
+    return this.authService.removeAvatar(req.user.id);
   }
 }

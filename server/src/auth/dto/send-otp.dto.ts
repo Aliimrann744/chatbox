@@ -14,4 +14,10 @@ export class SendOtpDto {
   @IsEmail()
   @IsNotEmpty()
   email?: string;
+
+  // Device FCM token — required for phone OTP delivery so we can push the
+  // code to the device via Firebase Cloud Messaging (no SMS gateway needed).
+  @IsString()
+  @IsOptional()
+  fcmToken?: string;
 }

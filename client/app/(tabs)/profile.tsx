@@ -1,24 +1,15 @@
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { authApi } from '@/services/api';
+import { setAvatarEditorCallback } from '@/app/avatar-editor';
 
 interface ProfileItemProps {
   icon: IconSymbolName;
@@ -32,14 +23,7 @@ function ProfileItem({ icon, title, value, onPress }: ProfileItemProps) {
   const colors = Colors[colorScheme];
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.profileItem,
-        {
-          backgroundColor: pressed && onPress ? colors.backgroundSecondary : colors.background,
-        },
-      ]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [ styles.profileItem, { backgroundColor: pressed && onPress ? colors.backgroundSecondary : colors.background }]}>
       <IconSymbol name={icon} size={22} color="#ffffff" style={styles.itemIcon} />
       <View style={styles.itemContent}>
         <Text style={[styles.itemTitle, { color: colors.textSecondary }]}>{title}</Text>
@@ -67,6 +51,7 @@ export default function ProfileScreen() {
   const [editValue, setEditValue] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarSheetVisible, setAvatarSheetVisible] = useState(false);
 
   const displayUser = user || {
     name: 'Guest User',
@@ -89,22 +74,14 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const handlePickAvatar = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (result.canceled || !result.assets[0]) return;
-
+  const uploadAvatarFromUri = async (uri: string) => {
     setIsUploadingAvatar(true);
     try {
-      const asset = result.assets[0];
-      const ext = asset.uri.split('.').pop() || 'jpg';
+      const ext = (uri.split('.').pop() || 'jpg').toLowerCase().split('?')[0];
+      const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      const safeExt = ['png', 'webp'].includes(ext) ? ext : 'jpg';
       await authApi.updateProfile({
-        avatar: { uri: asset.uri, type: `image/${ext}`, name: `avatar.${ext}` },
+        avatar: { uri, type, name: `avatar.${safeExt}` },
       });
       await refreshUser();
     } catch (error: any) {
@@ -112,6 +89,71 @@ export default function ProfileScreen() {
     } finally {
       setIsUploadingAvatar(false);
     }
+  };
+
+  // Hand the picked/captured image off to the avatar editor screen. Upload
+  // happens only when the user taps "send" in the editor, so opening the
+  // camera/gallery no longer auto-uploads on the native crop "Done" action.
+  const openAvatarEditor = (uri: string) => {
+    setAvatarEditorCallback((finalUri) => {
+      uploadAvatarFromUri(finalUri);
+    });
+    router.push({ pathname: '/avatar-editor', params: { uri } });
+  };
+
+  const handleOpenCamera = async () => {
+    setAvatarSheetVisible(false);
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission required', 'Camera permission is needed to take a photo.');
+      return;
+    }
+    // Don't invoke the OS crop editor — the custom avatar editor screen
+    // handles cropping inline via pan+pinch, all on one page.
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    openAvatarEditor(result.assets[0].uri);
+  };
+
+  const handleOpenGallery = async () => {
+    setAvatarSheetVisible(false);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    openAvatarEditor(result.assets[0].uri);
+  };
+
+  const handleDeleteAvatar = () => {
+    Alert.alert(
+      'Remove profile photo',
+      'Are you sure you want to remove your profile photo?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setAvatarSheetVisible(false);
+            setIsUploadingAvatar(true);
+            try {
+              await authApi.removeAvatar();
+              await refreshUser();
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to remove photo');
+            } finally {
+              setIsUploadingAvatar(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const openEditModal = (field: 'name' | 'about') => {
@@ -153,17 +195,25 @@ export default function ProfileScreen() {
               <Text style={styles.initialsText}>{getInitials(displayUser.name)}</Text>
             </View>
           )}
-          <Pressable
-            onPress={handlePickAvatar}
-            disabled={isUploadingAvatar}
-            style={[styles.editAvatarButton, { backgroundColor: colors.primary }]}>
-            {isUploadingAvatar ? (
-              <ActivityIndicator size={14} color="#ffffff" />
-            ) : (
-              <IconSymbol name="camera.fill" size={16} color="#ffffff" />
-            )}
-          </Pressable>
+          {isUploadingAvatar && (
+            <View style={styles.avatarUploadingOverlay}>
+              <ActivityIndicator size="small" color="#ffffff" />
+            </View>
+          )}
         </View>
+
+        <Pressable
+          onPress={() => setAvatarSheetVisible(true)}
+          disabled={isUploadingAvatar}
+          style={({ pressed }) => [
+            styles.editAvatarPill,
+            { backgroundColor: pressed ? colors.backgroundSecondary : 'transparent' },
+            isUploadingAvatar && { opacity: 0.5 },
+          ]}>
+          <Ionicons name="pencil-outline" size={14} color={colors.primary} />
+          <Text style={[styles.editAvatarText, { color: colors.primary }]}>Edit</Text>
+        </Pressable>
+
         <Text style={[styles.name, { color: colors.text }]}>{displayUser.name}</Text>
         <Text style={[styles.status, { color: colors.textSecondary }]}>
           {displayUser.about}
@@ -251,6 +301,81 @@ export default function ProfileScreen() {
         </Text>
       </View>
 
+      {/* Profile picture action sheet */}
+      <Modal
+        visible={avatarSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAvatarSheetVisible(false)}>
+        <Pressable
+          style={styles.sheetBackdrop}
+          onPress={() => setAvatarSheetVisible(false)}>
+          <Pressable
+            style={[styles.sheet, { backgroundColor: colors.background }]}
+            onPress={() => {}}>
+            <View style={styles.sheetHeader}>
+              <Pressable
+                onPress={() => setAvatarSheetVisible(false)}
+                hitSlop={10}
+                style={styles.sheetIconBtn}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </Pressable>
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>
+                Profile picture
+              </Text>
+              {displayUser.avatar ? (
+                <Pressable
+                  onPress={handleDeleteAvatar}
+                  hitSlop={10}
+                  style={styles.sheetIconBtn}>
+                  <Ionicons name="trash-outline" size={22} color={colors.text} />
+                </Pressable>
+              ) : (
+                <View style={styles.sheetIconBtn} />
+              )}
+            </View>
+
+            <View style={styles.sheetOptions}>
+              <Pressable
+                onPress={handleOpenCamera}
+                style={({ pressed }) => [
+                  styles.sheetOption,
+                  pressed && { opacity: 0.7 },
+                ]}>
+                <View
+                  style={[
+                    styles.sheetOptionIcon,
+                    { backgroundColor: colors.backgroundSecondary },
+                  ]}>
+                  <Ionicons name="camera-outline" size={26} color={colors.primary} />
+                </View>
+                <Text style={[styles.sheetOptionLabel, { color: colors.text }]}>
+                  Camera
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleOpenGallery}
+                style={({ pressed }) => [
+                  styles.sheetOption,
+                  pressed && { opacity: 0.7 },
+                ]}>
+                <View
+                  style={[
+                    styles.sheetOptionIcon,
+                    { backgroundColor: colors.backgroundSecondary },
+                  ]}>
+                  <Ionicons name="image-outline" size={26} color={colors.primary} />
+                </View>
+                <Text style={[styles.sheetOptionLabel, { color: colors.text }]}>
+                  Gallery
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Edit Modal */}
       <Modal visible={editModalVisible} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => !isSaving && setEditModalVisible(false)}>
@@ -323,17 +448,77 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
   },
-  editAvatarButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  avatarUploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 50,
+    backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#ffffff',
+  },
+  editAvatarPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  editAvatarText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  sheetBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  sheet: {
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 32,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  sheetIconBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sheetTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  sheetOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 8,
+  },
+  sheetOption: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+  },
+  sheetOptionIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sheetOptionLabel: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   name: {
     fontSize: 24,

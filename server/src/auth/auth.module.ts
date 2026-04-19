@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { MailService } from './mail.service';
+import { AuthCleanupService } from './auth-cleanup.service';
 import { UploadModule } from '../upload/upload.module';
 import { APP_GUARD } from '@nestjs/core';
 
@@ -29,6 +30,7 @@ import { APP_GUARD } from '@nestjs/core';
   providers: [
     AuthService,
     MailService,
+    AuthCleanupService,
     JwtStrategy,
     {
       provide: APP_GUARD,

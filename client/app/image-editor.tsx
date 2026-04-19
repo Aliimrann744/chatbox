@@ -92,6 +92,20 @@ export default function ImageEditorScreen() {
     }
   }, [imageUri]);
 
+  const handleFlip = useCallback(async () => {
+    if (!imageUri) return;
+    try {
+      const result = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [{ flip: ImageManipulator.FlipType.Horizontal }],
+        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      setImageUri(result.uri);
+    } catch (err) {
+      console.error('Flip error:', err);
+    }
+  }, [imageUri]);
+
   const handleSend = useCallback(() => {
     if (!imageUri) return;
     if (_onEditorDone) {
@@ -110,11 +124,14 @@ export default function ImageEditorScreen() {
           <Ionicons name="close" size={28} color="#fff" />
         </Pressable>
         <View style={styles.topBarRight}>
-          <Pressable onPress={handleCrop} hitSlop={8} style={styles.topBarBtn} disabled={isCropping}>
-            <Ionicons name="crop" size={24} color="#fff" />
-          </Pressable>
           <Pressable onPress={handleRotate} hitSlop={8} style={styles.topBarBtn}>
             <Ionicons name="refresh" size={22} color="#fff" />
+          </Pressable>
+          <Pressable onPress={handleFlip} hitSlop={8} style={styles.topBarBtn}>
+            <Ionicons name="swap-horizontal" size={24} color="#fff" />
+          </Pressable>
+          <Pressable onPress={handleCrop} hitSlop={8} style={styles.topBarBtn} disabled={isCropping}>
+            <Ionicons name="crop" size={24} color="#fff" />
           </Pressable>
         </View>
       </View>

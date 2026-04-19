@@ -670,13 +670,7 @@ function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall, onUserInfoPre
             {chat?.name || 'User'}
           </Text>
           {statusText ? (
-            <Text
-              style={[
-                styles.headerStatus,
-                { color: isTyping ? '#25D366' : 'rgba(255, 255, 255, 0.7)' },
-              ]}
-              numberOfLines={1}
-            >
+            <Text style={[styles.headerStatus, { color: isTyping ? '#25D366' : 'rgba(255, 255, 255, 0.7)' }]} numberOfLines={1}>
               {statusText}
             </Text>
           ) : null}
@@ -2486,6 +2480,34 @@ export default function ChatDetailScreen() {
               <Text style={styles.mediaCarouselCounter}>
                 {pendingMediaIndex + 1} / {pendingMediaList.length}
               </Text>
+              {pendingMediaList[pendingMediaIndex]?.type === 'image' ? (
+                <Pressable
+                  onPress={() => {
+                    const currentIdx = pendingMediaIndex;
+                    const current = pendingMediaList[currentIdx];
+                    if (!current) return;
+                    const recipientName = otherUser?.name || chat?.name || 'Recipient';
+                    // The editor writes the edited URI back into this
+                    // carousel slot; caption is ignored here because the
+                    // carousel doesn't wire per-image captions.
+                    setImageEditorCallback((editedUri: string, _caption: string) => {
+                      setPendingMediaList((prev) =>
+                        prev.map((m, i) => (i === currentIdx ? { ...m, uri: editedUri } : m)),
+                      );
+                    });
+                    router.push({
+                      pathname: '/image-editor',
+                      params: { uri: current.uri, recipient: recipientName },
+                    });
+                  }}
+                  hitSlop={10}
+                  style={styles.imagePreviewIconBtn}
+                  accessibilityLabel="Edit image">
+                  <Ionicons name="create-outline" size={22} color="#ffffff" />
+                </Pressable>
+              ) : (
+                <View style={styles.imagePreviewIconBtn} />
+              )}
             </View>
 
             <View style={styles.mediaCarouselContent}>

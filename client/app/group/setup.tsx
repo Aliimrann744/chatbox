@@ -229,13 +229,7 @@ export default function NewGroupSetupScreen() {
   );
 }
 
-function PermissionRow({
-  title,
-  description,
-  value,
-  onChange,
-  colors,
-}: {
+function PermissionRow({ title, description, value, onChange, colors }: {
   title: string;
   description: string;
   value: GroupPermissionRole;
