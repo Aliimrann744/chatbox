@@ -123,18 +123,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let fcmToken: string | undefined;
     if (params.phone) {
       try {
-        const messagingModule = require('@react-native-firebase/messaging').default;
-        const messaging = messagingModule();
-        const authStatus = await messaging.requestPermission();
-        const enabled =
-          authStatus === 1 /* AUTHORIZED */ ||
-          authStatus === 2 /* PROVISIONAL */;
-        if (enabled) {
-          fcmToken = await messaging.getToken();
+        const {
+          getMessaging,
+          requestPermission,
+          getToken,
+        } = require('@react-native-firebase/messaging');
+        const messaging = getMessaging();
+        // On Android 13+ this triggers the POST_NOTIFICATIONS runtime prompt
+        // IF the permission is declared in app.config.ts.
+        const authStatus = await requestPermission(messaging);
+        const enabled = authStatus === 1 /* AUTHORIZED */ || authStatus === 2 /* PROVISIONAL */;
+        if (!enabled) {
+          throw new Error(
+            'Notification permission was not granted. Please enable notifications for this app and try again.',
+          );
         }
-      } catch (err) {
-        // Fall through — server will reject with a clear message if fcmToken is missing.
-        console.warn('[auth] Could not obtain FCM token:', err);
+        fcmToken = await getToken(messaging);
+        console.log('[auth] Got FCM token for OTP:', fcmToken?.slice(0, 12) + '…');
+      } catch (err: any) {
+        console.warn('[auth] Could not obtain FCM token:', err?.message || err);
+        throw new Error(
+          err?.message ||
+            'Could not register for notifications. Please allow notifications and try again.',
+        );
       }
     }
     await authApi.sendOtp({ ...params, fcmToken });

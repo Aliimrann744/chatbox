@@ -47,6 +47,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'VIBRATE',
       'RECEIVE_BOOT_COMPLETED',
       'WAKE_LOCK',
+      // Required so Android 13+ can prompt the user to allow push
+      // notifications — without this messaging().requestPermission()
+      // never actually asks, which breaks FCM OTP delivery.
+      'POST_NOTIFICATIONS',
     ],
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,

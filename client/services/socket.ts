@@ -73,6 +73,10 @@ class SocketService {
   // When a call is in progress, disconnect() preserves the call socket so a
   // screen lock or app backgrounding doesn't kill the call on the server.
   private callActive = false;
+  // Chat rooms the client currently wants to be subscribed to. Used to
+  // re-issue join_chat on every reconnect so group messages keep flowing
+  // even after a socket bounce.
+  private joinedChats = new Set<string>();
 
   setCallActive(active: boolean) {
     this.callActive = active;
@@ -157,6 +161,11 @@ class SocketService {
     this.chatSocket.on('connect', () => {
       console.log('Chat socket connected');
       this.emit('chat_connected', null);
+      // Re-subscribe to any chat rooms we had joined before the drop so
+      // server-side room membership is restored after reconnection.
+      for (const chatId of this.joinedChats) {
+        this.chatSocket?.emit('join_chat', { chatId });
+      }
     });
 
     this.chatSocket.on('disconnect', () => {
@@ -296,6 +305,16 @@ class SocketService {
     this.callSocket.on('call_resumed', (data) => {
       this.emit('call_resumed', data);
     });
+
+    // ── Group call relay events ─────────────────────────────────────────
+    this.callSocket.on('incoming_group_call', (data) => this.emit('incoming_group_call', data));
+    this.callSocket.on('group_call_participant_joined', (data) => this.emit('group_call_participant_joined', data));
+    this.callSocket.on('group_call_participant_left', (data) => this.emit('group_call_participant_left', data));
+    this.callSocket.on('group_call_participant_declined', (data) => this.emit('group_call_participant_declined', data));
+    this.callSocket.on('group_call_ended', (data) => this.emit('group_call_ended', data));
+    this.callSocket.on('group_call_offer', (data) => this.emit('group_call_offer', data));
+    this.callSocket.on('group_call_answer', (data) => this.emit('group_call_answer', data));
+    this.callSocket.on('group_call_ice_candidate', (data) => this.emit('group_call_ice_candidate', data));
   }
 
   // ==================== CHAT ACTIONS ====================
@@ -350,11 +369,13 @@ class SocketService {
   }
 
   joinChat(chatId: string) {
+    this.joinedChats.add(chatId);
     if (!this.chatSocket) return;
     this.chatSocket.emit('join_chat', { chatId });
   }
 
   leaveChat(chatId: string) {
+    this.joinedChats.delete(chatId);
     if (!this.chatSocket) return;
     this.chatSocket.emit('leave_chat', { chatId });
   }
@@ -500,6 +521,58 @@ class SocketService {
   sendIceCandidate(callId: string, candidate: any) {
     if (!this.callSocket) return;
     this.callSocket.emit('call_ice_candidate', { callId, candidate });
+  }
+
+  // ==================== GROUP CALL ACTIONS ====================
+
+  initiateGroupCall(chatId: string, type: 'VOICE' | 'VIDEO'): Promise<any> {
+    return new Promise((resolve) => {
+      if (!this.callSocket?.connected) {
+        this.callSocket?.connect();
+        setTimeout(() => {
+          if (!this.callSocket?.connected) return resolve({ success: false, error: 'Call socket not connected' });
+          this.callSocket.emit('group_call_initiate', { chatId, type }, resolve);
+        }, 1500);
+        return;
+      }
+      this.callSocket.emit('group_call_initiate', { chatId, type }, resolve);
+    });
+  }
+
+  acceptGroupCall(callId: string): Promise<any> {
+    return new Promise((resolve) => {
+      if (!this.callSocket) return resolve({ success: false, error: 'Not connected' });
+      this.callSocket.emit('group_call_accept', { callId }, resolve);
+    });
+  }
+
+  declineGroupCall(callId: string): Promise<any> {
+    return new Promise((resolve) => {
+      if (!this.callSocket) return resolve({ success: false, error: 'Not connected' });
+      this.callSocket.emit('group_call_decline', { callId }, resolve);
+    });
+  }
+
+  leaveGroupCall(callId: string): Promise<any> {
+    return new Promise((resolve) => {
+      if (!this.callSocket) return resolve({ success: false, error: 'Not connected' });
+      this.callSocket.emit('group_call_leave', { callId }, resolve);
+    });
+  }
+
+  sendGroupCallOffer(callId: string, targetUserId: string, offer: any) {
+    if (!this.callSocket) return;
+    this.callSocket.emit('group_call_offer', { callId, targetUserId, offer });
+  }
+
+  sendGroupCallAnswer(callId: string, targetUserId: string, answer: any) {
+    if (!this.callSocket) return;
+    this.callSocket.emit('group_call_answer', { callId, targetUserId, answer });
+  }
+
+  sendGroupCallIce(callId: string, targetUserId: string, candidate: any) {
+    if (!this.callSocket) return;
+    this.callSocket.emit('group_call_ice_candidate', { callId, targetUserId, candidate });
   }
 
   rejoinCall(callId: string): Promise<{ success: boolean; ended?: boolean; error?: string }> {

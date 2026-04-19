@@ -16,6 +16,17 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private connectedUsers = new Map<string, string>();
   private activeCalls = new Map<string, { callerId: string; receiverId: string }>();
+  // Group calls: callId → { chatId, callerId, type, participants:Set<userId of those who accepted> }
+  private activeGroupCalls = new Map<
+    string,
+    {
+      chatId: string;
+      callerId: string;
+      type: 'VOICE' | 'VIDEO';
+      participants: Set<string>;
+      invitedAt: number;
+    }
+  >();
   // Grace-period timers keyed by `${callId}:${userId}`. When a participant's
   // socket drops during an ANSWERED call (e.g. screen lock, transient network),
   // we wait before ending the call so they have time to reconnect.
@@ -526,5 +537,218 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   isUserOnline(userId: string): boolean {
     return this.connectedUsers.has(userId);
+  }
+
+  // ==================== GROUP CALLS ====================
+  //
+  // Mesh topology: the initiator asks the server who else is in the chat,
+  // server rings every member via their personal socket + FCM, each acceptor
+  // gets the ICE config back, and clients negotiate peer-to-peer offers with
+  // every other acceptor (targeted signaling with a `targetUserId` field).
+  //
+  // For tiny groups this is simpler and cheaper than an SFU. Scales cleanly
+  // to ~6 participants; beyond that you'd want a media server.
+
+  @SubscribeMessage('group_call_initiate')
+  async handleGroupCallInitiate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { chatId: string; type: 'VOICE' | 'VIDEO' },
+  ) {
+    const callerId = client.data.userId;
+    try {
+      const members = await this.chatService.getChatMembers(data.chatId);
+      const peerIds = members.map((m) => m.userId).filter((id) => id !== callerId);
+      if (peerIds.length === 0) {
+        return { success: false, error: 'No other members in this group' };
+      }
+
+      // Synthetic callId — not persisted to the 1:1 Call table since group
+      // calls are ephemeral. If you want a DB log, add a GroupCall model.
+      const callId = `gcall_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      this.activeGroupCalls.set(callId, {
+        chatId: data.chatId,
+        callerId,
+        type: data.type,
+        participants: new Set([callerId]),
+        invitedAt: Date.now(),
+      });
+
+      const caller = await this.notificationService.getUserWithDetails(callerId);
+      const chatInfo = await this.chatService.getChatBasicInfo(data.chatId);
+      const payload = {
+        callId,
+        chatId: data.chatId,
+        caller: { id: callerId, name: caller?.name, avatar: caller?.avatar },
+        groupName: chatInfo?.name || 'Group',
+        type: data.type,
+      };
+
+      // Ring every other member through their personal user room + FCM
+      for (const peerId of peerIds) {
+        const socketId = this.connectedUsers.get(peerId);
+        if (socketId) {
+          this.server.to(`user_${peerId}`).emit('incoming_group_call', payload);
+        }
+        // Always push — socket may be stale in background
+        this.notificationService.sendCallNotification(
+          peerId,
+          caller?.name || 'Group call',
+          caller?.avatar || null,
+          callId,
+          callerId,
+          data.type,
+        ).catch(() => {});
+      }
+
+      return { success: true, callId, iceServers: this.getIceServers(), peerIds };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to start group call' };
+    }
+  }
+
+  @SubscribeMessage('group_call_accept')
+  async handleGroupCallAccept(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { callId: string },
+  ) {
+    const userId = client.data.userId;
+    const call = this.activeGroupCalls.get(data.callId);
+    if (!call) return { success: false, error: 'Call no longer available' };
+
+    call.participants.add(userId);
+    const iceServers = this.getIceServers();
+
+    // Tell everyone already in the call that this user joined, so each
+    // existing participant can create an offer toward the newcomer.
+    for (const existingId of call.participants) {
+      if (existingId === userId) continue;
+      const sid = this.connectedUsers.get(existingId);
+      if (sid) {
+        this.server.to(`user_${existingId}`).emit('group_call_participant_joined', {
+          callId: data.callId,
+          userId,
+        });
+      }
+    }
+
+    // Let the joiner know the roster so they can prepare to receive offers
+    // (no action needed — they'll respond when offers arrive).
+    return {
+      success: true,
+      iceServers,
+      participants: Array.from(call.participants).filter((id) => id !== userId),
+      type: call.type,
+      chatId: call.chatId,
+    };
+  }
+
+  @SubscribeMessage('group_call_decline')
+  async handleGroupCallDecline(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { callId: string },
+  ) {
+    const userId = client.data.userId;
+    const call = this.activeGroupCalls.get(data.callId);
+    if (!call) return { success: true };
+    // Don't end the group call on decline — other members may still accept.
+    // Just inform the others that this person declined.
+    for (const pid of call.participants) {
+      if (pid === userId) continue;
+      const sid = this.connectedUsers.get(pid);
+      if (sid) {
+        this.server.to(`user_${pid}`).emit('group_call_participant_declined', {
+          callId: data.callId,
+          userId,
+        });
+      }
+    }
+    return { success: true };
+  }
+
+  @SubscribeMessage('group_call_leave')
+  async handleGroupCallLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { callId: string },
+  ) {
+    const userId = client.data.userId;
+    const call = this.activeGroupCalls.get(data.callId);
+    if (!call) return { success: true };
+
+    call.participants.delete(userId);
+
+    // Notify the rest
+    for (const pid of call.participants) {
+      const sid = this.connectedUsers.get(pid);
+      if (sid) {
+        this.server.to(`user_${pid}`).emit('group_call_participant_left', {
+          callId: data.callId,
+          userId,
+        });
+      }
+    }
+
+    // If <2 participants remain, tear down the group call entirely
+    if (call.participants.size < 2) {
+      for (const pid of call.participants) {
+        const sid = this.connectedUsers.get(pid);
+        if (sid) {
+          this.server.to(`user_${pid}`).emit('group_call_ended', { callId: data.callId });
+        }
+      }
+      this.activeGroupCalls.delete(data.callId);
+    }
+
+    return { success: true };
+  }
+
+  @SubscribeMessage('group_call_offer')
+  async handleGroupCallOffer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { callId: string; targetUserId: string; offer: any },
+  ) {
+    const fromId = client.data.userId;
+    const sid = this.connectedUsers.get(data.targetUserId);
+    if (sid) {
+      this.server.to(`user_${data.targetUserId}`).emit('group_call_offer', {
+        callId: data.callId,
+        fromUserId: fromId,
+        offer: data.offer,
+      });
+    }
+    return { success: !!sid };
+  }
+
+  @SubscribeMessage('group_call_answer')
+  async handleGroupCallAnswer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { callId: string; targetUserId: string; answer: any },
+  ) {
+    const fromId = client.data.userId;
+    const sid = this.connectedUsers.get(data.targetUserId);
+    if (sid) {
+      this.server.to(`user_${data.targetUserId}`).emit('group_call_answer', {
+        callId: data.callId,
+        fromUserId: fromId,
+        answer: data.answer,
+      });
+    }
+    return { success: !!sid };
+  }
+
+  @SubscribeMessage('group_call_ice_candidate')
+  async handleGroupCallIce(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { callId: string; targetUserId: string; candidate: any },
+  ) {
+    const fromId = client.data.userId;
+    const sid = this.connectedUsers.get(data.targetUserId);
+    if (sid) {
+      this.server.to(`user_${data.targetUserId}`).emit('group_call_ice_candidate', {
+        callId: data.callId,
+        fromUserId: fromId,
+        candidate: data.candidate,
+      });
+    }
+    return { success: !!sid };
   }
 }

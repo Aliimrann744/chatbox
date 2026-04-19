@@ -68,6 +68,46 @@ export async function addIceCandidate(pc: RTCPeerConnection, candidate: any): Pr
   await pc.addIceCandidate(new RTCIceCandidate(candidate));
 }
 
+/**
+ * Acquire a single local media stream for a mesh group call. Must be called
+ * once per local participant; the resulting stream is then shared across every
+ * peer connection via `attachStreamToPeer`.
+ */
+export async function acquireLocalStream(callType: CallType): Promise<MediaStream> {
+  return mediaDevices.getUserMedia({
+    audio: true,
+    video: callType === 'VIDEO' ? { facingMode: 'user' } : false,
+  });
+}
+
+/**
+ * Create a peer connection that re-uses an already-captured local stream.
+ * Designed for mesh group calls where one capture drives N peer connections.
+ */
+export function createPeerConnectionWithStream(
+  iceServers: any[],
+  localStream: MediaStream,
+  callbacks: PeerConnectionCallbacks,
+): RTCPeerConnection {
+  const pc = new RTCPeerConnection({ iceServers }) as any;
+
+  pc.onicecandidate = (event: any) => {
+    if (event.candidate) callbacks.onIceCandidate(event.candidate);
+  };
+  pc.ontrack = (event: any) => {
+    if (event.streams && event.streams[0]) callbacks.onRemoteStream(event.streams[0]);
+  };
+  pc.onaddstream = (event: any) => {
+    if (event.stream) callbacks.onRemoteStream(event.stream);
+  };
+  pc.onconnectionstatechange = () => {
+    callbacks.onConnectionStateChange(pc.connectionState);
+  };
+
+  localStream.getTracks().forEach((track: any) => pc.addTrack(track, localStream));
+  return pc;
+}
+
 export function closePeerConnection(pc: RTCPeerConnection | null, localStream: MediaStream | null): void {
   if (localStream) {
     localStream.getTracks().forEach((track: any) => track.stop());

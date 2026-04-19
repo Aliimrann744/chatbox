@@ -44,14 +44,36 @@ class NotificationService {
   private responseListener: Notifications.EventSubscription | null = null;
   private onMessageUnsubscribe: (() => void) | null = null;
   private onTokenRefreshUnsubscribe: (() => void) | null = null;
+  private preLoginReady = false;
 
-  // Initialize notifications
+  /**
+   * Runs on app boot — BEFORE login. Sets up Android notification channels
+   * and the foreground FCM handler so pre-auth pushes like OTP actually
+   * display. Does NOT touch the user-token endpoint (which requires auth).
+   * Idempotent.
+   */
+  async initializeBeforeLogin(): Promise<void> {
+    if (this.preLoginReady) return;
+    this.preLoginReady = true;
+    console.log('[Notifications] Pre-login init...');
+    try {
+      // Request OS-level permission early — the OTP flow needs it.
+      await this.requestPermissions();
+      await this.setupNotificationChannels();
+      this.setupFirebaseListeners();
+      console.log('[Notifications] Pre-login init done');
+    } catch (e) {
+      console.warn('[Notifications] Pre-login init failed:', e);
+    }
+  }
+
+  // Initialize notifications (post-login)
   async initialize(): Promise<void> {
     console.log('[Notifications] Initializing...');
 
     try {
-      const permGranted = await this.requestPermissions();
-      console.log('[Notifications] Permission granted:', permGranted);
+      // Make sure channels + foreground handler exist (no-op if already done pre-login).
+      await this.initializeBeforeLogin();
 
       const token = await this.getFcmToken();
       console.log('[Notifications] Got FCM token:', token ? 'YES' : 'NO');
@@ -60,9 +82,6 @@ class NotificationService {
         this.fcmToken = token;
         await this.registerTokenWithServer(token);
       }
-
-      await this.setupNotificationChannels();
-      this.setupFirebaseListeners();
     } catch (error) {
       console.error('[Notifications] Initialization error:', error);
     }

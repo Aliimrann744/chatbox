@@ -40,3 +40,15 @@ export async function handleAnswer(_pc: any, _answer: any): Promise<void> {}
 export async function addIceCandidate(_pc: any, _candidate: any): Promise<void> {}
 
 export function closePeerConnection(_pc: any, _localStream: any): void {}
+
+export async function acquireLocalStream(_callType: CallType): Promise<any> {
+  return null;
+}
+
+export function createPeerConnectionWithStream(
+  _iceServers: any[],
+  _localStream: any,
+  _callbacks: PeerConnectionCallbacks,
+): any {
+  return null;
+}

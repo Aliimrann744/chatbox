@@ -18,6 +18,7 @@ import socketService from '@/services/socket';
 import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '@/contexts/auth-context';
 import { useCall } from '@/contexts/call-context';
+import { useGroupCall } from '@/contexts/group-call-context';
 import { pickImage, pickVideo, pickDocument, takePhoto, pickMultipleMedia, PickedMedia, getMessageTypeFromMimeType } from '@/utils/media-picker';
 import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-picker';
 import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
@@ -985,6 +986,7 @@ export default function ChatDetailScreen() {
   const colors = Colors[colorScheme];
   const { user } = useAuth();
   const { initiateCall } = useCall();
+  const groupCall = useGroupCall();
   const { setCurrentChatId } = useNotificationContext();
 
   const [cachedChat] = useState(() => chatId ? cache.get<Chat>(CacheKeys.chatDetail(chatId)) : null);
@@ -1342,17 +1344,29 @@ export default function ChatDetailScreen() {
   };
 
   const handleCall = async () => {
-    if (!chat || chat.type !== 'PRIVATE' || !otherUser) return;
-
-    await initiateCall(otherUser.id, otherUser.name, otherUser.avatar, 'VOICE');
-    router.push('/call/active');
+    if (!chat) return;
+    if (chat.type === 'GROUP') {
+      const ok = await groupCall.initiateGroupCall(chat.id, chat.name || 'Group', 'VOICE');
+      if (ok) router.push('/call/group-active');
+      return;
+    }
+    if (chat.type === 'PRIVATE' && otherUser) {
+      await initiateCall(otherUser.id, otherUser.name, otherUser.avatar, 'VOICE');
+      router.push('/call/active');
+    }
   };
 
   const handleVideoCall = async () => {
-    if (!chat || chat.type !== 'PRIVATE' || !otherUser) return;
-
-    await initiateCall(otherUser.id, otherUser.name, otherUser.avatar, 'VIDEO');
-    router.push('/call/active');
+    if (!chat) return;
+    if (chat.type === 'GROUP') {
+      const ok = await groupCall.initiateGroupCall(chat.id, chat.name || 'Group', 'VIDEO');
+      if (ok) router.push('/call/group-active');
+      return;
+    }
+    if (chat.type === 'PRIVATE' && otherUser) {
+      await initiateCall(otherUser.id, otherUser.name, otherUser.avatar, 'VIDEO');
+      router.push('/call/active');
+    }
   };
 
   const handleSend = () => {

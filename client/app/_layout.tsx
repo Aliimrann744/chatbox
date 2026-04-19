@@ -10,6 +10,7 @@ import 'react-native-reanimated';
 import { Colors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { CallProvider } from '@/contexts/call-context';
+import { GroupCallProvider } from '@/contexts/group-call-context';
 import { NotificationProvider } from '@/contexts/notification-context';
 import { IncomingCallListener } from '@/components/call/incoming-call-listener';
 import { ActiveCallBanner } from '@/components/call/active-call-banner';
@@ -17,8 +18,14 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 // Register background handlers at module level (before React tree mounts)
 import { registerBackgroundHandler, registerNotifeeBackgroundHandler } from '@/services/background-handler';
+import notificationService from '@/services/notifications';
 registerBackgroundHandler();
 registerNotifeeBackgroundHandler();
+// Pre-login init: creates Android notification channels and wires the
+// foreground FCM handler BEFORE the user logs in, so pre-auth pushes like
+// the OTP code actually display. Without this, Android 8+ silently drops
+// pushes targeted at a non-existent channel and the OTP banner never shows.
+notificationService.initializeBeforeLogin().catch(() => {});
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -237,7 +244,9 @@ export default function RootLayout() {
         <AuthProvider>
           <NotificationProvider>
             <CallProvider>
-              <RootLayoutNav />
+              <GroupCallProvider>
+                <RootLayoutNav />
+              </GroupCallProvider>
             </CallProvider>
           </NotificationProvider>
         </AuthProvider>

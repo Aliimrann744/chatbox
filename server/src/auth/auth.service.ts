@@ -53,14 +53,19 @@ export class AuthService {
    * and sent with the sendOtp request, so we don't need a paid SMS gateway.
    */
   private async sendFcmOtp(fcmToken: string, otp: string) {
+    this.logger.log(
+      `[OTP] Attempting FCM delivery (token prefix=${(fcmToken || '').slice(0, 12) || '<empty>'}…)`,
+    );
+
     if (!fcmToken) {
+      this.logger.warn('[OTP] No FCM token provided by client — rejecting');
       throw new BadRequestException(
         'Device is not registered for push notifications. Please allow notifications and try again.',
       );
     }
 
     if (!admin.apps.length) {
-      this.logger.warn('Firebase admin not initialised — OTP push not sent');
+      this.logger.error('[OTP] Firebase admin not initialised — OTP push not sent');
       throw new BadRequestException('Notification service is not available');
     }
 
@@ -92,9 +97,15 @@ export class AuthService {
           },
         },
       });
+      this.logger.log('[OTP] FCM push sent successfully');
     } catch (error: any) {
-      this.logger.error(`FCM OTP send failed: ${error?.message || error}`);
-      throw new BadRequestException('Failed to send OTP. Please try again.');
+      const code = error?.code || error?.errorInfo?.code || 'unknown';
+      this.logger.error(
+        `[OTP] FCM send failed (code=${code}): ${error?.message || error}`,
+      );
+      throw new BadRequestException(
+        `Failed to deliver OTP via push (${code}). Please reinstall the app or try again.`,
+      );
     }
   }
 
@@ -161,6 +172,9 @@ export class AuthService {
     }
 
     // Phone-based OTP — auto-register on first attempt and deliver via FCM.
+    this.logger.log(
+      `[OTP] Phone branch: phone=${phone}, cc=${countryCode}, hasFcmToken=${!!fcmToken}`,
+    );
     let user = await this.prisma.user.findUnique({ where: { phone: phone! } });
 
     if (user) {

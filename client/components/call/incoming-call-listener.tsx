@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { router } from 'expo-router';
 import { useCall } from '@/contexts/call-context';
+import { useGroupCall } from '@/contexts/group-call-context';
 import { useNotificationContext } from '@/contexts/notification-context';
 
 /**
@@ -10,6 +11,7 @@ import { useNotificationContext } from '@/contexts/notification-context';
  */
 export function IncomingCallListener() {
   const { callState, acceptCall, acceptCallFromNotification } = useCall();
+  const { state: groupCallState } = useGroupCall();
   const { pendingCallAccept, clearPendingCall } = useNotificationContext();
 
   // Navigate to incoming call screen when there's an incoming call via socket
@@ -18,6 +20,13 @@ export function IncomingCallListener() {
       router.push('/call/incoming');
     }
   }, [callState.status, callState.direction]);
+
+  // Same for group calls
+  useEffect(() => {
+    if (groupCallState.status === 'ringing' && groupCallState.direction === 'incoming') {
+      router.push('/call/group-incoming');
+    }
+  }, [groupCallState.status, groupCallState.direction]);
 
   // Handle pending call accept from background notification
   useEffect(() => {

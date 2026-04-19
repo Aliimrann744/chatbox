@@ -143,28 +143,33 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         data.content,
       );
 
-      // Send message to all other members
-      for (const member of members) {
-        if (member.userId !== senderId) {
-          const recipientSocketId = this.connectedUsers.get(member.userId);
+      // Broadcast to the chat room FIRST — anyone currently subscribed to
+      // this chat (via join_chat) receives it regardless of whether our
+      // connectedUsers map is up to date. `client.broadcast.to(...)` skips
+      // the sender; the sender already got `message_sent` above.
+      client.broadcast.to(`chat_${data.chatId}`).emit('new_message', message);
 
-          if (recipientSocketId) {
-            // User is online - send via WebSocket
-            this.server.to(recipientSocketId).emit('new_message', message);
-          } else {
-            // User is offline - send push notification
-            this.notificationService.sendMessageNotification(
-              member.userId,
-              senderName,
-              messagePreview,
-              data.chatId,
-              senderId,
-              chat?.type === ChatType.GROUP ? 'GROUP' : 'PRIVATE',
-              chat?.name || undefined,
-            ).catch((err) =>
-              console.error('Push notification failed:', err.message),
-            );
-          }
+      // Also direct-emit to each member's personal user_<id> room as a
+      // backup — covers members who are connected but haven't called
+      // join_chat yet (e.g. they're on the chat list). And for anyone
+      // offline, fall back to FCM push.
+      for (const member of members) {
+        if (member.userId === senderId) continue;
+        const recipientSocketId = this.connectedUsers.get(member.userId);
+        if (recipientSocketId) {
+          this.server.to(`user_${member.userId}`).emit('new_message', message);
+        } else {
+          this.notificationService.sendMessageNotification(
+            member.userId,
+            senderName,
+            messagePreview,
+            data.chatId,
+            senderId,
+            chat?.type === ChatType.GROUP ? 'GROUP' : 'PRIVATE',
+            chat?.name || undefined,
+          ).catch((err) =>
+            console.error('Push notification failed:', err.message),
+          );
         }
       }
 
