@@ -9,11 +9,13 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { MailService } from './mail.service';
 import { AuthCleanupService } from './auth-cleanup.service';
 import { UploadModule } from '../upload/upload.module';
+import { TwoFactorModule } from '../two-factor/two-factor.module';
 import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
     UploadModule,
+    TwoFactorModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

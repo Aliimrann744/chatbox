@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, NativeModules, Platform, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { cache } from '@/services/cache';
+import { settingsApi } from '@/services/api';
+import { changeLanguage, LANGUAGE_CACHE_KEY, SUPPORTED_LANGUAGES } from '@/i18n';
 import {
   SettingsDivider,
   SettingsRadio,
@@ -11,32 +14,23 @@ import {
   SettingsSection,
 } from '@/components/settings/settings-ui';
 
-const K_LANG = 'settings:language';
-
-const LANGUAGES: { value: string; label: string; native: string }[] = [
-  { value: 'system', label: "Device's language", native: '' },
-  { value: 'en', label: 'English', native: 'English' },
-  { value: 'es', label: 'Spanish', native: 'Español' },
-  { value: 'fr', label: 'French', native: 'Français' },
-  { value: 'de', label: 'German', native: 'Deutsch' },
-  { value: 'pt', label: 'Portuguese', native: 'Português' },
-  { value: 'ar', label: 'Arabic', native: 'العربية' },
-  { value: 'hi', label: 'Hindi', native: 'हिन्दी' },
-  { value: 'ur', label: 'Urdu', native: 'اردو' },
-  { value: 'zh', label: 'Chinese', native: '中文' },
-  { value: 'ja', label: 'Japanese', native: '日本語' },
-  { value: 'ko', label: 'Korean', native: '한국어' },
-];
+type LangOption = { value: string; label: string; native: string };
 
 export default function LanguageScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const [selected, setSelected] = useState('system');
+  const { t } = useTranslation();
+  const [selected, setSelected] = useState<string>('system');
 
   useEffect(() => {
-    const v = cache.get<string>(K_LANG);
+    const v = cache.get<string>(LANGUAGE_CACHE_KEY);
     if (v) setSelected(v);
   }, []);
+
+  const options: LangOption[] = [
+    { value: 'system', label: t('settings.language.deviceLanguage'), native: '' },
+    ...SUPPORTED_LANGUAGES.map((l) => ({ value: l.value, label: l.label, native: l.native })),
+  ];
 
   const deviceTag =
     Platform.OS === 'ios'
@@ -45,26 +39,27 @@ export default function LanguageScreen() {
         'en-US'
       : NativeModules.I18nManager?.localeIdentifier || 'en-US';
 
-  const onSelect = (v: string) => {
+  const onSelect = async (v: string) => {
     setSelected(v);
-    cache.set(K_LANG, v);
-    Alert.alert(
-      'Language updated',
-      'Reopen the app for the change to take full effect.',
-    );
+    await changeLanguage(v as any);
+    // Persist on server (best-effort — falls back silently if offline)
+    try {
+      await settingsApi.setLanguage(v);
+    } catch {}
+    Alert.alert(t('settings.language.updated'), '');
   };
 
   return (
-    <SettingsScreen title="App language">
+    <SettingsScreen title={t('settings.language.title')}>
       <View style={[styles.banner, { backgroundColor: colors.backgroundSecondary }]}>
         <Text style={[styles.bannerLabel, { color: colors.textSecondary }]}>
-          Device language
+          {t('settings.language.deviceLanguage')}
         </Text>
         <Text style={[styles.bannerValue, { color: colors.text }]}>{deviceTag}</Text>
       </View>
 
-      <SettingsSection>
-        {LANGUAGES.map((l, i) => (
+      <SettingsSection footer={t('settings.language.footer')}>
+        {options.map((l, i) => (
           <React.Fragment key={l.value}>
             {i > 0 ? <SettingsDivider /> : null}
             <SettingsRadio

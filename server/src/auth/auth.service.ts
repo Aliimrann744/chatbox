@@ -3,13 +3,44 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as admin from 'firebase-admin';
+import * as UA from 'ua-parser-js';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
 import { MailService } from './mail.service';
+import { TwoFactorService } from '../two-factor/two-factor.service';
+
+function describeUserAgent(userAgent: string | undefined): string | null {
+  if (!userAgent) return null;
+  try {
+    const parser = new UA.UAParser(userAgent);
+    const browser = parser.getBrowser();
+    const os = parser.getOS();
+    const device = parser.getDevice();
+
+    const browserName = browser.name?.trim();
+    const osName = os.name?.trim();
+    const osVersion = os.version?.trim();
+    const deviceModel = device.model?.trim();
+    const deviceVendor = device.vendor?.trim();
+
+    const deviceLabel = [deviceVendor, deviceModel].filter(Boolean).join(' ').trim();
+    const osLabel = [osName, osVersion].filter(Boolean).join(' ').trim();
+    const parts = [deviceLabel || null, browserName || null, osLabel ? `(${osLabel})` : null].filter(Boolean);
+    if (parts.length === 0) return userAgent.split(' ')[0] || null;
+    return parts.join(' · ');
+  } catch {
+    return userAgent.split(' ')[0] || null;
+  }
+}
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { FacebookLoginDto } from './dto/facebook-login.dto';
+
+export interface RequestContext {
+  ipAddress?: string;
+  userAgent?: string;
+}
 
 @Injectable()
 export class AuthService {
@@ -21,6 +52,7 @@ export class AuthService {
     private configService: ConfigService,
     private uploadService: UploadService,
     private mailService: MailService,
+    private twoFactor: TwoFactorService,
   ) {}
 
   /**
@@ -133,6 +165,78 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  private signChallengeToken(userId: string): string {
+    return this.jwtService.sign(
+      { sub: userId, twoFactor: true },
+      {
+        secret: (this.configService.get<string>('JWT_SECRET') || '') + ':2fa',
+        expiresIn: '5m',
+      },
+    );
+  }
+
+  private verifyChallengeToken(token: string): string {
+    try {
+      const payload = this.jwtService.verify<{ sub: string; twoFactor: boolean }>(token, {
+        secret: (this.configService.get<string>('JWT_SECRET') || '') + ':2fa',
+      });
+      if (!payload.twoFactor || !payload.sub) throw new Error('invalid');
+      return payload.sub;
+    } catch {
+      throw new UnauthorizedException('Invalid or expired two-factor challenge');
+    }
+  }
+
+  /**
+   * Records a successful login. If security notifications are enabled and
+   * the user-agent has not been seen before, flags it as a new device and
+   * emails a security alert.
+   */
+  private async recordLogin(
+    userId: string,
+    method: string,
+    ctx: RequestContext,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, securityNotificationsEnabled: true },
+    });
+    if (!user) return;
+
+    let isNewDevice = false;
+    if (ctx.userAgent) {
+      const prior = await this.prisma.loginEvent.findFirst({
+        where: { userId, userAgent: ctx.userAgent },
+      });
+      isNewDevice = !prior;
+    }
+
+    const deviceLabel = describeUserAgent(ctx.userAgent);
+
+    await this.prisma.loginEvent.create({
+      data: {
+        userId,
+        method,
+        ipAddress: ctx.ipAddress || null,
+        userAgent: ctx.userAgent || null,
+        device: deviceLabel,
+        isNewDevice,
+      },
+    });
+
+    if (isNewDevice && user.securityNotificationsEnabled && user.email) {
+      try {
+        await this.mailService.sendSecurityAlertEmail(user.email, {
+          device: deviceLabel || ctx.userAgent,
+          ipAddress: ctx.ipAddress,
+          time: new Date(),
+        });
+      } catch (err: any) {
+        this.logger.warn(`[Security] Failed to send new-device email: ${err.message}`);
+      }
+    }
+  }
+
   async sendOtp(sendOtpDto: SendOtpDto) {
     const { phone, countryCode, email, fcmToken } = sendOtpDto;
 
@@ -219,7 +323,7 @@ export class AuthService {
     };
   }
 
-  async verifyOtp(verifyOtpDto: VerifyOtpDto) {
+  async verifyOtp(verifyOtpDto: VerifyOtpDto, ctx: RequestContext = {}) {
     const { phone, email, otp: otpCode } = verifyOtpDto;
 
     let user;
@@ -235,11 +339,45 @@ export class AuthService {
     if (user.otp !== otpCode) throw new BadRequestException('Invalid OTP');
 
     const isNewUser = user.name === '';
+
+    // 2FA: if enabled, issue a 5-minute challenge token instead of real tokens
+    if (user.twoFactorEnabled) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { otp: null, otpExpiry: null, isVerified: true },
+      });
+
+      if (user.twoFactorMethod === 'EMAIL') {
+        try {
+          await this.twoFactor.sendEmailLoginOtp(user.id);
+        } catch (err: any) {
+          this.logger.warn(`[2FA] Failed to send email OTP: ${err.message}`);
+        }
+      }
+
+      return {
+        message: 'Second factor required',
+        twoFactorRequired: true,
+        method: user.twoFactorMethod,
+        challengeToken: this.signChallengeToken(user.id),
+      };
+    }
+
+    // On successful primary auth, reactivate any deactivated/scheduled-for-deletion account.
     await this.prisma.user.update({
-      where: { id: user.id }, data: { isVerified: true, otp: null, otpExpiry: null, isOnline: true },
+      where: { id: user.id },
+      data: {
+        isVerified: true,
+        otp: null,
+        otpExpiry: null,
+        isOnline: true,
+        deactivatedAt: null,
+        scheduledDeletionAt: null,
+      },
     });
 
     const tokens = await this.generateTokens(user.id, user.phone || user.email!);
+    await this.recordLogin(user.id, email ? 'otp-email' : 'otp-phone', ctx);
 
     return {
       message: 'OTP verified successfully',
@@ -247,6 +385,62 @@ export class AuthService {
       isNewUser,
       user: { id: user.id, name: user.name, phone: user.phone, email: user.email, avatar: user.avatar, about: user.about },
     };
+  }
+
+  async completeTwoFactor(
+    challengeToken: string,
+    code: string,
+    method: 'totp' | 'email' | 'backup',
+    ctx: RequestContext = {},
+  ) {
+    const userId = this.verifyChallengeToken(challengeToken);
+
+    let ok = false;
+    let loginMethod = 'otp-phone';
+    if (method === 'totp') {
+      ok = await this.twoFactor.verifyTotpCode(userId, code);
+      loginMethod = 'totp';
+    } else if (method === 'email') {
+      ok = await this.twoFactor.verifyEmailLoginOtp(userId, code);
+      loginMethod = 'otp-email';
+    } else if (method === 'backup') {
+      ok = await this.twoFactor.verifyBackupCode(userId, code);
+      loginMethod = 'backup-code';
+    }
+    if (!ok) throw new UnauthorizedException('Invalid two-factor code');
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        isOnline: true,
+        deactivatedAt: null,
+        scheduledDeletionAt: null,
+      },
+    });
+
+    const tokens = await this.generateTokens(user.id, user.phone || user.email!);
+    await this.recordLogin(user.id, loginMethod, ctx);
+    const isNewUser = user.name === '';
+
+    return {
+      message: 'Two-factor verification successful',
+      ...tokens,
+      isNewUser,
+      user: { id: user.id, name: user.name, phone: user.phone, email: user.email, avatar: user.avatar, about: user.about },
+    };
+  }
+
+  async resendTwoFactorEmail(challengeToken: string) {
+    const userId = this.verifyChallengeToken(challengeToken);
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.twoFactorMethod !== 'EMAIL') {
+      throw new BadRequestException('Email 2FA is not enabled');
+    }
+    await this.twoFactor.sendEmailLoginOtp(userId);
+    return { message: 'Verification code resent.' };
   }
 
   async refreshToken(refreshToken: string) {
@@ -281,7 +475,24 @@ export class AuthService {
 
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId },
-      select: { id: true, name: true, phone: true, email: true, avatar: true, about: true, isOnline: true, lastSeen: true, createdAt: true },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        avatar: true,
+        about: true,
+        isOnline: true,
+        lastSeen: true,
+        createdAt: true,
+        language: true,
+        twoFactorEnabled: true,
+        twoFactorMethod: true,
+        securityNotificationsEnabled: true,
+        pendingEmail: true,
+        deactivatedAt: true,
+        scheduledDeletionAt: true,
+      },
     });
 
     if (!user) throw new NotFoundException('User not found');
@@ -349,8 +560,10 @@ export class AuthService {
     email?: string;
     name?: string;
     avatar?: string;
+    ctx?: RequestContext;
+    loginMethod: string;
   }) {
-    const { providerField, providerId, email, name, avatar } = opts;
+    const { providerField, providerId, email, name, avatar, ctx = {}, loginMethod } = opts;
 
     // 1. Find by provider ID
     let user = await this.prisma.user.findUnique({ where: { [providerField]: providerId } as any });
@@ -395,10 +608,34 @@ export class AuthService {
           isVerified: true,
         },
       });
+    } else {
+      // Reactivate on successful social login
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { deactivatedAt: null, scheduledDeletionAt: null, isOnline: true },
+      });
+    }
+
+    // 2FA for social logins
+    if (user.twoFactorEnabled) {
+      if (user.twoFactorMethod === 'EMAIL') {
+        try {
+          await this.twoFactor.sendEmailLoginOtp(user.id);
+        } catch (err: any) {
+          this.logger.warn(`[2FA] Failed to send email OTP: ${err.message}`);
+        }
+      }
+      return {
+        message: 'Second factor required',
+        twoFactorRequired: true,
+        method: user.twoFactorMethod,
+        challengeToken: this.signChallengeToken(user.id),
+      };
     }
 
     const isNewUser = user.name === '';
     const tokens = await this.generateTokens(user.id, user.email || user.phone || providerId);
+    await this.recordLogin(user.id, loginMethod, ctx);
 
     return {
       message: 'Login successful',
@@ -408,7 +645,7 @@ export class AuthService {
     };
   }
 
-  async googleLogin(dto: GoogleLoginDto) {
+  async googleLogin(dto: GoogleLoginDto, ctx: RequestContext = {}) {
     const { idToken } = dto;
 
     const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
@@ -428,10 +665,12 @@ export class AuthService {
       email: payload.email,
       name: payload.name,
       avatar: payload.picture,
+      ctx,
+      loginMethod: 'google',
     });
   }
 
-  async facebookLogin(dto: FacebookLoginDto) {
+  async facebookLogin(dto: FacebookLoginDto, ctx: RequestContext = {}) {
     const { accessToken } = dto;
 
     const response = await fetch(
@@ -452,6 +691,8 @@ export class AuthService {
       email: fbUser.email,
       name: fbUser.name,
       avatar: fbUser.picture?.data?.url,
+      ctx,
+      loginMethod: 'facebook',
     });
   }
 }

@@ -10,11 +10,20 @@ interface AuthState {
   isAuthenticated: boolean;
 }
 
+export type VerifyOtpOutcome =
+  | { isNewUser: boolean }
+  | { twoFactorRequired: true; method: 'EMAIL' | 'TOTP' | 'NONE'; challengeToken: string };
+
+export type SocialLoginOutcome =
+  | { isNewUser: boolean; hasPhone: boolean }
+  | { twoFactorRequired: true; method: 'EMAIL' | 'TOTP' | 'NONE'; challengeToken: string };
+
 interface AuthContextType extends AuthState {
   sendOtp: (params: { phone?: string; countryCode?: string; email?: string }) => Promise<void>;
-  verifyOtp: (params: { phone?: string; email?: string }, otp: string) => Promise<{ isNewUser: boolean }>;
-  googleLogin: () => Promise<{ isNewUser: boolean; hasPhone: boolean }>;
-  facebookLogin: () => Promise<{ isNewUser: boolean; hasPhone: boolean }>;
+  verifyOtp: (params: { phone?: string; email?: string }, otp: string) => Promise<VerifyOtpOutcome>;
+  completeTwoFactor: (challengeToken: string, code: string, method: 'totp' | 'email' | 'backup') => Promise<{ isNewUser: boolean }>;
+  googleLogin: () => Promise<SocialLoginOutcome>;
+  facebookLogin: () => Promise<SocialLoginOutcome>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -151,14 +160,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await authApi.sendOtp({ ...params, fcmToken });
   }, []);
 
-  const verifyOtp = useCallback(async (params: { phone?: string; email?: string }, otp: string) => {
+  const verifyOtp = useCallback(async (params: { phone?: string; email?: string }, otp: string): Promise<VerifyOtpOutcome> => {
     const response = await authApi.verifyOtp({ ...params, otp });
-    cache.set(CacheKeys.USER_PROFILE, response.user);
-    setState({ user: response.user, isLoading: false, isAuthenticated: true });
-    return { isNewUser: response.isNewUser };
+    if ((response as any).twoFactorRequired) {
+      const challenge = response as { method: 'EMAIL' | 'TOTP' | 'NONE'; challengeToken: string };
+      return {
+        twoFactorRequired: true,
+        method: challenge.method,
+        challengeToken: challenge.challengeToken,
+      };
+    }
+    const ok = response as { user: User; isNewUser: boolean };
+    cache.set(CacheKeys.USER_PROFILE, ok.user);
+    setState({ user: ok.user, isLoading: false, isAuthenticated: true });
+    return { isNewUser: ok.isNewUser };
   }, []);
 
-  const googleLogin = useCallback(async () => {
+  const completeTwoFactor = useCallback(
+    async (challengeToken: string, code: string, method: 'totp' | 'email' | 'backup') => {
+      const response = await authApi.verifyTwoFactor({ challengeToken, code, method });
+      cache.set(CacheKeys.USER_PROFILE, response.user);
+      setState({ user: response.user, isLoading: false, isAuthenticated: true });
+      return { isNewUser: response.isNewUser };
+    },
+    [],
+  );
+
+  const googleLogin = useCallback(async (): Promise<SocialLoginOutcome> => {
     const { GoogleSignin } = require('@react-native-google-signin/google-signin');
     GoogleSignin.configure({
       webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
@@ -169,21 +197,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const idToken = signInResult?.data?.idToken;
     if (!idToken) throw new Error('Google sign-in failed: no ID token');
     const response = await authApi.googleLogin({ idToken });
-    cache.set(CacheKeys.USER_PROFILE, response.user);
-    setState({ user: response.user, isLoading: false, isAuthenticated: true });
-    return { isNewUser: response.isNewUser, hasPhone: !!response.user.phone };
+    if ((response as any).twoFactorRequired) {
+      const challenge = response as { method: 'EMAIL' | 'TOTP' | 'NONE'; challengeToken: string };
+      return {
+        twoFactorRequired: true,
+        method: challenge.method,
+        challengeToken: challenge.challengeToken,
+      };
+    }
+    const ok = response as { user: User; isNewUser: boolean };
+    cache.set(CacheKeys.USER_PROFILE, ok.user);
+    setState({ user: ok.user, isLoading: false, isAuthenticated: true });
+    return { isNewUser: ok.isNewUser, hasPhone: !!ok.user.phone };
   }, []);
 
-  const facebookLogin = useCallback(async () => {
+  const facebookLogin = useCallback(async (): Promise<SocialLoginOutcome> => {
     const { LoginManager, AccessToken } = require('react-native-fbsdk-next');
     const result = await LoginManager.logInWithPermissions(['public_profile', 'email']);
     if (result.isCancelled) throw new Error('Facebook login cancelled');
     const tokenData = await AccessToken.getCurrentAccessToken();
     if (!tokenData?.accessToken) throw new Error('Facebook login failed: no access token');
     const response = await authApi.facebookLogin({ accessToken: tokenData.accessToken });
-    cache.set(CacheKeys.USER_PROFILE, response.user);
-    setState({ user: response.user, isLoading: false, isAuthenticated: true });
-    return { isNewUser: response.isNewUser, hasPhone: !!response.user.phone };
+    if ((response as any).twoFactorRequired) {
+      const challenge = response as { method: 'EMAIL' | 'TOTP' | 'NONE'; challengeToken: string };
+      return {
+        twoFactorRequired: true,
+        method: challenge.method,
+        challengeToken: challenge.challengeToken,
+      };
+    }
+    const ok = response as { user: User; isNewUser: boolean };
+    cache.set(CacheKeys.USER_PROFILE, ok.user);
+    setState({ user: ok.user, isLoading: false, isAuthenticated: true });
+    return { isNewUser: ok.isNewUser, hasPhone: !!ok.user.phone };
   }, []);
 
   const logout = useCallback(async () => {
@@ -223,6 +269,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ...state,
     sendOtp,
     verifyOtp,
+    completeTwoFactor,
     googleLogin,
     facebookLogin,
     logout,

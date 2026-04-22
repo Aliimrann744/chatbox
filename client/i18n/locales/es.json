@@ -1,0 +1,153 @@
+{
+  "common": {
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "continue": "Continuar",
+    "confirm": "Confirmar",
+    "enable": "Activar",
+    "disable": "Desactivar",
+    "delete": "Eliminar",
+    "done": "Listo",
+    "copy": "Copiar",
+    "copied": "Copiado al portapapeles",
+    "ok": "Aceptar",
+    "back": "Atrás",
+    "error": "Error",
+    "loading": "Cargando…",
+    "comingSoon": "Próximamente"
+  },
+  "settings": {
+    "title": "Ajustes",
+    "sections": {
+      "account": "Cuenta",
+      "privacy": "Privacidad",
+      "chats": "Chats",
+      "notifications": "Notificaciones",
+      "storage": "Almacenamiento y datos",
+      "appLanguage": "Idioma de la aplicación",
+      "help": "Ayuda"
+    },
+    "language": {
+      "title": "Idioma de la aplicación",
+      "deviceLanguage": "Idioma del dispositivo",
+      "updated": "Idioma actualizado",
+      "footer": "La interfaz cambiará al idioma seleccionado de inmediato. Los mensajes enviados o recibidos no se traducen."
+    }
+  },
+  "account": {
+    "title": "Cuenta",
+    "securityNotifications": {
+      "title": "Notificaciones de seguridad",
+      "subtitle": "Recibe un aviso cuando cambie el código de seguridad de un contacto o cuando se acceda a tu cuenta desde un dispositivo nuevo."
+    },
+    "changeNumber": {
+      "title": "Cambiar número",
+      "subtitleAdd": "Añadir número de teléfono",
+      "alertTitle": "Cambiar número",
+      "alertBody": "Los datos de tu cuenta, grupos y mensajes se moverán al nuevo número.\n\nAntes de continuar, asegúrate de que puedes recibir SMS en el número nuevo."
+    },
+    "twoStep": {
+      "title": "Verificación en dos pasos",
+      "enabled": "Activada",
+      "disabled": "Desactivada"
+    },
+    "passkeys": {
+      "title": "Claves de acceso",
+      "subtitle": "Inicia sesión con huella, rostro o código del dispositivo"
+    },
+    "email": {
+      "title": "Correo electrónico",
+      "notSet": "Sin configurar",
+      "change": "Cambiar correo"
+    },
+    "requestData": {
+      "title": "Solicitar datos de la cuenta",
+      "subtitle": "Genera un informe con la información de tu cuenta de Chatbox"
+    },
+    "removeAccount": {
+      "title": "Quitar cuenta",
+      "subtitle": "Desactiva tu cuenta (puedes reactivarla iniciando sesión)"
+    },
+    "deleteAccount": {
+      "title": "Eliminar mi cuenta",
+      "confirmTitle": "Eliminar mi cuenta",
+      "confirmBody": "Si eliminas tu cuenta:\n\n• Se borrarán tus datos y foto de perfil\n• Se te eliminará de todos los grupos\n• Se borrará tu historial de mensajes\n\nEsta acción no se puede deshacer.",
+      "confirmButton": "Eliminar mi cuenta",
+      "scheduleTitle": "Programar eliminación (30 días)",
+      "scheduleBody": "Tu cuenta se eliminará en 30 días. Inicia sesión antes para cancelar.",
+      "cancelTitle": "Cancelar eliminación programada"
+    },
+    "signedInAs": "Sesión iniciada como {{name}}."
+  },
+  "twoFactor": {
+    "title": "Verificación en dos pasos",
+    "methods": {
+      "totp": "Aplicación de autenticación",
+      "email": "Código por correo",
+      "none": "Desactivada"
+    },
+    "chooseMethod": "Elige un método",
+    "authenticatorSubtitle": "Usa Google Authenticator, 1Password, Authy u otra app TOTP",
+    "emailSubtitle": "Te enviaremos un código de 6 dígitos por correo en cada inicio de sesión",
+    "scanQr": "Escanea este código QR",
+    "orEnterSecret": "O introduce esta clave manualmente",
+    "enterCode": "Introduce el código de 6 dígitos",
+    "enterCodePlaceholder": "123456",
+    "verifyAndEnable": "Verificar y activar",
+    "backupCodes": "Códigos de respaldo",
+    "backupCodesIntro": "Guarda estos códigos en un lugar seguro. Si pierdes acceso a la app de autenticación, cada código puede usarse una vez para iniciar sesión.",
+    "backupCodesRemaining": "{{count}} de 10 códigos disponibles",
+    "regenerateBackupCodes": "Regenerar códigos",
+    "confirmDisableTitle": "¿Desactivar la verificación en dos pasos?",
+    "confirmDisableBody": "Enviaremos un código de confirmación a tu correo registrado para desactivar la verificación en dos pasos.",
+    "enterDisableCode": "Introduce el código que enviamos por correo",
+    "enabled": "Verificación en dos pasos activada ({{method}})",
+    "status": "Estado"
+  },
+  "changeEmail": {
+    "title": "Cambiar correo",
+    "intro": "Enviaremos un código de 6 dígitos a la nueva dirección para confirmar que es tuya.",
+    "newEmail": "Nuevo correo",
+    "emailPlaceholder": "tu@ejemplo.com",
+    "sendCode": "Enviar código",
+    "enterCode": "Introduce el código que enviamos a {{email}}",
+    "verify": "Verificar y actualizar",
+    "updated": "Correo actualizado"
+  },
+  "securityNotifications": {
+    "title": "Notificaciones de seguridad",
+    "intro": "Recibe un correo cuando se acceda a tu cuenta desde un dispositivo nuevo.",
+    "recentLogins": "Inicios de sesión recientes",
+    "noEvents": "Aún no hay inicios de sesión registrados"
+  },
+  "requestData": {
+    "title": "Solicitar datos de la cuenta",
+    "intro": "Genera un informe con la información de tu cuenta: perfil, contactos, grupos y mensajes recientes. Te enviaremos el archivo al correo registrado cuando esté listo.",
+    "request": "Solicitar informe",
+    "queued": "Solicitud en cola. Te avisaremos por correo cuando esté lista.",
+    "alreadyQueued": "Ya se está preparando un informe.",
+    "noEmail": "Añade un correo a tu cuenta primero.",
+    "history": "Solicitudes recientes",
+    "status": {
+      "PENDING": "En cola",
+      "RUNNING": "Preparando…",
+      "COMPLETED": "Enviado",
+      "FAILED": "Error"
+    },
+    "sentTo": "Enviado a {{email}}",
+    "noRequests": "Aún no has solicitado ningún informe."
+  },
+  "removeAccount": {
+    "title": "Quitar cuenta",
+    "intro": "Tu cuenta se desactivará de inmediato y se cerrará la sesión en todos los dispositivos.\n\nPuedes reactivarla cuando quieras iniciando sesión de nuevo.",
+    "deactivate": "Desactivar cuenta",
+    "deactivated": "Tu cuenta ha sido desactivada.",
+    "scheduleIntro": "O programa la eliminación permanente en 30 días (puedes cancelar antes):",
+    "scheduleDeletion": "Programar eliminación en 30 días"
+  },
+  "passkeys": {
+    "title": "Claves de acceso",
+    "comingSoonTitle": "Claves de acceso próximamente",
+    "comingSoonBody": "Inicia sesión sin contraseña con tu huella, rostro o código del dispositivo. Estamos trabajando en ello — vuelve a consultarlo más adelante."
+  }
+}

@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -13,6 +15,7 @@ import { GroupModule } from './group/group.module';
 import { SettingsModule } from './settings/settings.module';
 import { StatusModule } from './status/status.module';
 import { NotificationModule } from './notification/notification.module';
+import { TwoFactorModule } from './two-factor/two-factor.module';
 
 @Module({
   imports: [
@@ -20,6 +23,7 @@ import { NotificationModule } from './notification/notification.module';
       isGlobal: true,
     }),
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     PrismaModule,
     NotificationModule,
     AuthModule,
@@ -30,9 +34,16 @@ import { NotificationModule } from './notification/notification.module';
     GroupModule,
     SettingsModule,
     StatusModule,
+    TwoFactorModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 
 export class AppModule {};

@@ -3,10 +3,18 @@
  * Fix C++ STL linking for native modules on Windows.
  * Adds c++_shared to target_link_libraries in CMakeLists.txt files.
  * Run after npm install via postinstall script.
+ *
+ * Skips entirely on non-Windows hosts (EAS Linux workers, CI, macOS) so
+ * it can't trip the Install dependencies phase there.
  */
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+
+if (process.platform !== 'win32' || process.env.EAS_BUILD) {
+  console.log('fix-native-stl: skipped (not Windows / running on EAS).');
+  process.exit(0);
+}
 
 const nodeModules = path.join(__dirname, '..', 'node_modules');
 

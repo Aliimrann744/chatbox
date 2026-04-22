@@ -231,15 +231,30 @@ export default function LoginScreen() {
 
   // ─── Social Login ──────────────────────────────────────────────────────
 
+  const handleSocialResult = (result: Awaited<ReturnType<typeof googleLogin>>, loginMode: string) => {
+    if ('twoFactorRequired' in result) {
+      router.replace({
+        pathname: '/(auth)/two-factor',
+        params: {
+          challengeToken: result.challengeToken,
+          method: result.method,
+          loginMode,
+        },
+      });
+      return;
+    }
+    if (result.isNewUser || !result.hasPhone) {
+      router.replace({ pathname: '/(auth)/setup-profile', params: { loginMode: 'social' } });
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
+
   const handleGoogleLogin = async () => {
     setSocialLoading('google');
     try {
-      const { isNewUser, hasPhone } = await googleLogin();
-      if (isNewUser || !hasPhone) {
-        router.replace({ pathname: '/(auth)/setup-profile', params: { loginMode: 'social' } });
-      } else {
-        router.replace('/(tabs)');
-      }
+      const result = await googleLogin();
+      handleSocialResult(result, 'google');
     } catch (error: any) {
       if (error.statusCode === 409) {
         handleProviderConflict(error);
@@ -254,12 +269,8 @@ export default function LoginScreen() {
   const handleFacebookLogin = async () => {
     setSocialLoading('facebook');
     try {
-      const { isNewUser, hasPhone } = await facebookLogin();
-      if (isNewUser || !hasPhone) {
-        router.replace({ pathname: '/(auth)/setup-profile', params: { loginMode: 'social' } });
-      } else {
-        router.replace('/(tabs)');
-      }
+      const result = await facebookLogin();
+      handleSocialResult(result, 'facebook');
     } catch (error: any) {
       if (error.statusCode === 409) {
         handleProviderConflict(error);

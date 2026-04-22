@@ -1,0 +1,153 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "continue": "Continue",
+    "confirm": "Confirm",
+    "enable": "Enable",
+    "disable": "Disable",
+    "delete": "Delete",
+    "done": "Done",
+    "copy": "Copy",
+    "copied": "Copied to clipboard",
+    "ok": "OK",
+    "back": "Back",
+    "error": "Error",
+    "loading": "Loading…",
+    "comingSoon": "Coming soon"
+  },
+  "settings": {
+    "title": "Settings",
+    "sections": {
+      "account": "Account",
+      "privacy": "Privacy",
+      "chats": "Chats",
+      "notifications": "Notifications",
+      "storage": "Storage and data",
+      "appLanguage": "App language",
+      "help": "Help"
+    },
+    "language": {
+      "title": "App language",
+      "deviceLanguage": "Device language",
+      "updated": "Language updated",
+      "footer": "The app UI will switch to the selected language immediately. Messages you send or receive are not translated."
+    }
+  },
+  "account": {
+    "title": "Account",
+    "securityNotifications": {
+      "title": "Security notifications",
+      "subtitle": "Get notified when a contact's security code has changed, or when your account is used on a new device."
+    },
+    "changeNumber": {
+      "title": "Change number",
+      "subtitleAdd": "Add a phone number",
+      "alertTitle": "Change number",
+      "alertBody": "Your account information, groups and messages will be moved to your new number.\n\nBefore proceeding, please ensure that you can receive SMS on your new number."
+    },
+    "twoStep": {
+      "title": "Two-step verification",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "passkeys": {
+      "title": "Passkeys",
+      "subtitle": "Sign in with your fingerprint, face or device passcode"
+    },
+    "email": {
+      "title": "Email address",
+      "notSet": "Not set",
+      "change": "Change email"
+    },
+    "requestData": {
+      "title": "Request account info",
+      "subtitle": "Create a report of your Chatbox account information"
+    },
+    "removeAccount": {
+      "title": "Remove account",
+      "subtitle": "Deactivate your account (can be reactivated by signing in)"
+    },
+    "deleteAccount": {
+      "title": "Delete my account",
+      "confirmTitle": "Delete my account",
+      "confirmBody": "Deleting your account will:\n\n• Delete your account info and profile photo\n• Delete you from all groups\n• Delete your message history\n\nThis cannot be undone.",
+      "confirmButton": "Delete my account",
+      "scheduleTitle": "Schedule deletion (30 days)",
+      "scheduleBody": "Your account will be deleted in 30 days. Sign in any time before then to cancel.",
+      "cancelTitle": "Cancel scheduled deletion"
+    },
+    "signedInAs": "Signed in as {{name}}."
+  },
+  "twoFactor": {
+    "title": "Two-step verification",
+    "methods": {
+      "totp": "Authenticator app",
+      "email": "Email code",
+      "none": "Off"
+    },
+    "chooseMethod": "Choose a method",
+    "authenticatorSubtitle": "Use Google Authenticator, 1Password, Authy, or another TOTP app",
+    "emailSubtitle": "We will email a 6-digit code each time you sign in",
+    "scanQr": "Scan this QR code",
+    "orEnterSecret": "Or enter this secret manually",
+    "enterCode": "Enter the 6-digit code",
+    "enterCodePlaceholder": "123456",
+    "verifyAndEnable": "Verify and enable",
+    "backupCodes": "Backup codes",
+    "backupCodesIntro": "Save these one-time codes somewhere safe. If you lose access to your authenticator, each code can be used once to sign in.",
+    "backupCodesRemaining": "{{count}} of 10 codes remaining",
+    "regenerateBackupCodes": "Regenerate backup codes",
+    "confirmDisableTitle": "Turn off two-step verification?",
+    "confirmDisableBody": "We will email a confirmation code to your registered address to turn off two-step verification.",
+    "enterDisableCode": "Enter the code we emailed you",
+    "enabled": "Two-step verification is on ({{method}})",
+    "status": "Status"
+  },
+  "changeEmail": {
+    "title": "Change email",
+    "intro": "We will send a 6-digit code to the new address to confirm it belongs to you.",
+    "newEmail": "New email",
+    "emailPlaceholder": "you@example.com",
+    "sendCode": "Send code",
+    "enterCode": "Enter the code we sent to {{email}}",
+    "verify": "Verify and update",
+    "updated": "Email updated"
+  },
+  "securityNotifications": {
+    "title": "Security notifications",
+    "intro": "Get an email when your account is accessed from a new device.",
+    "recentLogins": "Recent sign-ins",
+    "noEvents": "No sign-ins recorded yet"
+  },
+  "requestData": {
+    "title": "Request account info",
+    "intro": "Generate a report of your account information — profile, contacts, groups and recent messages. We will email the file to your registered address when it's ready.",
+    "request": "Request report",
+    "queued": "Request queued. We'll email you when it's ready.",
+    "alreadyQueued": "A report is already being prepared.",
+    "noEmail": "Add an email to your account first.",
+    "history": "Recent requests",
+    "status": {
+      "PENDING": "Queued",
+      "RUNNING": "Preparing…",
+      "COMPLETED": "Sent",
+      "FAILED": "Failed"
+    },
+    "sentTo": "Sent to {{email}}",
+    "noRequests": "You haven't requested a report yet."
+  },
+  "removeAccount": {
+    "title": "Remove account",
+    "intro": "Your account will be deactivated immediately. You will be signed out of all devices.\n\nYou can reactivate your account any time by signing in again.",
+    "deactivate": "Deactivate account",
+    "deactivated": "Your account has been deactivated.",
+    "scheduleIntro": "Or schedule permanent deletion in 30 days (you can cancel before then):",
+    "scheduleDeletion": "Schedule deletion in 30 days"
+  },
+  "passkeys": {
+    "title": "Passkeys",
+    "comingSoonTitle": "Passkeys coming soon",
+    "comingSoonBody": "Sign in without a password using your fingerprint, face, or device passcode. We are working on it — check back in a future update."
+  }
+}

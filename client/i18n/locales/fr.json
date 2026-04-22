@@ -1,0 +1,153 @@
+{
+  "common": {
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "continue": "Continuer",
+    "confirm": "Confirmer",
+    "enable": "Activer",
+    "disable": "Désactiver",
+    "delete": "Supprimer",
+    "done": "Terminé",
+    "copy": "Copier",
+    "copied": "Copié dans le presse-papier",
+    "ok": "OK",
+    "back": "Retour",
+    "error": "Erreur",
+    "loading": "Chargement…",
+    "comingSoon": "Bientôt disponible"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "sections": {
+      "account": "Compte",
+      "privacy": "Confidentialité",
+      "chats": "Discussions",
+      "notifications": "Notifications",
+      "storage": "Stockage et données",
+      "appLanguage": "Langue de l'application",
+      "help": "Aide"
+    },
+    "language": {
+      "title": "Langue de l'application",
+      "deviceLanguage": "Langue de l'appareil",
+      "updated": "Langue mise à jour",
+      "footer": "L'interface passera immédiatement à la langue sélectionnée. Les messages envoyés ou reçus ne sont pas traduits."
+    }
+  },
+  "account": {
+    "title": "Compte",
+    "securityNotifications": {
+      "title": "Notifications de sécurité",
+      "subtitle": "Soyez averti lorsqu'un code de sécurité de contact change ou lorsque votre compte est utilisé sur un nouvel appareil."
+    },
+    "changeNumber": {
+      "title": "Changer de numéro",
+      "subtitleAdd": "Ajouter un numéro de téléphone",
+      "alertTitle": "Changer de numéro",
+      "alertBody": "Les informations de votre compte, vos groupes et vos messages seront transférés vers votre nouveau numéro.\n\nAvant de continuer, assurez-vous de pouvoir recevoir des SMS sur le nouveau numéro."
+    },
+    "twoStep": {
+      "title": "Vérification en deux étapes",
+      "enabled": "Activée",
+      "disabled": "Désactivée"
+    },
+    "passkeys": {
+      "title": "Clés d'accès",
+      "subtitle": "Connectez-vous avec votre empreinte, votre visage ou le code de votre appareil"
+    },
+    "email": {
+      "title": "Adresse e-mail",
+      "notSet": "Non défini",
+      "change": "Modifier l'e-mail"
+    },
+    "requestData": {
+      "title": "Demander les infos du compte",
+      "subtitle": "Créer un rapport avec les informations de votre compte Chatbox"
+    },
+    "removeAccount": {
+      "title": "Supprimer le compte",
+      "subtitle": "Désactiver votre compte (réactivable en vous reconnectant)"
+    },
+    "deleteAccount": {
+      "title": "Supprimer mon compte",
+      "confirmTitle": "Supprimer mon compte",
+      "confirmBody": "La suppression de votre compte :\n\n• Supprimera vos informations et votre photo de profil\n• Vous retirera de tous les groupes\n• Supprimera votre historique de messages\n\nCette action est irréversible.",
+      "confirmButton": "Supprimer mon compte",
+      "scheduleTitle": "Programmer la suppression (30 jours)",
+      "scheduleBody": "Votre compte sera supprimé dans 30 jours. Reconnectez-vous avant pour annuler.",
+      "cancelTitle": "Annuler la suppression programmée"
+    },
+    "signedInAs": "Connecté en tant que {{name}}."
+  },
+  "twoFactor": {
+    "title": "Vérification en deux étapes",
+    "methods": {
+      "totp": "Application d'authentification",
+      "email": "Code par e-mail",
+      "none": "Désactivée"
+    },
+    "chooseMethod": "Choisir une méthode",
+    "authenticatorSubtitle": "Utilisez Google Authenticator, 1Password, Authy ou une autre app TOTP",
+    "emailSubtitle": "Nous enverrons un code à 6 chiffres par e-mail à chaque connexion",
+    "scanQr": "Scannez ce QR code",
+    "orEnterSecret": "Ou saisissez ce secret manuellement",
+    "enterCode": "Saisissez le code à 6 chiffres",
+    "enterCodePlaceholder": "123456",
+    "verifyAndEnable": "Vérifier et activer",
+    "backupCodes": "Codes de secours",
+    "backupCodesIntro": "Conservez ces codes dans un endroit sûr. Si vous perdez l'accès à votre application d'authentification, chaque code peut être utilisé une fois pour vous connecter.",
+    "backupCodesRemaining": "{{count}} sur 10 codes restants",
+    "regenerateBackupCodes": "Régénérer les codes de secours",
+    "confirmDisableTitle": "Désactiver la vérification en deux étapes ?",
+    "confirmDisableBody": "Nous enverrons un code de confirmation à votre adresse enregistrée pour désactiver la vérification en deux étapes.",
+    "enterDisableCode": "Saisissez le code envoyé par e-mail",
+    "enabled": "Vérification en deux étapes activée ({{method}})",
+    "status": "Statut"
+  },
+  "changeEmail": {
+    "title": "Modifier l'e-mail",
+    "intro": "Nous enverrons un code à 6 chiffres à la nouvelle adresse pour confirmer qu'elle vous appartient.",
+    "newEmail": "Nouvel e-mail",
+    "emailPlaceholder": "vous@exemple.com",
+    "sendCode": "Envoyer le code",
+    "enterCode": "Saisissez le code envoyé à {{email}}",
+    "verify": "Vérifier et mettre à jour",
+    "updated": "E-mail mis à jour"
+  },
+  "securityNotifications": {
+    "title": "Notifications de sécurité",
+    "intro": "Recevez un e-mail lorsque votre compte est utilisé depuis un nouvel appareil.",
+    "recentLogins": "Connexions récentes",
+    "noEvents": "Aucune connexion enregistrée pour l'instant"
+  },
+  "requestData": {
+    "title": "Demander les infos du compte",
+    "intro": "Générez un rapport avec les informations de votre compte — profil, contacts, groupes et messages récents. Nous enverrons le fichier à votre adresse enregistrée dès qu'il sera prêt.",
+    "request": "Demander le rapport",
+    "queued": "Demande mise en file. Nous vous enverrons un e-mail une fois prête.",
+    "alreadyQueued": "Un rapport est déjà en cours de préparation.",
+    "noEmail": "Ajoutez d'abord un e-mail à votre compte.",
+    "history": "Demandes récentes",
+    "status": {
+      "PENDING": "En file",
+      "RUNNING": "Préparation…",
+      "COMPLETED": "Envoyé",
+      "FAILED": "Échec"
+    },
+    "sentTo": "Envoyé à {{email}}",
+    "noRequests": "Vous n'avez pas encore demandé de rapport."
+  },
+  "removeAccount": {
+    "title": "Supprimer le compte",
+    "intro": "Votre compte sera désactivé immédiatement et vous serez déconnecté de tous les appareils.\n\nVous pouvez le réactiver à tout moment en vous reconnectant.",
+    "deactivate": "Désactiver le compte",
+    "deactivated": "Votre compte a été désactivé.",
+    "scheduleIntro": "Ou programmez la suppression définitive dans 30 jours (annulable avant) :",
+    "scheduleDeletion": "Programmer la suppression dans 30 jours"
+  },
+  "passkeys": {
+    "title": "Clés d'accès",
+    "comingSoonTitle": "Clés d'accès bientôt disponibles",
+    "comingSoonBody": "Connectez-vous sans mot de passe avec votre empreinte, votre visage ou le code de votre appareil. Nous y travaillons — revenez bientôt."
+  }
+}

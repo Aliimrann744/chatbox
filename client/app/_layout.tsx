@@ -19,6 +19,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 // Register background handlers at module level (before React tree mounts)
 import { registerBackgroundHandler, registerNotifeeBackgroundHandler } from '@/services/background-handler';
 import notificationService from '@/services/notifications';
+// Initialize i18n before any screen renders, so cached language preference
+// applies on the very first frame.
+import '@/i18n';
 registerBackgroundHandler();
 registerNotifeeBackgroundHandler();
 // Pre-login init: creates Android notification channels and wires the
@@ -211,6 +214,12 @@ function RootLayoutNav() {
         <Stack.Screen name="settings/accessibility" options={{ headerShown: false }} />
         <Stack.Screen name="settings/language" options={{ headerShown: false }} />
         <Stack.Screen name="settings/help" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/account/two-factor" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/account/passkeys" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/account/security-notifications" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/account/change-email" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/account/request-data" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/account/remove-account" options={{ headerShown: false }} />
         <Stack.Screen
           name="image-editor"
           options={{

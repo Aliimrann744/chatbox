@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -44,20 +44,13 @@ export default function StorageScreen() {
 
   const loadSize = useCallback(async () => {
     try {
-      const dir = FileSystem.cacheDirectory;
-      if (!dir) return;
-      const walk = async (path: string): Promise<number> => {
-        const info = await FileSystem.getInfoAsync(path, { size: true });
-        if (!info.exists) return 0;
-        if (!info.isDirectory) return (info as any).size || 0;
-        const entries = await FileSystem.readDirectoryAsync(path).catch(() => [] as string[]);
-        let total = 0;
-        for (const e of entries) {
-          total += await walk(path + e + '/');
-        }
-        return total;
-      };
-      setCacheSize(await walk(dir));
+      const cache = Paths.cache;
+      if (!cache.exists) {
+        setCacheSize(0);
+        return;
+      }
+      // Directory.size reports the recursive byte total.
+      setCacheSize(cache.size ?? 0);
     } catch {
       setCacheSize(0);
     }
@@ -91,11 +84,15 @@ export default function StorageScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const dir = FileSystem.cacheDirectory;
-              if (!dir) return;
-              const entries = await FileSystem.readDirectoryAsync(dir).catch(() => [] as string[]);
-              for (const e of entries) {
-                await FileSystem.deleteAsync(dir + e, { idempotent: true }).catch(() => {});
+              const cache = Paths.cache;
+              if (!cache.exists) {
+                await loadSize();
+                return;
+              }
+              for (const entry of cache.list()) {
+                try {
+                  (entry as Directory | File).delete();
+                } catch {}
               }
               await loadSize();
               Alert.alert('Done', 'Cache cleared.');

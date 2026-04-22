@@ -28,6 +28,11 @@ model User {
   otp             String?
   otpExpiry       DateTime?
 
+  // Pending email change (awaiting OTP verification)
+  pendingEmail          String?
+  pendingEmailOtp       String?
+  pendingEmailOtpExpiry DateTime?
+
   // Online Status
   isOnline        Boolean   @default(false)
   lastSeen        DateTime  @default(now())
@@ -41,6 +46,23 @@ model User {
   avatarPrivacy       PrivacySetting @default(EVERYONE)
   aboutPrivacy        PrivacySetting @default(EVERYONE)
   readReceiptsEnabled Boolean        @default(true)
+
+  // Preferences
+  language        String    @default("en")
+
+  // Two-Factor Authentication
+  // twoFactorSecret is encrypted at rest (AES-256-GCM) — never log or expose raw.
+  twoFactorEnabled     Boolean            @default(false)
+  twoFactorMethod      TwoFactorMethod    @default(NONE)
+  twoFactorSecret      String?            @db.Text
+  twoFactorBackupCodes String?            @db.Text  // JSON array of bcrypt hashes
+
+  // Security
+  securityNotificationsEnabled Boolean    @default(true)
+
+  // Deactivation / Scheduled deletion
+  deactivatedAt        DateTime?
+  scheduledDeletionAt  DateTime?
 
   // Timestamps
   createdAt       DateTime  @default(now())
@@ -61,10 +83,67 @@ model User {
   deletedMessages DeletedMessageForUser[]
   statuses        Status[]        @relation("UserStatuses")
   statusViews     StatusView[]    @relation("StatusViews")
+  loginEvents     LoginEvent[]
+  dataExports     DataExportRequest[]
 
   @@index([phone])
   @@index([email])
+  @@index([scheduledDeletionAt])
   @@map("users")
+}
+
+enum TwoFactorMethod {
+  NONE
+  EMAIL
+  TOTP
+}
+
+// ==================== DATA EXPORT REQUEST ====================
+model DataExportRequest {
+  id          String             @id @default(cuid())
+  userId      String
+  status      DataExportStatus   @default(PENDING)
+  bytes       Int?
+  error       String?            @db.Text
+
+  requestedAt DateTime           @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  sentTo      String?
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("data_export_requests")
+}
+
+enum DataExportStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// ==================== LOGIN EVENTS (security audit) ====================
+model LoginEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  method      String   // otp-phone, otp-email, google, facebook, totp, backup-code
+  ipAddress   String?
+  userAgent   String?  @db.Text
+  device      String?
+  location    String?
+  isNewDevice Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("login_events")
 }
 
 enum PrivacySetting {

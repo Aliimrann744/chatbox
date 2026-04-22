@@ -155,57 +155,66 @@ export const authApi = {
   },
 
   async verifyOtp(data: { phone?: string; email?: string; otp: string }) {
-    const response = await request<{
-      message: string;
-      user: User;
-      accessToken: string;
-      refreshToken: string;
-      isNewUser: boolean;
-    }>('/auth/verify-otp', {
+    const response = await request<VerifyOtpResponse>('/auth/verify-otp', {
       method: 'POST',
       body: JSON.stringify(data),
     });
 
-    // Store tokens
-    await storage.setItem(TOKEN_KEY, response.accessToken);
-    await storage.setItem(REFRESH_TOKEN_KEY, response.refreshToken);
+    // If 2FA is required, don't store tokens — caller must complete challenge first
+    if ((response as TwoFactorChallenge).twoFactorRequired) return response;
 
+    const ok = response as AuthSuccess;
+    await storage.setItem(TOKEN_KEY, ok.accessToken);
+    await storage.setItem(REFRESH_TOKEN_KEY, ok.refreshToken);
     return response;
   },
 
+  async verifyTwoFactor(data: {
+    challengeToken: string;
+    code: string;
+    method: 'totp' | 'email' | 'backup';
+  }) {
+    const response = await request<AuthSuccess>('/auth/2fa/verify', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    await storage.setItem(TOKEN_KEY, response.accessToken);
+    await storage.setItem(REFRESH_TOKEN_KEY, response.refreshToken);
+    return response;
+  },
+
+  async resendTwoFactorEmail(challengeToken: string) {
+    return request<{ message: string }>('/auth/2fa/resend-email', {
+      method: 'POST',
+      body: JSON.stringify({ challengeToken }),
+    });
+  },
+
   async googleLogin(data: { idToken: string }) {
-    const response = await request<{
-      message: string;
-      user: User;
-      accessToken: string;
-      refreshToken: string;
-      isNewUser: boolean;
-    }>('/auth/google', {
+    const response = await request<VerifyOtpResponse>('/auth/google', {
       method: 'POST',
       body: JSON.stringify(data),
     });
 
-    await storage.setItem(TOKEN_KEY, response.accessToken);
-    await storage.setItem(REFRESH_TOKEN_KEY, response.refreshToken);
+    if ((response as TwoFactorChallenge).twoFactorRequired) return response;
 
+    const ok = response as AuthSuccess;
+    await storage.setItem(TOKEN_KEY, ok.accessToken);
+    await storage.setItem(REFRESH_TOKEN_KEY, ok.refreshToken);
     return response;
   },
 
   async facebookLogin(data: { accessToken: string }) {
-    const response = await request<{
-      message: string;
-      user: User;
-      accessToken: string;
-      refreshToken: string;
-      isNewUser: boolean;
-    }>('/auth/facebook', {
+    const response = await request<VerifyOtpResponse>('/auth/facebook', {
       method: 'POST',
       body: JSON.stringify(data),
     });
 
-    await storage.setItem(TOKEN_KEY, response.accessToken);
-    await storage.setItem(REFRESH_TOKEN_KEY, response.refreshToken);
+    if ((response as TwoFactorChallenge).twoFactorRequired) return response;
 
+    const ok = response as AuthSuccess;
+    await storage.setItem(TOKEN_KEY, ok.accessToken);
+    await storage.setItem(REFRESH_TOKEN_KEY, ok.refreshToken);
     return response;
   },
 
@@ -640,6 +649,112 @@ export const settingsApi = {
   async deleteAccount() {
     return request('/settings/account', { method: 'DELETE' });
   },
+
+  async setLanguage(language: string) {
+    return request<{ success: boolean; language: string }>('/settings/language', {
+      method: 'PUT',
+      body: JSON.stringify({ language }),
+    });
+  },
+
+  async setSecurityNotifications(enabled: boolean) {
+    return request<{ success: boolean; enabled: boolean }>('/settings/security-notifications', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
+  async getLoginEvents(limit = 20) {
+    return request<{ events: LoginEvent[] }>(`/settings/login-events?limit=${limit}`);
+  },
+
+  async requestEmailChange(email: string) {
+    return request<{ message: string; otp?: string }>('/settings/change-email/request', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async verifyEmailChange(code: string) {
+    return request<{ success: boolean; email: string }>('/settings/change-email/verify', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  },
+
+  async deactivateAccount() {
+    return request<{ success: boolean }>('/settings/account/deactivate', { method: 'POST' });
+  },
+
+  async reactivateAccount() {
+    return request<{ success: boolean }>('/settings/account/reactivate', { method: 'POST' });
+  },
+
+  async scheduleDeletion() {
+    return request<{ success: boolean; scheduledDeletionAt: string }>(
+      '/settings/account/schedule-deletion',
+      { method: 'POST' },
+    );
+  },
+
+  async cancelDeletion() {
+    return request<{ success: boolean }>('/settings/account/cancel-deletion', { method: 'POST' });
+  },
+
+  async requestDataExport() {
+    return request<{
+      success: boolean;
+      alreadyQueued: boolean;
+      requestId: string;
+      status: DataExportStatus;
+    }>('/settings/request-data', { method: 'POST' });
+  },
+
+  async listDataExports(limit = 10) {
+    return request<{ requests: DataExportRequest[] }>(`/settings/data-exports?limit=${limit}`);
+  },
+};
+
+// Two-Factor API
+export const twoFactorApi = {
+  async getStatus() {
+    return request<TwoFactorStatus>('/2fa/status');
+  },
+
+  async setupTotp() {
+    return request<{ secret: string; otpauth: string; qrDataUrl: string }>('/2fa/setup/totp', {
+      method: 'POST',
+    });
+  },
+
+  async verifyTotpSetup(code: string) {
+    return request<{ enabled: boolean; method: string; backupCodes: string[] }>(
+      '/2fa/setup/totp/verify',
+      { method: 'POST', body: JSON.stringify({ code }) },
+    );
+  },
+
+  async enableEmailOtp() {
+    return request<{ enabled: boolean; method: string; backupCodes: string[] }>(
+      '/2fa/setup/email',
+      { method: 'POST' },
+    );
+  },
+
+  async requestDisable() {
+    return request<{ message: string; otp?: string }>('/2fa/disable/request', { method: 'POST' });
+  },
+
+  async confirmDisable(code: string) {
+    return request<{ disabled: boolean }>('/2fa/disable/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  },
+
+  async regenerateBackupCodes() {
+    return request<{ backupCodes: string[] }>('/2fa/backup-codes/regenerate', { method: 'POST' });
+  },
 };
 
 // Helper to append file to FormData (handles web vs native)
@@ -709,6 +824,24 @@ export const uploadApi = {
     });
   },
 };
+
+// Auth response types
+export interface AuthSuccess {
+  message: string;
+  user: User;
+  accessToken: string;
+  refreshToken: string;
+  isNewUser: boolean;
+}
+
+export interface TwoFactorChallenge {
+  message: string;
+  twoFactorRequired: true;
+  method: 'NONE' | 'EMAIL' | 'TOTP';
+  challengeToken: string;
+}
+
+export type VerifyOtpResponse = AuthSuccess | TwoFactorChallenge;
 
 // Types
 export interface User {
@@ -930,6 +1063,36 @@ export interface PrivacySettings {
   avatarPrivacy: 'EVERYONE' | 'CONTACTS' | 'NOBODY';
   aboutPrivacy: 'EVERYONE' | 'CONTACTS' | 'NOBODY';
   readReceiptsEnabled: boolean;
+}
+
+export interface TwoFactorStatus {
+  enabled: boolean;
+  method: 'NONE' | 'EMAIL' | 'TOTP';
+  backupCodesRemaining: number;
+}
+
+export type DataExportStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+
+export interface DataExportRequest {
+  id: string;
+  status: DataExportStatus;
+  bytes?: number | null;
+  error?: string | null;
+  requestedAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  sentTo?: string | null;
+}
+
+export interface LoginEvent {
+  id: string;
+  method: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  device?: string | null;
+  location?: string | null;
+  isNewDevice: boolean;
+  createdAt: string;
 }
 
 export interface Status {

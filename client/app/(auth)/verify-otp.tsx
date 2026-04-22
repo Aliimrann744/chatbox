@@ -76,10 +76,21 @@ export default function VerifyOtpScreen() {
     setIsVerifying(true);
     try {
       const verifyParams = isEmailMode ? { email: email! } : { phone: phone! };
-      const { isNewUser } = await verifyOtp(verifyParams, otpString);
+      const result = await verifyOtp(verifyParams, otpString);
+      if ('twoFactorRequired' in result) {
+        router.replace({
+          pathname: '/(auth)/two-factor',
+          params: {
+            challengeToken: result.challengeToken,
+            method: result.method,
+            loginMode,
+          },
+        });
+        return;
+      }
       router.replace({
         pathname: '/(auth)/loading',
-        params: { isNewUser: isNewUser ? '1' : '0', loginMode },
+        params: { isNewUser: result.isNewUser ? '1' : '0', loginMode },
       });
     } catch (error: any) {
       setOtp('');
