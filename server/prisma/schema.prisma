@@ -85,6 +85,7 @@ model User {
   statusViews     StatusView[]    @relation("StatusViews")
   loginEvents     LoginEvent[]
   dataExports     DataExportRequest[]
+  publicApiKeys   PublicApiKey[]
 
   @@index([phone])
   @@index([email])
@@ -470,4 +471,28 @@ model StatusView {
 enum StatusType {
   IMAGE
   VIDEO
+}
+
+// ==================== PUBLIC API KEYS ====================
+// External systems authenticate against the public messaging API with one of
+// these keys. The raw key is shown exactly once at creation; only the SHA-256
+// hash is stored at rest. `keyPrefix` keeps the first chars visible for
+// identification in logs / UI without exposing the secret.
+model PublicApiKey {
+  id           String    @id @default(cuid())
+  ownerId      String
+  label        String    @default("API key")
+  keyHash      String    @unique
+  keyPrefix    String
+  canSendText  Boolean   @default(true)
+  canSendVoice Boolean   @default(true)
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  owner        User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@map("public_api_keys")
 }

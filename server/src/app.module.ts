@@ -16,6 +16,7 @@ import { SettingsModule } from './settings/settings.module';
 import { StatusModule } from './status/status.module';
 import { NotificationModule } from './notification/notification.module';
 import { TwoFactorModule } from './two-factor/two-factor.module';
+import { PublicApiModule } from './public-api/public-api.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { TwoFactorModule } from './two-factor/two-factor.module';
     SettingsModule,
     StatusModule,
     TwoFactorModule,
+    PublicApiModule,
   ],
   controllers: [AppController],
   providers: [
