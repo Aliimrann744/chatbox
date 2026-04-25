@@ -1,5 +1,5 @@
 /**
- * Theme configuration for Chatbox - WhatsApp-like chat application
+ * Theme configuration for Whatchat - WhatsApp-like chat application
  * Primary color: #075E54 (dark teal - WhatsApp)
  */
 

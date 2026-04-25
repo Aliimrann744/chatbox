@@ -37,12 +37,12 @@ export class MailService {
 
   async sendOtpEmail(email: string, otp: string) {
     await this.transporter.sendMail({
-      from: `"Chatbox" <${this.from()}>`,
+      from: `"Whatchat" <${this.from()}>`,
       to: email,
-      subject: 'Your Chatbox Verification Code',
+      subject: 'Your Whatchat Verification Code',
       html: this.codeHtml(
         'Verify Your Email',
-        'Your Chatbox verification code is:',
+        'Your Whatchat verification code is:',
         otp,
         'This code expires in 10 minutes. Do not share it with anyone.',
       ),
@@ -51,12 +51,12 @@ export class MailService {
 
   async sendEmailChangeOtp(email: string, otp: string) {
     await this.transporter.sendMail({
-      from: `"Chatbox" <${this.from()}>`,
+      from: `"Whatchat" <${this.from()}>`,
       to: email,
       subject: 'Confirm your new email address',
       html: this.codeHtml(
         'Confirm your new email',
-        'Use the code below to confirm this email as your new Chatbox address:',
+        'Use the code below to confirm this email as your new Whatchat address:',
         otp,
         'This code expires in 10 minutes. If you did not request this change, ignore this email.',
       ),
@@ -65,7 +65,7 @@ export class MailService {
 
   async send2faDisableEmail(email: string, otp: string) {
     await this.transporter.sendMail({
-      from: `"Chatbox Security" <${this.from()}>`,
+      from: `"Whatchat Security" <${this.from()}>`,
       to: email,
       subject: 'Disable two-step verification',
       html: this.codeHtml(
@@ -79,7 +79,7 @@ export class MailService {
 
   async send2faLoginEmail(email: string, otp: string) {
     await this.transporter.sendMail({
-      from: `"Chatbox Security" <${this.from()}>`,
+      from: `"Whatchat Security" <${this.from()}>`,
       to: email,
       subject: 'Your sign-in verification code',
       html: this.codeHtml(
@@ -94,13 +94,13 @@ export class MailService {
   async sendSecurityAlertEmail(email: string, details: { device?: string; ipAddress?: string; time: Date }) {
     const timeStr = details.time.toUTCString();
     await this.transporter.sendMail({
-      from: `"Chatbox Security" <${this.from()}>`,
+      from: `"Whatchat Security" <${this.from()}>`,
       to: email,
-      subject: 'New sign-in to your Chatbox account',
+      subject: 'New sign-in to your Whatchat account',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
           <h2 style="color: #1a1a1a; margin-bottom: 16px;">New sign-in detected</h2>
-          <p style="color: #555; font-size: 14px;">Your Chatbox account was just accessed from a new device.</p>
+          <p style="color: #555; font-size: 14px;">Your Whatchat account was just accessed from a new device.</p>
           <ul style="color: #555; font-size: 14px;">
             <li><strong>Time:</strong> ${timeStr}</li>
             <li><strong>Device:</strong> ${details.device || 'Unknown'}</li>
@@ -114,13 +114,13 @@ export class MailService {
 
   async sendDataExportEmail(email: string, json: string) {
     await this.transporter.sendMail({
-      from: `"Chatbox" <${this.from()}>`,
+      from: `"Whatchat" <${this.from()}>`,
       to: email,
       subject: 'Your requested account data',
       text: 'Your requested account data is attached as a JSON file.',
       attachments: [
         {
-          filename: 'chatbox-account-data.json',
+          filename: 'whatchat-account-data.json',
           content: json,
           contentType: 'application/json',
         },
@@ -131,13 +131,13 @@ export class MailService {
   async sendAccountDeletionScheduledEmail(email: string, deletionDate: Date) {
     const ds = deletionDate.toUTCString();
     await this.transporter.sendMail({
-      from: `"Chatbox" <${this.from()}>`,
+      from: `"Whatchat" <${this.from()}>`,
       to: email,
-      subject: 'Your Chatbox account is scheduled for deletion',
+      subject: 'Your Whatchat account is scheduled for deletion',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
           <h2 style="color: #1a1a1a; margin-bottom: 16px;">Account deletion scheduled</h2>
-          <p style="color: #555; font-size: 14px;">Your Chatbox account will be permanently deleted on <strong>${ds}</strong>.</p>
+          <p style="color: #555; font-size: 14px;">Your Whatchat account will be permanently deleted on <strong>${ds}</strong>.</p>
           <p style="color: #555; font-size: 14px;">If you change your mind, sign in before that date and cancel the deletion from Settings → Account.</p>
         </div>
       `,

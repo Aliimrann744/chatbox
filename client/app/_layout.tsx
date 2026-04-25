@@ -15,6 +15,7 @@ import { NotificationProvider } from '@/contexts/notification-context';
 import { IncomingCallListener } from '@/components/call/incoming-call-listener';
 import { ActiveCallBanner } from '@/components/call/active-call-banner';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppUpdates } from '@/hooks/use-app-updates';
 
 // Register background handlers at module level (before React tree mounts)
 import { registerBackgroundHandler, registerNotifeeBackgroundHandler } from '@/services/background-handler';
@@ -40,6 +41,9 @@ function RootLayoutNav() {
   const { isAuthenticated, isLoading, user } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  // OTA update check on launch + foreground — applies silently on next restart.
+  useAppUpdates();
 
   // Create custom themes based on our color scheme
   const lightTheme = {

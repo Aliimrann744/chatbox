@@ -1,4 +1,4 @@
-# Chatbox - WhatsApp Clone Documentation
+# Whatchat - WhatsApp Clone Documentation
 
 ## Table of Contents
 1. [Overview](#overview)
@@ -22,7 +22,7 @@
 
 ## Overview
 
-Chatbox is a WhatsApp-like messaging application with the following features:
+Whatchat is a WhatsApp-like messaging application with the following features:
 - User registration with phone/email verification
 - Real-time 1-on-1 messaging
 - Group chats
@@ -83,7 +83,7 @@ model User {
   countryCode     String    @default("+1")
   password        String
   name            String
-  about           String    @default("Hey there! I am using Chatbox")
+  about           String    @default("Hey there! I am using Whatchat")
   avatar          String?
 
   // Verification
@@ -1356,7 +1356,7 @@ async sendGroupMessage(chatId: string, senderId: string, message: Message) {
 │        │     ]                                 │                │
 │        │ ◄──────────────────────────────────── │                │
 │        │                                       │                │
-│  6. Display contacts who have Chatbox          │                │
+│  6. Display contacts who have Whatchat         │                │
 │     with their profile info                    │                │
 │                                                                 │
 └────────────────────────────────────────────────────────────────┘

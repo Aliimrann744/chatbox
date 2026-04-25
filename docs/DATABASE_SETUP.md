@@ -1,6 +1,6 @@
-# Chatbox Database Setup Guide
+# Whatchat Database Setup Guide
 
-This guide explains how to set up MySQL database for the Chatbox project using XAMPP.
+This guide explains how to set up MySQL database for the Whatchat project using XAMPP.
 
 ## Prerequisites
 
@@ -21,7 +21,7 @@ This guide explains how to set up MySQL database for the Chatbox project using X
 
 1. Open your browser and go to: `http://localhost/phpmyadmin`
 2. Click on **"New"** in the left sidebar
-3. Enter database name: `chatbox`
+3. Enter database name: `whatchat`
 4. Select collation: `utf8mb4_general_ci` (recommended for full Unicode support)
 5. Click **"Create"**
 
@@ -35,7 +35,7 @@ This guide explains how to set up MySQL database for the Chatbox project using X
    ```
 4. Create the database:
    ```sql
-   CREATE DATABASE chatbox CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+   CREATE DATABASE whatchat CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
    ```
 5. Verify the database was created:
    ```sql
@@ -51,7 +51,7 @@ This guide explains how to set up MySQL database for the Chatbox project using X
 The `.env` file in the `server` folder is already configured with:
 
 ```env
-DATABASE_URL="mysql://root:@localhost:3306/chatbox"
+DATABASE_URL="mysql://root:@localhost:3306/whatchat"
 ```
 
 **Understanding the connection string:**
@@ -60,13 +60,13 @@ DATABASE_URL="mysql://root:@localhost:3306/chatbox"
 - `:` - Password separator (empty password by default in XAMPP)
 - `@localhost` - Database host
 - `:3306` - MySQL port (default)
-- `/chatbox` - Database name
+- `/whatchat` - Database name
 
 ### If you have a MySQL password:
 
 Update the `.env` file:
 ```env
-DATABASE_URL="mysql://root:YOUR_PASSWORD@localhost:3306/chatbox"
+DATABASE_URL="mysql://root:YOUR_PASSWORD@localhost:3306/whatchat"
 ```
 
 ## Step 4: Run the Server
@@ -97,10 +97,10 @@ The server will:
 
 1. If you set a password for root user, update `.env`:
    ```env
-   DATABASE_URL="mysql://root:your_password@localhost:3306/chatbox"
+   DATABASE_URL="mysql://root:your_password@localhost:3306/whatchat"
    ```
 
-### Error: "Unknown database 'chatbox'"
+### Error: "Unknown database 'whatchat'"
 
 1. Make sure you created the database in Step 2
 2. Verify the database name matches in `.env`
@@ -117,7 +117,7 @@ npx prisma generate
 ### View Database in phpMyAdmin
 
 1. Go to `http://localhost/phpmyadmin`
-2. Click on `chatbox` in the left sidebar
+2. Click on `whatchat` in the left sidebar
 3. You can view tables, run queries, and manage data
 
 ### Prisma Studio (Visual Database Editor)
@@ -149,7 +149,7 @@ npx prisma migrate reset
 
 | Variable | Description | Default Value |
 |----------|-------------|---------------|
-| DATABASE_URL | MySQL connection string | mysql://root:@localhost:3306/chatbox |
+| DATABASE_URL | MySQL connection string | mysql://root:@localhost:3306/whatchat |
 | PORT | Server port | 5000 |
 | JWT_SECRET | JWT signing secret | (configured) |
 | FRONTEND_URL | Frontend application URL | http://localhost:8081 |

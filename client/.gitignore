@@ -37,6 +37,9 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# Play Console service account for `eas submit` — never commit
+play-service-account.json
+
 app-example
 
 # generated native folders

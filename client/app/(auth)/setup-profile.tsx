@@ -83,7 +83,7 @@ export default function SetupProfileScreen() {
         avatar?: { uri: string; type: string; name: string };
       } = {
         name: name.trim(),
-        about: about.trim() || 'Hey there! I am using Chatbox',
+        about: about.trim() || 'Hey there! I am using Whatchat',
       };
 
       if (isEmailSignup) {
@@ -177,7 +177,7 @@ export default function SetupProfileScreen() {
             <IconSymbol name="doc.fill" size={20} color={colors.textSecondary} />
             <TextInput
               style={[styles.input, { color: colors.text }]}
-              placeholder="Hey there! I am using Chatbox"
+              placeholder="Hey there! I am using Whatchat"
               placeholderTextColor={colors.textSecondary}
               value={about}
               onChangeText={setAbout}

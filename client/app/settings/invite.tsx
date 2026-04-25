@@ -8,7 +8,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SettingsItem, SettingsScreen, SettingsSection } from '@/components/settings/settings-ui';
 
 const INVITE_URL = 'https://whatsapp.com/dl';
-const APP_NAME = 'Chatbox';
+const APP_NAME = 'Whatchat';
 
 export default function InviteScreen() {
   const colorScheme = useColorScheme() ?? 'light';

@@ -105,7 +105,7 @@ export class AuthService {
       await admin.messaging().send({
         token: fcmToken,
         notification: {
-          title: 'Your Chatbox verification code',
+          title: 'Your Whatchat verification code',
           body: `${otp} is your code. It expires in 10 minutes. Don't share it with anyone.`,
         },
         data: {

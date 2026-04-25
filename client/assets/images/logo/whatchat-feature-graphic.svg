@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#25D366"/>
+      <stop offset="100%" stop-color="#075E54"/>
+    </linearGradient>
+    <linearGradient id="fg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#25D366"/>
+      <stop offset="100%" stop-color="#0B7A65"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="500" fill="url(#bg)"/>
+  <path d="M0 0 H1024 V250 Q512 170 0 250 Z" fill="#ffffff" opacity="0.06"/>
+
+  <!-- Mini logo on the left -->
+  <g transform="translate(80, 90) scale(0.32)">
+    <path d="
+      M 240 232 H 784 Q 864 232 864 312 V 660 Q 864 740 784 740
+      H 456 L 344 844 Q 316 868 316 828 V 740
+      H 240 Q 160 740 160 660 V 312 Q 160 232 240 232 Z"
+      fill="#ffffff"/>
+    <path d="
+      M 288 340 L 380 340 L 436 580 L 496 340 L 556 340 L 616 580
+      L 672 340 L 764 340 L 672 688 L 568 688 L 526 520 L 484 688 L 380 688 Z"
+      fill="url(#fg)"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="420" y="235"
+        font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif"
+        font-weight="800"
+        font-size="150"
+        fill="#ffffff">Whatchat</text>
+  <text x="420" y="320"
+        font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif"
+        font-weight="500"
+        font-size="46"
+        fill="#ffffff"
+        opacity="0.88">Simple. Secure. Private messaging.</text>
+
+  <!-- Little message ticks for flavor -->
+  <g transform="translate(420, 380)" stroke="#ffffff" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.85">
+    <polyline points="0,14 16,30 46,0"/>
+    <polyline points="26,14 42,30 72,0"/>
+  </g>
+</svg>

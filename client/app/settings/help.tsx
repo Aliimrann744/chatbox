@@ -1,18 +1,12 @@
 import React from 'react';
 import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
-
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import {
-  SettingsDivider,
-  SettingsItem,
-  SettingsScreen,
-  SettingsSection,
-} from '@/components/settings/settings-ui';
+import { SettingsDivider, SettingsItem, SettingsScreen, SettingsSection } from '@/components/settings/settings-ui';
 
 const HELP_CENTER_URL = 'https://faq.whatsapp.com/';
-const CONTACT_EMAIL = 'support@chatbox.app';
+const CONTACT_EMAIL = 'support@whatschat.com';
 const PRIVACY_URL = 'https://www.whatsapp.com/legal/privacy-policy';
 const TERMS_URL = 'https://www.whatsapp.com/legal/terms-of-service';
 
@@ -90,7 +84,7 @@ export default function HelpScreen() {
       </SettingsSection>
 
       <View style={styles.versionBlock}>
-        <Text style={[styles.appName, { color: colors.text }]}>Chatbox</Text>
+        <Text style={[styles.appName, { color: colors.text }]}>Whatchat</Text>
         <Text style={[styles.version, { color: colors.textSecondary }]}>
           Version {appVersion}
         </Text>

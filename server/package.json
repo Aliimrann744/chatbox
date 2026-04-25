@@ -1,7 +1,7 @@
 {
-  "name": "chatbox-server",
+  "name": "whatchat-server",
   "version": "1.0.0",
-  "description": "Chatbox Server - NestJS Backend",
+  "description": "Whatchat Server - NestJS Backend",
   "author": "",
   "private": true,
   "license": "UNLICENSED",

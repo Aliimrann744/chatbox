@@ -241,7 +241,7 @@ export default function NewChatScreen() {
             {/* Contacts Section Header */}
             <View style={[styles.sectionHeader, { backgroundColor: colors.backgroundSecondary }]}>
               <Text style={[styles.sectionHeaderText, { color: colors.textSecondary }]}>
-                Contacts on Chatbox
+                Contacts on Whatchat
               </Text>
             </View>
           </>

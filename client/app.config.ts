@@ -6,33 +6,42 @@ const FACEBOOK_CLIENT_TOKEN = process.env.EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN || '
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: 'WhatsApp',
-  slug: 'Chatbox',
+  name: 'Whatchat',
+  slug: 'Whatchat',
   version: '1.0.0',
   orientation: 'portrait',
-  icon: './assets/images/icon.jpeg',
-  scheme: 'whatsapp',
+  icon: './assets/images/icon.png',
+  scheme: 'whatchat',
   userInterfaceStyle: 'automatic',
   newArchEnabled: true,
+  runtimeVersion: {
+    policy: 'appVersion',
+  },
+  updates: {
+    url: 'https://u.expo.dev/7ed6cda6-e617-4ac3-843e-9d99f5041d7f',
+    fallbackToCacheTimeout: 0,
+    checkAutomatically: 'ON_LOAD',
+  },
   ios: {
     supportsTablet: true,
     googleServicesFile: './GoogleService-Info.plist',
     infoPlist: {
-      NSMicrophoneUsageDescription: 'WhatsApp needs microphone access for voice messages and calls',
-      NSCameraUsageDescription: 'WhatsApp needs camera access for taking photos and video calls',
-      NSPhotoLibraryUsageDescription: 'WhatsApp needs photo library access to share photos and videos',
+      NSMicrophoneUsageDescription: 'Whatchat needs microphone access for voice messages and calls',
+      NSCameraUsageDescription: 'Whatchat needs camera access for taking photos and video calls',
+      NSPhotoLibraryUsageDescription: 'Whatchat needs photo library access to share photos and videos',
       ITSAppUsesNonExemptEncryption: false,
       UIBackgroundModes: ['voip', 'remote-notification', 'fetch'],
     },
-    bundleIdentifier: 'com.chatbox.app',
+    bundleIdentifier: 'com.whatchat.chat',
+    buildNumber: '1',
   },
   android: {
-    package: 'com.chatbox.app',
+    package: 'com.whatchat.chat',
     googleServicesFile: './google-services.json',
     softwareKeyboardLayoutMode: 'resize',
     adaptiveIcon: {
-      foregroundImage: './assets/images/icon.jpeg',
-      backgroundColor: '#25D366',
+      foregroundImage: './assets/images/adaptive-icon-fg.png',
+      backgroundColor: '#128C7E',
     },
     permissions: [
       'RECORD_AUDIO',
@@ -61,6 +70,23 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   plugins: [
     'expo-router',
+    'expo-updates',
+    [
+      'expo-build-properties',
+      {
+        android: {
+          compileSdkVersion: 35,
+          targetSdkVersion: 35,
+          minSdkVersion: 24,
+          buildToolsVersion: '35.0.0',
+          enableProguardInReleaseBuilds: true,
+          enableShrinkResourcesInReleaseBuilds: true,
+        },
+        ios: {
+          deploymentTarget: '15.1',
+        },
+      },
+    ],
     [
       'expo-splash-screen',
       {
@@ -74,13 +100,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
     'expo-secure-store',
+    'expo-localization',
     ["@react-native-google-signin/google-signin", { iosUrlScheme: "com.googleusercontent.apps.dummy" }],
     [
       'react-native-fbsdk-next',
       {
         appID: FACEBOOK_APP_ID,
         clientToken: FACEBOOK_CLIENT_TOKEN,
-        displayName: 'WhatsApp',
+        displayName: 'Whatchat',
         scheme: `fb${FACEBOOK_APP_ID}`,
         advertiserIDCollectionEnabled: false,
         autoLogAppEventsEnabled: false,
@@ -99,7 +126,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   extra: {
     router: {},
     eas: {
-      projectId: '7ed6cda6-e617-4ac3-843e-9d99f5041d7f',
+      "projectId": "d244487d-5c67-4831-b789-c26d573a0f47"
     },
   },
+  owner: undefined,
 });

@@ -76,7 +76,7 @@ export class TwoFactorService {
 
     const secret = authenticator.generateSecret();
     const accountLabel = user.email || user.phone || user.id;
-    const issuer = this.configService.get<string>('APP_NAME') || 'Chatbox';
+    const issuer = this.configService.get<string>('APP_NAME') || 'Whatchat';
     const otpauth = authenticator.keyuri(accountLabel, issuer, secret);
     const qrDataUrl = await QRCode.toDataURL(otpauth);
 

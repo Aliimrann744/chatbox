@@ -31,7 +31,7 @@ interface ContactPickerModalProps {
 
 /**
  * Multi-select contact picker used by the status forward and
- * camera-to-chat share flows. Fetches the user's Chatbox contacts and
+ * camera-to-chat share flows. Fetches the user's Whatchat contacts and
  * lets the caller cap the number of recipients.
  */
 export function ContactPickerModal({

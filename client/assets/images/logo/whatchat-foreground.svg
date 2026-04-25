@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="fg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#E8FFF6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Android adaptive-icon safe zone: content must live inside the central
+       66% circle. All shapes below are drawn within that envelope so the
+       launcher can apply any mask (circle, squircle, rounded square). -->
+
+  <!-- Speech bubble, recentered for the adaptive-icon safe zone -->
+  <path d="
+    M 296 348
+    H 728
+    Q 800 348 800 420
+    V 656
+    Q 800 728 728 728
+    H 488
+    L 388 816
+    Q 364 836 364 804
+    V 728
+    H 296
+    Q 224 728 224 656
+    V 420
+    Q 224 348 296 348
+    Z"
+    fill="url(#fg)"/>
+
+  <!-- Bold W -->
+  <path d="
+    M 320 430
+    L 398 430
+    L 444 604
+    L 494 430
+    L 546 430
+    L 596 604
+    L 642 430
+    L 720 430
+    L 648 700
+    L 560 700
+    L 520 566
+    L 480 700
+    L 392 700
+    Z"
+    fill="#0B7A65"/>
+</svg>

@@ -238,7 +238,7 @@ export default function ContactsScreen() {
                   Invite Friends
                 </Text>
                 <Text style={[styles.inviteSubtitle, { color: colors.textSecondary }]}>
-                  Share Chatbox with your friends
+                  Share Whatchat with your friends
                 </Text>
               </View>
               <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />

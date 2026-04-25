@@ -1,6 +1,6 @@
 import { MMKV } from 'react-native-mmkv';
 
-const mmkv = new MMKV({ id: 'chatbox-cache' });
+const mmkv = new MMKV({ id: 'whatchat-cache' });
 
 const MAX_CACHE_AGE = 7 * 24 * 60 * 60 * 1000;
 

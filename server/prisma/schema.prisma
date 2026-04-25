@@ -18,7 +18,7 @@ model User {
   countryCode     String    @default("+1")
   password        String?
   name            String    @default("")
-  about           String    @default("Hey there! I am using Chatbox")
+  about           String    @default("Hey there! I am using Whatchat")
   avatar          String?
   googleId        String?   @unique
   facebookId      String?   @unique

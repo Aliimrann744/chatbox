@@ -1,4 +1,4 @@
-# Chatbox App - Usage Guide & Flow Documentation
+# Whatchat App - Usage Guide & Flow Documentation
 
 ## Table of Contents
 1. [Getting Started](#getting-started)
@@ -44,7 +44,7 @@ npm start
 │     └── User logs in                                             │
 │                                                                  │
 │  2. ADD CONTACTS (Two Ways)                                      │
-│     └── Option A: Sync device contacts (finds users on Chatbox) │
+│     └── Option A: Sync device contacts (finds users on Whatchat)│
 │     └── Option B: Search users by name/phone and add them        │
 │                                                                  │
 │  3. START A CHAT                                                 │
@@ -67,7 +67,7 @@ npm start
 1. Go to **Contacts** tab
 2. Tap the **sync button** (circular arrow icon) in the top right
 3. Grant contacts permission when prompted
-4. App will find which of your phone contacts are using Chatbox
+4. App will find which of your phone contacts are using Whatchat
 5. Found contacts are automatically added to your list
 
 ### Method 2: Search and Add Users

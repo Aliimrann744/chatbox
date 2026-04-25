@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:861455455222:android:9edeccaa6397ccf6b7edd7",
+        "mobilesdk_app_id": "1:861455455222:android:4cdc67457402622cb7edd7",
         "android_client_info": {
-          "package_name": "com.chatbox.app"
+          "package_name": "com.whatchat.chat"
         }
       },
       "oauth_client": [],
