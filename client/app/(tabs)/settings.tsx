@@ -64,7 +64,7 @@ export default function SettingsScreen() {
         <SettingsRow
           icon="person-add-outline"
           title="Invite a friend"
-          subtitle="Invite people to chat on WhatsApp"
+          subtitle="Invite people to chat on Whatchat"
           onPress={go('/settings/invite')}
         />
         <SettingsRow

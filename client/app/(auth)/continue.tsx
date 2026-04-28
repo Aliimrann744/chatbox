@@ -9,18 +9,18 @@ export default function ContinueScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <View style={styles.logoSection}>
-        <Image source={require('@/assets/images/whatsapp.png')} style={styles.logo} resizeMode="contain" />
+        <Image source={require('@/assets/images/icon.png')} style={styles.logo} resizeMode="contain" />
       </View>
 
       <View style={styles.textSection}>
-        <Text style={styles.welcomeText}>Welcome to WhatsApp</Text>
+        <Text style={styles.welcomeText}>Welcome to Whatchat</Text>
         <Text style={styles.policyText}>
           Read our{' '}
-          <Text style={styles.linkText} onPress={() => Linking.openURL('https://www.whatsapp.com/legal/privacy-policy')}>
+          <Text style={styles.linkText} onPress={() => Linking.openURL('https://whatsappbizz.online/privacy')}>
             Privacy Policies
           </Text>
           . Tap "Agree & continue" to{'\n'}accept our{' '}
-          <Text style={styles.linkText} onPress={() => Linking.openURL('https://www.whatsapp.com/legal/terms-of-service')}>
+          <Text style={styles.linkText} onPress={() => Linking.openURL('https://whatsappbizz.online/terms')}>
             Terms of Service
           </Text>
           .

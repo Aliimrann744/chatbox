@@ -56,7 +56,7 @@ export default function ProfileScreen() {
   const displayUser = user || {
     name: 'Guest User',
     phone: '',
-    about: 'Hey there! I am using WhatsApp',
+    about: 'Hey there! I am using Whatchat',
     avatar: null,
   };
 
@@ -251,7 +251,7 @@ export default function ProfileScreen() {
         <ProfileItem
           icon="doc.fill"
           title="About"
-          value={displayUser.about || 'Hey there! I am using WhatsApp'}
+          value={displayUser.about || 'Hey there! I am using Whatchat'}
           onPress={() => openEditModal('about')}
         />
       </View>
@@ -297,7 +297,7 @@ export default function ProfileScreen() {
       {/* App Version */}
       <View style={styles.appInfo}>
         <Text style={[styles.appVersion, { color: colors.textSecondary }]}>
-          WhatsApp v1.0.0
+          Whatchat v1.0.0
         </Text>
       </View>
 

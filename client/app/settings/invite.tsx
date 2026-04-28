@@ -7,7 +7,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SettingsItem, SettingsScreen, SettingsSection } from '@/components/settings/settings-ui';
 
-const INVITE_URL = 'https://whatsapp.com/dl';
+const INVITE_URL = 'https://whatsappbizz.online/';
 const APP_NAME = 'Whatchat';
 
 export default function InviteScreen() {

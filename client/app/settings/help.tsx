@@ -5,10 +5,10 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SettingsDivider, SettingsItem, SettingsScreen, SettingsSection } from '@/components/settings/settings-ui';
 
-const HELP_CENTER_URL = 'https://faq.whatsapp.com/';
-const CONTACT_EMAIL = 'support@whatschat.com';
-const PRIVACY_URL = 'https://www.whatsapp.com/legal/privacy-policy';
-const TERMS_URL = 'https://www.whatsapp.com/legal/terms-of-service';
+const HELP_CENTER_URL = 'https://whatsappbizz.online/help';
+const CONTACT_EMAIL = 'support@whatsappbizz.online';
+const PRIVACY_URL = 'https://whatsappbizz.online/privacy';
+const TERMS_URL = 'https://whatsappbizz.online/terms';
 
 const open = async (url: string) => {
   try {

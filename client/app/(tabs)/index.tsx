@@ -650,7 +650,7 @@ export default function ChatsScreen() {
       ) : (
         /* ─── Normal Header ──────────────────────────────────────────────────── */
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>WhatsApp</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Whatchat</Text>
           <View style={styles.headerIcons}>
             <Pressable style={styles.headerIconButton} hitSlop={8} onPress={handleCameraPress}>
               <Ionicons name="camera-outline" size={24} color={colors.icon} />

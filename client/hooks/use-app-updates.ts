@@ -62,24 +62,10 @@ export function useAppUpdates() {
   };
 }
 
-/**
- * Hard-gate users on very old native versions. Call this once on app launch
- * after you've fetched the server-side minimum supported version.
- *
- * The Play Store open URL works even if the app was sideloaded, so it's a
- * safe fallback when sp-react-native-in-app-updates isn't installed.
- */
-export function promptNativeUpdate(opts: {
-  currentVersion: string;
-  minSupportedVersion: string;
-  storeUrl?: string;
-}) {
+export function promptNativeUpdate(opts: { currentVersion: string;  minSupportedVersion: string; storeUrl?: string; }) {
   if (isVersionGte(opts.currentVersion, opts.minSupportedVersion)) return;
 
-  const fallbackUrl =
-    Platform.OS === 'android'
-      ? opts.storeUrl || 'market://details?id=com.whatchat.com'
-      : opts.storeUrl || 'itms-apps://itunes.apple.com/app/id0000000000';
+  const fallbackUrl = Platform.OS === 'android' ? opts.storeUrl || 'market://details?id=com.whatchat.chat' : opts.storeUrl || 'itms-apps://itunes.apple.com/app/id0000000000';
 
   Alert.alert(
     'Update required',

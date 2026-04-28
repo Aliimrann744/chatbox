@@ -46,6 +46,31 @@ export interface RequestContext {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  // Test login bypass: this phone number always receives a fixed OTP and skips
+  // FCM delivery, so QA / store-review accounts can log in without a real device.
+  private static readonly TEST_PHONE_CANONICAL = '+923084034370';
+  private static readonly TEST_PHONE_FORMATS: ReadonlySet<string> = new Set([
+    '+923084034370',
+    '923084034370',
+    '03084034370',
+    '3084034370',
+  ]);
+  private static readonly TEST_PHONE_OTP = '123456';
+
+  private normalizePhone(phone?: string | null): string | undefined {
+    if (!phone) return undefined;
+    const trimmed = phone.replace(/\s+/g, '');
+    if (AuthService.TEST_PHONE_FORMATS.has(trimmed)) {
+      return AuthService.TEST_PHONE_CANONICAL;
+    }
+    return trimmed;
+  }
+
+  private isTestPhone(phone?: string | null): boolean {
+    if (!phone) return false;
+    return AuthService.TEST_PHONE_FORMATS.has(phone.replace(/\s+/g, ''));
+  }
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -238,9 +263,12 @@ export class AuthService {
   }
 
   async sendOtp(sendOtpDto: SendOtpDto) {
-    const { phone, countryCode, email, fcmToken } = sendOtpDto;
+    const { phone: rawPhone, countryCode, email, fcmToken } = sendOtpDto;
 
-    const otp = this.generateOtp();
+    const isTestPhoneLogin = !email && this.isTestPhone(rawPhone);
+    const phone = email ? rawPhone : this.normalizePhone(rawPhone);
+
+    const otp = isTestPhoneLogin ? AuthService.TEST_PHONE_OTP : this.generateOtp();
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
     if (email) {
@@ -312,6 +340,14 @@ export class AuthService {
       });
     }
 
+    if (isTestPhoneLogin) {
+      this.logger.log('[OTP] Test phone bypass — skipping FCM and using fixed OTP');
+      return {
+        message: 'OTP sent successfully',
+        otp: process.env.NODE_ENV === 'development' ? otp : undefined,
+      };
+    }
+
     // Resolve the token to push to: prefer what the client just sent, fall
     // back to whatever was previously stored on the user.
     const targetToken = fcmToken || user.fcmToken || '';
@@ -324,7 +360,8 @@ export class AuthService {
   }
 
   async verifyOtp(verifyOtpDto: VerifyOtpDto, ctx: RequestContext = {}) {
-    const { phone, email, otp: otpCode } = verifyOtpDto;
+    const { phone: rawPhone, email, otp: otpCode } = verifyOtpDto;
+    const phone = email ? rawPhone : this.normalizePhone(rawPhone);
 
     let user;
     if (email) {

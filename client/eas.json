@@ -14,6 +14,8 @@
       },
       "env": {
         "EXPO_NO_DEV_CLIENT": "1",
+        "EXPO_PUBLIC_API_URL": "https://whatsappbizz.online/api",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "881712146837-ecp27ki10rdga9t4vso3v340jlva915p.apps.googleusercontent.com",
         "EXPO_PUBLIC_FACEBOOK_APP_ID": "1154080012747807",
         "EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN": "c99709deda6f1100bc89ae45c3bba7df"
       }
@@ -27,6 +29,8 @@
       },
       "env": {
         "EXPO_NO_DEV_CLIENT": "1",
+        "EXPO_PUBLIC_API_URL": "https://whatsappbizz.online/api",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "881712146837-ecp27ki10rdga9t4vso3v340jlva915p.apps.googleusercontent.com",
         "EXPO_PUBLIC_FACEBOOK_APP_ID": "1154080012747807",
         "EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN": "c99709deda6f1100bc89ae45c3bba7df"
       }
@@ -39,6 +43,8 @@
       },
       "env": {
         "EXPO_NO_DEV_CLIENT": "1",
+        "EXPO_PUBLIC_API_URL": "https://whatsappbizz.online/api",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "881712146837-ecp27ki10rdga9t4vso3v340jlva915p.apps.googleusercontent.com",
         "EXPO_PUBLIC_FACEBOOK_APP_ID": "1154080012747807",
         "EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN": "c99709deda6f1100bc89ae45c3bba7df"
       }

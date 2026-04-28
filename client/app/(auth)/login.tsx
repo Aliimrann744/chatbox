@@ -294,7 +294,7 @@ export default function LoginScreen() {
           {
             title: 'Phone Permission',
             message:
-              'Allow WhatsApp to make and manage phone calls?',
+              'Allow Whatchat to make and manage phone calls?',
             buttonPositive: 'Allow',
             buttonNegative: 'Deny',
           }
@@ -328,7 +328,7 @@ export default function LoginScreen() {
         // Link as companion device - placeholder
         break;
       case 'help':
-        Linking.openURL('https://faq.whatsapp.com/');
+        Linking.openURL('https://whatsappbizz.online/help');
         break;
     }
   };
@@ -365,7 +365,7 @@ export default function LoginScreen() {
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             {inputMode === 'phone' ? (
               <>
-                WhatsApp will need to verify your phone number. Carrier charges may apply.{' '}
+                Whatchat will need to verify your phone number. Carrier charges may apply.{' '}
                 <Text
                   style={styles.linkText}
                   onPress={() => setShowPhoneDialog(true)}>
@@ -606,8 +606,8 @@ export default function LoginScreen() {
             {/* Body */}
             <View style={styles.dialogBody}>
               <Text style={[styles.dialogText, { color: colors.text }]}>
-                To retrieve your phone number, WhatsApp needs permissions to make and manage
-                your calls. Without this permission, WhatsApp will be unable to retrieve your
+                To retrieve your phone number, Whatchat needs permissions to make and manage
+                your calls. Without this permission, Whatchat will be unable to retrieve your
                 phone number from the SIM.
               </Text>
 

@@ -18,7 +18,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     policy: 'appVersion',
   },
   updates: {
-    url: 'https://u.expo.dev/7ed6cda6-e617-4ac3-843e-9d99f5041d7f',
+    url: 'https://u.expo.dev/d244487d-5c67-4831-b789-c26d573a0f47',
     fallbackToCacheTimeout: 0,
     checkAutomatically: 'ON_LOAD',
   },
@@ -129,5 +129,5 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "projectId": "d244487d-5c67-4831-b789-c26d573a0f47"
     },
   },
-  owner: undefined,
+  owner: 'mr.hais',
 });

@@ -635,7 +635,7 @@ function EncryptionBanner() {
           <Ionicons name="lock-closed" size={12} color="'#262626'" style={{ paddingHorizontal: 6 }} />
           {'  '}
           Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them.{' '}
-          <Text style={styles.e2eBannerLink} onPress={() => Linking.openURL('https://faq.whatsapp.com/791574747982248')}>
+          <Text style={styles.e2eBannerLink} onPress={() => Linking.openURL('https://whatsappbizz.online/help')}>
             Learn more.
           </Text>
         </Text>
