@@ -2,7 +2,6 @@ import { Injectable, BadRequestException, UnauthorizedException, NotFoundExcepti
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import * as admin from 'firebase-admin';
 import * as UA from 'ua-parser-js';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
@@ -105,64 +104,30 @@ export class AuthService {
   }
 
   /**
-   * Delivers the OTP to the user's device via Firebase Cloud Messaging.
-   * The device's FCM token is captured by the client at login-screen mount
-   * and sent with the sendOtp request, so we don't need a paid SMS gateway.
+   * Delivers the OTP to the user's phone via the HTTP messaging gateway at
+   * 35.225.168.22:8081. The gateway accepts `mess` (message body) and `phone`
+   * (recipient number, country code without leading +) as query params.
    */
-  private async sendFcmOtp(fcmToken: string, otp: string) {
-    this.logger.log(
-      `[OTP] Attempting FCM delivery (token prefix=${(fcmToken || '').slice(0, 12) || '<empty>'}…)`,
-    );
+  private async sendHttpOtp(phone: string, otp: string) {
+    const phoneForUrl = phone.startsWith('+') ? phone.substring(1) : phone;
+    this.logger.log(`[OTP] Attempting HTTP delivery to ${phoneForUrl}`);
 
-    if (!fcmToken) {
-      this.logger.warn('[OTP] No FCM token provided by client — rejecting');
-      throw new BadRequestException(
-        'Device is not registered for push notifications. Please allow notifications and try again.',
-      );
-    }
-
-    if (!admin.apps.length) {
-      this.logger.error('[OTP] Firebase admin not initialised — OTP push not sent');
-      throw new BadRequestException('Notification service is not available');
-    }
+    const message = `${otp} is your Whatchat verification code. It expires in 10 minutes. Don't share it with anyone.`;
+    const url = `http://35.225.168.22:8081/newwhatsapp1.php?mess=${encodeURIComponent(message)}&phone=${encodeURIComponent(phoneForUrl)}`;
 
     try {
-      await admin.messaging().send({
-        token: fcmToken,
-        notification: {
-          title: 'Your Whatchat verification code',
-          body: `${otp} is your code. It expires in 10 minutes. Don't share it with anyone.`,
-        },
-        data: {
-          type: 'otp',
-          otp, // allows the client to auto-fill the input on tap
-        },
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: 'system',
-            color: '#25D366',
-            defaultSound: true,
-          },
-        },
-        apns: {
-          payload: {
-            aps: {
-              sound: 'default',
-              badge: 1,
-            },
-          },
-        },
-      });
-      this.logger.log('[OTP] FCM push sent successfully');
+      const response = await fetch(url);
+      if (!response.ok) {
+        this.logger.error(`[OTP] HTTP delivery failed: ${response.status} ${response.statusText}`);
+        throw new BadRequestException(
+          `Failed to deliver OTP (status ${response.status}). Please try again.`,
+        );
+      }
+      this.logger.log('[OTP] HTTP OTP sent successfully');
     } catch (error: any) {
-      const code = error?.code || error?.errorInfo?.code || 'unknown';
-      this.logger.error(
-        `[OTP] FCM send failed (code=${code}): ${error?.message || error}`,
-      );
-      throw new BadRequestException(
-        `Failed to deliver OTP via push (${code}). Please reinstall the app or try again.`,
-      );
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error(`[OTP] HTTP send failed: ${error?.message || error}`);
+      throw new BadRequestException('Failed to deliver OTP. Please try again.');
     }
   }
 
@@ -303,10 +268,8 @@ export class AuthService {
       };
     }
 
-    // Phone-based OTP — auto-register on first attempt and deliver via FCM.
-    this.logger.log(
-      `[OTP] Phone branch: phone=${phone}, cc=${countryCode}, hasFcmToken=${!!fcmToken}`,
-    );
+    // Phone-based OTP — auto-register on first attempt and deliver via HTTP gateway.
+    this.logger.log(`[OTP] Phone branch: phone=${phone}, cc=${countryCode}`);
     let user = await this.prisma.user.findUnique({ where: { phone: phone! } });
 
     if (user) {
@@ -341,20 +304,17 @@ export class AuthService {
     }
 
     if (isTestPhoneLogin) {
-      this.logger.log('[OTP] Test phone bypass — skipping FCM and using fixed OTP');
+      this.logger.log('[OTP] Test phone bypass — skipping HTTP delivery and using fixed OTP');
       return {
         message: 'OTP sent successfully',
         otp: process.env.NODE_ENV === 'development' ? otp : undefined,
       };
     }
 
-    // Resolve the token to push to: prefer what the client just sent, fall
-    // back to whatever was previously stored on the user.
-    const targetToken = fcmToken || user.fcmToken || '';
-    await this.sendFcmOtp(targetToken, otp);
+    await this.sendHttpOtp(phone!, otp);
 
     return {
-      message: 'OTP sent via push notification',
+      message: 'OTP sent successfully',
       otp: process.env.NODE_ENV === 'development' ? otp : undefined,
     };
   }

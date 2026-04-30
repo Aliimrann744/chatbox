@@ -33,7 +33,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       UIBackgroundModes: ['voip', 'remote-notification', 'fetch'],
     },
     bundleIdentifier: 'com.whatchat.chat',
-    buildNumber: '1',
+    buildNumber: '2',
   },
   android: {
     package: 'com.whatchat.chat',
@@ -118,6 +118,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     '@react-native-firebase/messaging',
     './plugins/force-agp-version',
     './plugins/fix-android-stl',
+    './plugins/remove-ad-id-permission',
   ],
   experiments: {
     typedRoutes: true,
