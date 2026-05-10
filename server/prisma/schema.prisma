@@ -492,7 +492,70 @@ model PublicApiKey {
   updatedAt    DateTime  @updatedAt
 
   owner        User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  messageLogs  PublicApiMessageLog[]
 
   @@index([ownerId])
   @@map("public_api_keys")
+}
+
+// ==================== PUBLIC API MESSAGE LOGS ====================
+// One row per external send attempt (success or failure) made through the
+// /api/public/v1/messages/* endpoints. Powers the /admin-panel dashboards:
+// per-key totals, per-user totals, "active right now" heuristics, and the
+// global time-series chart. Logging is non-blocking — a write failure here
+// must never break message delivery.
+model PublicApiMessageLog {
+  id                String                     @id @default(cuid())
+  apiKeyId          String
+  ownerId           String                     // denormalized for fast filters
+  recipientUserId   String?                    // null if recipient lookup failed
+  recipientPhone    String                     // raw phone from the request
+  type              PublicApiMessageType
+  status            PublicApiMessageStatus
+  errorReason       String?                    @db.Text
+  externalId        String?
+  contentPreview    String?                    @db.VarChar(280) // first 280 chars only
+  fileSize          Int?
+  mediaDurationMs   Int?
+  requestDurationMs Int?
+  ipAddress         String?
+  userAgent         String?                    @db.Text
+  createdAt         DateTime                   @default(now())
+
+  apiKey            PublicApiKey               @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId, createdAt])
+  @@index([ownerId, createdAt])
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@map("public_api_message_logs")
+}
+
+enum PublicApiMessageType {
+  TEXT
+  VOICE
+}
+
+enum PublicApiMessageStatus {
+  SUCCESS
+  FAILED
+}
+
+// ==================== ADMIN PANEL LOGIN AUDIT ====================
+// Records every /admin-panel/login attempt (success and failure) so the
+// superadmin has a forensic trail. Successful sessions are JWT cookies and
+// not stored server-side; only the login event is.
+model AdminLoginEvent {
+  id        String   @id @default(cuid())
+  username  String
+  success   Boolean
+  ipAddress String?
+  userAgent String?  @db.Text
+  reason    String?  // e.g. "invalid_password", "unknown_user"
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([username])
+  @@index([success, createdAt])
+  @@map("admin_login_events")
 }

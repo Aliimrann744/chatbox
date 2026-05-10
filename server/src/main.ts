@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { join } from 'path';
 import * as express from 'express';
@@ -270,8 +270,14 @@ async function bootstrap() {
     }),
   );
 
-  // Global prefix
-  app.setGlobalPrefix('api');
+  // Global prefix — exclude admin-panel so its routes resolve at root paths
+  // (/admin-panel, /admin-panel/dashboard, /admin-panel/api/...).
+  app.setGlobalPrefix('api', {
+    exclude: [
+      { path: 'admin-panel', method: RequestMethod.ALL },
+      { path: 'admin-panel/(.*)', method: RequestMethod.ALL },
+    ],
+  });
   const port = process.env.PORT;
   await app.listen(port);
   console.log(`Server is running on http://localhost:${port}`);

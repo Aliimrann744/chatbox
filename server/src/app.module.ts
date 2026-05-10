@@ -17,6 +17,7 @@ import { StatusModule } from './status/status.module';
 import { NotificationModule } from './notification/notification.module';
 import { TwoFactorModule } from './two-factor/two-factor.module';
 import { PublicApiModule } from './public-api/public-api.module';
+import { AdminPanelModule } from './admin-panel/admin-panel.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { PublicApiModule } from './public-api/public-api.module';
     StatusModule,
     TwoFactorModule,
     PublicApiModule,
+    AdminPanelModule,
   ],
   controllers: [AppController],
   providers: [

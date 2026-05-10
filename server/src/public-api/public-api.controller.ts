@@ -14,6 +14,7 @@ import { extname } from 'path';
 import { Request } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { ApiKeyGuard } from './guards/api-key.guard';
+import { PublicApiMessageLogInterceptor } from './interceptors/public-api-message-log.interceptor';
 import { PublicApiService } from './public-api.service';
 import { SendTextMessageDto } from './dto/send-text-message.dto';
 import { SendVoiceMessageDto } from './dto/send-voice-message.dto';
@@ -46,6 +47,7 @@ const VOICE_ALLOWED_MIMES = [
  */
 @Controller('public/v1/messages')
 @UseGuards(ApiKeyGuard)
+@UseInterceptors(PublicApiMessageLogInterceptor)
 @Public()
 export class PublicApiController {
   constructor(private readonly publicApiService: PublicApiService) {}
