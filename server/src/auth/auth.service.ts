@@ -134,15 +134,18 @@ export class AuthService {
   private async generateTokens(userId: string, identifier: string) {
     const payload = { sub: userId, phone: identifier };
 
+    // Default to a 10-year lifetime so users are never forced to re-login
+    // through inactivity. Override via JWT_EXPIRES_IN / JWT_REFRESH_EXPIRES_IN
+    // if you want a shorter session.
     const accessToken = this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_SECRET'),
-      expiresIn: this.configService.get<string>('JWT_EXPIRES_IN') || '15m',
+      expiresIn: this.configService.get<string>('JWT_EXPIRES_IN') || '3650d',
     });
 
     const refreshToken = this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
       expiresIn:
-        this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '7d',
+        this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '3650d',
     });
 
     // Hash and store refresh token

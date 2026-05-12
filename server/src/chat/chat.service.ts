@@ -13,6 +13,7 @@ import {
   MemberRole,
   GroupPermissionRole,
 } from '@prisma/client';
+import { isAdminUser, sanitizeUserForOthers } from '../common/admin-user.util';
 
 @Injectable()
 export class ChatService {
@@ -54,7 +55,7 @@ export class ChatService {
     });
 
     if (existingChat) {
-      return existingChat;
+      return this.sanitizeChatMembers(existingChat);
     }
 
     // Check if participant exists
@@ -94,6 +95,7 @@ export class ChatService {
                 about: true,
                 isOnline: true,
                 lastSeen: true,
+                email: true,
               },
             },
           },
@@ -101,7 +103,24 @@ export class ChatService {
       },
     });
 
-    return chat;
+    return this.sanitizeChatMembers(chat);
+  }
+
+  /**
+   * Applies sanitizeUserForOthers to every member of a chat. Used by chat
+   * create/lookup helpers so the admin account's contact info never leaks
+   * out the door regardless of which entrypoint the client hit.
+   */
+  private sanitizeChatMembers<
+    T extends { members: { user: any; [key: string]: any }[] },
+  >(chat: T): T {
+    return {
+      ...chat,
+      members: chat.members.map((member) => ({
+        ...member,
+        user: sanitizeUserForOthers(member.user)!,
+      })),
+    } as T;
   }
 
   async createGroupChat(
@@ -149,6 +168,7 @@ export class ChatService {
                 about: true,
                 isOnline: true,
                 lastSeen: true,
+                email: true,
               },
             },
           },
@@ -156,7 +176,7 @@ export class ChatService {
       },
     });
 
-    return chat;
+    return this.sanitizeChatMembers(chat);
   }
 
   async getUserChats(userId: string) {
@@ -181,6 +201,13 @@ export class ChatService {
                 avatar: true,
                 isOnline: true,
                 lastSeen: true,
+                // `email` and `phone` are needed to recognise admin accounts
+                // and to fall back to the phone number when a user's display
+                // name is empty. Both are stripped from the response payload
+                // below — they never leave the server.
+                email: true,
+                phone: true,
+                countryCode: true,
               },
             },
           },
@@ -217,29 +244,56 @@ export class ChatService {
 
         const lastMessage = lastMessages[0] || null;
 
-        // For private chats, use the other user's info as chat info
-        // For private chats, use the other user's info.
+        // For private chats, use the other user's info as chat info.
         // If the other member was deleted (cascade removed their row),
         // otherMembers will be empty — show "Deleted Account" placeholder.
-        const chatInfo =
-          chat.type === ChatType.PRIVATE
-            ? otherMembers.length > 0
-              ? {
-                  name: otherMembers[0].user.name,
-                  avatar: otherMembers[0].user.avatar,
-                  isOnline: otherMembers[0].user.isOnline,
-                  lastSeen: otherMembers[0].user.lastSeen,
-                }
-              : {
-                  name: 'Deleted Account',
-                  avatar: null,
-                  isOnline: false,
-                  lastSeen: null,
-                }
-            : {
-                name: chat.name,
-                avatar: chat.avatar,
-              };
+        // For non-admins with an empty `name` (OTP signups that never set a
+        // profile name) we fall back to the formatted phone so the chat
+        // never renders as a blank tile.
+        let chatInfo: {
+          name: string;
+          avatar: string | null;
+          isOnline?: boolean;
+          lastSeen?: Date | null;
+          isAdmin?: boolean;
+        };
+
+        if (chat.type === ChatType.PRIVATE) {
+          if (otherMembers.length > 0) {
+            const other = otherMembers[0].user;
+            const admin = isAdminUser(other);
+            const displayName = admin
+              ? other.name
+              : other.name || `${other.countryCode || ''}${other.phone || ''}`.trim() || other.name;
+            chatInfo = {
+              name: displayName,
+              avatar: other.avatar,
+              isOnline: other.isOnline,
+              lastSeen: other.lastSeen,
+              isAdmin: admin,
+            };
+          } else {
+            chatInfo = {
+              name: 'Deleted Account',
+              avatar: null,
+              isOnline: false,
+              lastSeen: null,
+              isAdmin: false,
+            };
+          }
+        } else {
+          chatInfo = {
+            name: chat.name ?? '',
+            avatar: chat.avatar,
+          };
+        }
+
+        // Strip phone/email from every member before returning to keep admin
+        // contact details hidden no matter how the client renders this list.
+        const sanitizedMembers = chat.members.map((member) => ({
+          ...member,
+          user: sanitizeUserForOthers(member.user)!,
+        }));
 
         return {
           id: chat.id,
@@ -253,7 +307,7 @@ export class ChatService {
           isArchived: currentMember?.isArchived || false,
           isFavorite: currentMember?.isFavorite || false,
           isMarkedUnread: currentMember?.isMarkedUnread || false,
-          members: chat.members,
+          members: sanitizedMembers,
           createdAt: chat.createdAt,
           updatedAt: chat.updatedAt,
         };
@@ -278,6 +332,9 @@ export class ChatService {
                 lastSeen: true,
                 phone: true,
                 countryCode: true,
+                // Needed to recognise admin accounts; stripped from the
+                // response below.
+                email: true,
               },
             },
           },
@@ -294,8 +351,18 @@ export class ChatService {
       throw new ForbiddenException('You are not a member of this chat');
     }
 
+    // Hide phone/email/countryCode for admin members so chat-info screens
+    // (members list, profile preview, etc.) can't leak contact details for
+    // the official admin account. Self-member is sanitized too — symmetrical
+    // and avoids a "self looks different" UI bug.
+    const sanitizedMembers = chat.members.map((member) => ({
+      ...member,
+      user: sanitizeUserForOthers(member.user)!,
+    }));
+
     return {
       ...chat,
+      members: sanitizedMembers,
       isPinned: currentMember.isPinned,
       isMuted: currentMember.isMuted,
       isArchived: currentMember.isArchived,

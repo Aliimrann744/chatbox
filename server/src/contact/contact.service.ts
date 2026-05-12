@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ConflictException, ForbiddenException } 
 import { PrismaService } from '../prisma/prisma.service';
 import { PrivacySetting } from '@prisma/client';
 import { DeviceContact } from './dto/sync-contacts.dto';
+import { sanitizeUserForOthers } from '../common/admin-user.util';
 
 @Injectable()
 export class ContactService {
@@ -84,11 +85,15 @@ export class ContactService {
           select: {
             id: true,
             phone: true,
+            countryCode: true,
             name: true,
             avatar: true,
             about: true,
             isOnline: true,
             lastSeen: true,
+            // Used to identify admin accounts so we can hide their phone /
+            // email from non-admin viewers. Stripped from the response.
+            email: true,
           },
         },
       },
@@ -99,12 +104,15 @@ export class ContactService {
       },
     });
 
-    return contacts.map((c) => ({
-      id: c.id,
-      contactId: c.contactId,
-      nickname: c.nickname,
-      ...c.contact,
-    }));
+    return contacts.map((c) => {
+      const sanitized = sanitizeUserForOthers(c.contact)!;
+      return {
+        id: c.id,
+        contactId: c.contactId,
+        nickname: c.nickname,
+        ...sanitized,
+      };
+    });
   }
 
   async addContact(userId: string, contactId: string, nickname?: string) {
@@ -149,21 +157,24 @@ export class ContactService {
           select: {
             id: true,
             phone: true,
+            countryCode: true,
             name: true,
             avatar: true,
             about: true,
             isOnline: true,
             lastSeen: true,
+            email: true,
           },
         },
       },
     });
 
+    const sanitized = sanitizeUserForOthers(contact.contact)!;
     return {
       id: contact.id,
       contactId: contact.contactId,
       nickname: contact.nickname,
-      ...contact.contact,
+      ...sanitized,
     };
   }
 
@@ -281,6 +292,8 @@ export class ContactService {
             name: true,
             avatar: true,
             phone: true,
+            countryCode: true,
+            email: true,
           },
         },
       },
@@ -289,7 +302,7 @@ export class ContactService {
     return blockedUsers.map((b) => ({
       id: b.id,
       blockedAt: b.createdAt,
-      user: b.blocked,
+      user: sanitizeUserForOthers(b.blocked)!,
     }));
   }
 
@@ -311,8 +324,10 @@ export class ContactService {
         name: true,
         avatar: true,
         phone: true,
+        countryCode: true,
         about: true,
         isOnline: true,
+        email: true,
       },
       take: 20,
     });
@@ -322,7 +337,7 @@ export class ContactService {
       users.map(async (user) => {
         const isBlocked = await this.isBlocked(userId, user.id);
         if (isBlocked) return null;
-        return user;
+        return sanitizeUserForOthers(user)!;
       }),
     );
 

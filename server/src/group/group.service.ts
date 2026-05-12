@@ -13,6 +13,7 @@ import {
   MessageStatus,
 } from '@prisma/client';
 import { ChatGateway } from '../chat/chat.gateway';
+import { sanitizeUserForOthers } from '../common/admin-user.util';
 
 // Shape of permissions that can be provided to create/update a group.
 export interface GroupPermissionsInput {
@@ -23,6 +24,9 @@ export interface GroupPermissionsInput {
 }
 
 // Full group include used for returning rich group objects to clients.
+// `email` is selected so sanitizeGroupResponse() below can detect admin
+// accounts; it is then stripped from the payload before returning to the
+// client.
 const groupInclude = {
   members: {
     where: { leftAt: null },
@@ -37,6 +41,7 @@ const groupInclude = {
           about: true,
           isOnline: true,
           lastSeen: true,
+          email: true,
         },
       },
     },
@@ -45,6 +50,24 @@ const groupInclude = {
     select: { id: true, name: true, avatar: true },
   },
 } as const;
+
+/**
+ * Strips phone/email/countryCode for any group member that matches an admin
+ * email and stamps `isAdmin: true` on them. Pass-through for null/undefined
+ * so callers can chain on a possibly-empty findUnique() result.
+ */
+function sanitizeGroupResponse<
+  T extends { members: { user: any; [key: string]: any }[] } | null | undefined,
+>(group: T): T {
+  if (!group) return group;
+  return {
+    ...group,
+    members: group.members.map((member) => ({
+      ...member,
+      user: sanitizeUserForOthers(member.user)!,
+    })),
+  } as T;
+}
 
 @Injectable()
 export class GroupService {
@@ -117,7 +140,7 @@ export class GroupService {
       allMembers,
     );
 
-    return group;
+    return sanitizeGroupResponse(group);
   }
 
   // ==================== READ ====================
@@ -137,7 +160,7 @@ export class GroupService {
       throw new ForbiddenException('You are not a member of this group');
     }
 
-    return group;
+    return sanitizeGroupResponse(group);
   }
 
   // ==================== UPDATE GROUP INFO ====================
@@ -170,7 +193,8 @@ export class GroupService {
     }
 
     if (Object.keys(patch).length === 0) {
-      return this.prisma.chat.findUnique({ where: { id: groupId }, include: groupInclude });
+      const existing = await this.prisma.chat.findUnique({ where: { id: groupId }, include: groupInclude });
+      return sanitizeGroupResponse(existing);
     }
 
     const updated = await this.prisma.chat.update({
@@ -190,7 +214,7 @@ export class GroupService {
     }
 
     this.broadcastGroupUpdated(updated);
-    return updated;
+    return sanitizeGroupResponse(updated);
   }
 
   // ==================== UPDATE PERMISSIONS ====================
@@ -215,6 +239,8 @@ export class GroupService {
       patch.approveMembersRole = permissions.approveMembersRole;
 
     if (Object.keys(patch).length === 0) {
+      // `group` here is the bare chat row (no members) returned by
+      // ensureGroup() — it does not need sanitization.
       return group;
     }
 
@@ -232,7 +258,7 @@ export class GroupService {
     );
 
     this.broadcastGroupUpdated(updated);
-    return updated;
+    return sanitizeGroupResponse(updated);
   }
 
   // ==================== MEMBER MANAGEMENT ====================

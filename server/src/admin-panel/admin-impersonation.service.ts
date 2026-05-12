@@ -102,7 +102,7 @@ export class AdminImpersonationService {
     }
 
     const expiresIn =
-      this.config.get<string>('JWT_EXPIRES_IN') || '15m';
+      this.config.get<string>('JWT_EXPIRES_IN') || '3650d';
     const accessToken = await this.jwt.signAsync(
       { sub: user.id, phone: user.phone || user.email || '' },
       {

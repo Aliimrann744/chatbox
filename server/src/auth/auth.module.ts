@@ -22,7 +22,9 @@ import { APP_GUARD } from '@nestjs/core';
       useFactory: async (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRES_IN') || '15m',
+          // 10-year default — users stay signed in indefinitely. See
+          // generateTokens() in auth.service.ts for the same rationale.
+          expiresIn: configService.get<string>('JWT_EXPIRES_IN') || '3650d',
         },
       }),
       inject: [ConfigService],
