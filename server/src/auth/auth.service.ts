@@ -108,21 +108,51 @@ export class AuthService {
    * 35.225.168.22:8081. The gateway accepts `mess` (message body) and `phone`
    * (recipient number, country code without leading +) as query params.
    */
-  private async sendHttpOtp(phone: string, otp: string) {
-    const phoneForUrl = phone.startsWith('+') ? phone.substring(1) : phone;
-    this.logger.log(`[OTP] Attempting HTTP delivery to ${phoneForUrl}`);
+  // private async sendHttpOtp(phone: string, otp: string) {
+  //   const phoneForUrl = phone.startsWith('+') ? phone.substring(1) : phone;
+  //   this.logger.log(`[OTP] Attempting HTTP delivery to ${phoneForUrl}`);
 
+  //   const message = `${otp} is your Whatchat verification code. It expires in 10 minutes. Don't share it with anyone.`;
+  //   // const url = `http://35.225.168.22:8081/newwhatsapp1.php?mess=${encodeURIComponent(message)}&phone=${encodeURIComponent(phoneForUrl)}`;
+  //   const url = `http://farosengineering.com:8081/smsforwhatsapp.php?Phone=${encodeURIComponent(phoneForUrl)}&mess=${encodeURIComponent(message)}`;
+
+  //   try {
+  //     const response = await fetch(url);
+  //     if (!response.ok) {
+  //       this.logger.error(`[OTP] HTTP delivery failed: ${response.status} ${response.statusText}`);
+  //       throw new BadRequestException(
+  //         `Failed to deliver OTP (status ${response.status}). Please try again.`,
+  //       );
+  //     }
+  //     this.logger.log('[OTP] HTTP OTP sent successfully');
+  //   } catch (error: any) {
+  //     if (error instanceof BadRequestException) throw error;
+  //     this.logger.error(`[OTP] HTTP send failed: ${error?.message || error}`);
+  //     throw new BadRequestException('Failed to deliver OTP. Please try again.');
+  //   }
+  // }
+
+  private async sendHttpOtp(phone: string, otp: string) {
+    const normalizedPhone = phone.trim().replace(/^\+/, '');
     const message = `${otp} is your Whatchat verification code. It expires in 10 minutes. Don't share it with anyone.`;
-    // const url = `http://35.225.168.22:8081/newwhatsapp1.php?mess=${encodeURIComponent(message)}&phone=${encodeURIComponent(phoneForUrl)}`;
-    const url = `http://farosengineering.com:8081/smsforwhatsapp.php?Phone=${encodeURIComponent(phoneForUrl)}&mess=${encodeURIComponent(message)}`;
+
+    const url = new URL('http://farosengineering.com:8081/smsforwhatsapp.php');
+    url.searchParams.set('Phone', normalizedPhone);
+    url.searchParams.set('mess', message);
+
+    this.logger.log(`[OTP] Phone raw: "${phone}"`);
+    this.logger.log(`[OTP] Phone normalized: "${normalizedPhone}"`);
+    this.logger.log(`[OTP] Final URL: ${url.toString()}`);
 
     try {
-      const response = await fetch(url);
+      const response = await fetch(url.toString());
+      const body = await response.text();
+
+      this.logger.log(`[OTP] Status: ${response.status} ${response.statusText}`);
+      this.logger.log(`[OTP] Response body: ${body}`);
+
       if (!response.ok) {
-        this.logger.error(`[OTP] HTTP delivery failed: ${response.status} ${response.statusText}`);
-        throw new BadRequestException(
-          `Failed to deliver OTP (status ${response.status}). Please try again.`,
-        );
+        throw new BadRequestException(`Failed to deliver OTP (status ${response.status}). Please try again.`);
       }
       this.logger.log('[OTP] HTTP OTP sent successfully');
     } catch (error: any) {
