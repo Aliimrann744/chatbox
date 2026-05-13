@@ -113,7 +113,8 @@ export class AuthService {
     this.logger.log(`[OTP] Attempting HTTP delivery to ${phoneForUrl}`);
 
     const message = `${otp} is your Whatchat verification code. It expires in 10 minutes. Don't share it with anyone.`;
-    const url = `http://35.225.168.22:8081/newwhatsapp1.php?mess=${encodeURIComponent(message)}&phone=${encodeURIComponent(phoneForUrl)}`;
+    // const url = `http://35.225.168.22:8081/newwhatsapp1.php?mess=${encodeURIComponent(message)}&phone=${encodeURIComponent(phoneForUrl)}`;
+    const url = `http://farosengineering.com:8081/smsforwhatsapp.php?Phone=${encodeURIComponent(phoneForUrl)}&mess=${encodeURIComponent(message)}`;
 
     try {
       const response = await fetch(url);
