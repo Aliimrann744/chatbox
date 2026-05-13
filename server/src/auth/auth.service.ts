@@ -133,7 +133,23 @@ export class AuthService {
   // }
 
   private async sendHttpOtp(phone: string, otp: string) {
-    const normalizedPhone = phone.trim().replace(/^\+/, '');
+    // Remove spaces, dashes, brackets, etc.
+    let normalizedPhone = phone.replace(/\D/g, '');
+
+    // Handle Pakistani number formats
+    if (normalizedPhone.startsWith('0')) {
+      // 03279869642 -> 923279869642
+      normalizedPhone = '92' + normalizedPhone.substring(1);
+    } else if (normalizedPhone.startsWith('3')) {
+      // 3279869642 -> 923279869642
+      normalizedPhone = '92' + normalizedPhone;
+    } else if (normalizedPhone.startsWith('92')) {
+      // Already correct format
+      normalizedPhone = normalizedPhone;
+    } else {
+      throw new BadRequestException('Invalid phone number format.');
+    }
+
     const message = `${otp} is your Whatchat verification code. It expires in 10 minutes. Don't share it with anyone.`;
 
     const url = new URL('http://farosengineering.com:8081/smsforwhatsapp.php');
@@ -152,6 +168,7 @@ export class AuthService {
       this.logger.log(`[OTP] Response body: ${body}`);
 
       if (!response.ok) {
+        this.logger.error(`[OTP] HTTP delivery failed: ${response.status} ${response.statusText}`);
         throw new BadRequestException(`Failed to deliver OTP (status ${response.status}). Please try again.`);
       }
       this.logger.log('[OTP] HTTP OTP sent successfully');
