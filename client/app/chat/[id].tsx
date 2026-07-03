@@ -9,7 +9,9 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, runOnJS, interpolate, Extrapolation, FadeIn, FadeOut } from 'react-native-reanimated';
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { VerifiedTick } from '@/components/ui/verified-tick';
 import { AudioPlayer } from '@/components/chat/audio-player';
+import { isAdminEmail } from '@/utils/admin';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useVoiceRecorder } from '@/hooks/use-voice-recorder';
@@ -21,7 +23,7 @@ import { useCall } from '@/contexts/call-context';
 import { useGroupCall } from '@/contexts/group-call-context';
 import { pickImage, pickVideo, pickDocument, takePhoto, pickMultipleMedia, PickedMedia, getMessageTypeFromMimeType } from '@/utils/media-picker';
 import { getCurrentLocation, LocationData, openInMaps } from '@/utils/location-picker';
-import { formatTime, generateTempId, getInitials, getStatusText } from '@/utils/helpers';
+import { formatTime, generateTempId, getDateKey, getDateSeparatorLabel, getInitials, getStatusText } from '@/utils/helpers';
 import { cache, CacheKeys } from '@/services/cache';
 import { useNotificationContext } from '@/contexts/notification-context';
 import { setImageEditorCallback } from '@/app/image-editor';
@@ -119,6 +121,62 @@ function getReplyPreviewText(msg: Message | { type?: string; content?: string | 
     default:
       return msg.content || '';
   }
+}
+
+// Matches http(s) URLs and bare www. links inside message text so they can be
+// rendered as tappable links (e.g. https://maps.app.goo.gl/EoeKWJZ9daPCAgRE6).
+const URL_REGEX = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+
+function renderTextWithLinks(text: string, linkColor: string): React.ReactNode {
+  if (!text) return text;
+  if (!URL_REGEX.test(text)) return text;
+
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  let match: RegExpExecArray | null;
+  URL_REGEX.lastIndex = 0;
+
+  while ((match = URL_REGEX.exec(text)) !== null) {
+    const raw = match[0];
+    const start = match.index;
+
+    // Push the plain text before this URL.
+    if (start > lastIndex) {
+      parts.push(text.slice(lastIndex, start));
+    }
+
+    // Strip trailing punctuation that's almost never part of the URL
+    // (e.g. "check https://foo.com." or "(https://foo.com)").
+    let url = raw;
+    let trailing = '';
+    const trailMatch = url.match(/[)\]}.,!?;:'"]+$/);
+    if (trailMatch) {
+      trailing = trailMatch[0];
+      url = url.slice(0, url.length - trailing.length);
+    }
+
+    const href = url.startsWith('www.') ? `https://${url}` : url;
+    parts.push(
+      <Text
+        key={`lnk-${key++}`}
+        style={{ color: linkColor, textDecorationLine: 'underline' }}
+        onPress={() => { Linking.openURL(href).catch(() => {}); }}
+        suppressHighlighting
+      >
+        {url}
+      </Text>
+    );
+
+    if (trailing) parts.push(trailing);
+    lastIndex = start + raw.length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts;
 }
 
 function SwipeToReply({ children, onReply, enabled, isMe }: { children: React.ReactNode; onReply: () => void; enabled: boolean; isMe: boolean; }) {
@@ -560,7 +618,7 @@ function MessageBubble({ message, isMe, onImagePress, onVideoPress, isSelected, 
         {isTextMessage ? (
           <View style={styles.textMessageRow}>
             <Text style={[styles.messageText, { color: colorScheme === 'dark' ? '#e9edef' : '#111b21' }]}>
-              {message.content}
+              {renderTextWithLinks(message.content || '', colorScheme === 'dark' ? '#53bdeb' : '#027eb5')}
             </Text>
             <View style={styles.inlineTimeContainer}>
               {message.isStarred && (
@@ -644,7 +702,7 @@ function EncryptionBanner() {
   );
 }
 
-function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall, onUserInfoPress, onMenuPress }: { chat: any; isTyping: boolean; onBack: () => void; onCall: () => void; onVideoCall: () => void; onUserInfoPress?: () => void; onMenuPress?: () => void; }) {
+function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall, onUserInfoPress, onMenuPress, isAdmin }: { chat: any; isTyping: boolean; onBack: () => void; onCall: () => void; onVideoCall: () => void; onUserInfoPress?: () => void; onMenuPress?: () => void; isAdmin?: boolean; }) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
@@ -667,9 +725,12 @@ function ChatHeader({ chat, isTyping, onBack, onCall, onVideoCall, onUserInfoPre
           </View>
         )}
         <View style={styles.headerTextContainer}>
-          <Text style={[styles.headerUsername, { color: colors.headerText }]} numberOfLines={1}>
-            {chat?.name || 'User'}
-          </Text>
+          <View style={styles.headerUsernameRow}>
+            <Text style={[styles.headerUsername, { color: colors.headerText }]} numberOfLines={1}>
+              {chat?.name || 'User'}
+            </Text>
+            {isAdmin && <VerifiedTick size={14} style={{ marginLeft: 6 }} />}
+          </View>
           {statusText ? (
             <Text style={[styles.headerStatus, { color: isTyping ? '#25D366' : 'rgba(255, 255, 255, 0.7)' }]} numberOfLines={1}>
               {statusText}
@@ -1017,6 +1078,14 @@ export default function ChatDetailScreen() {
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [iBlockedThem, setIBlockedThem] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  // ─── Scroll tracking ──────────────────────────────────────────────────────
+  // `isAtBottomRef` is updated synchronously inside onScroll so other
+  // handlers (incoming-message, send-message) can decide whether to auto-
+  // scroll without depending on React state propagation.
+  const isAtBottomRef = useRef(true);
+  const hasDoneInitialScrollRef = useRef(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [unreadFromBottom, setUnreadFromBottom] = useState(0);
   // Get the other participant for PRIVATE chats
   const otherMember = chat?.members?.find((m) => m.user.id !== user?.id);
   const otherUser = otherMember?.user;
@@ -1212,6 +1281,7 @@ export default function ChatDetailScreen() {
     // New message received
     const unsubscribeNewMessage = socketService.on('new_message', (message: Message) => {
       if (message.chatId === chatId) {
+        const isFromMe = message.senderId === user?.id;
         setMessages((prev) => {
           // Prevent duplicates — message may already exist from API fetch or prior socket event
           if (prev.some((m) => m.id === message.id)) return prev;
@@ -1224,10 +1294,16 @@ export default function ChatDetailScreen() {
         // Mark as read since we're viewing the chat
         socketService.markAsRead(chatId!);
 
-        // Scroll to bottom
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+        // If user is scrolled away from the bottom and this is an incoming
+        // message, surface it via the floating button's unread badge instead
+        // of yanking them out of context. Sent-by-me messages always scroll.
+        if (isFromMe || isAtBottomRef.current) {
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }, 100);
+        } else {
+          setUnreadFromBottom((n) => n + 1);
+        }
       }
     });
 
@@ -2179,43 +2255,137 @@ export default function ChatDetailScreen() {
 
   const isGroupChat = chat?.type === 'GROUP';
 
-  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
-    const isMe = item.senderId === user?.id;
-    const prev = index > 0 ? messages[index - 1] : null;
+  // Detect the chat counterpart as an admin (verified) account so the chat
+  // header can render a blue tick and we can hide block actions.
+  const isAdminChat = useMemo(() => {
+    if (chat?.type !== 'PRIVATE') return false;
+    if ((chat as any)?.isAdmin === true) return true;
+    if ((otherUser as any)?.isAdmin === true) return true;
+    if (isAdminEmail((otherUser as any)?.email)) return true;
+    return false;
+  }, [chat, otherUser]);
+
+  // ─── Date separators ──────────────────────────────────────────────────────
+  // Build a single list that interleaves date separator rows with messages
+  // so a single FlatList can render both. Each separator gets a stable
+  // synthetic id (`date-YYYYMMDD`) so the FlatList does not thrash keys on
+  // re-render, and remembers the actual previous *message* (not separator)
+  // so group-chat sender-name suppression keeps working.
+  type DateSepItem = { kind: 'date'; id: string; label: string };
+  type MsgItem = { kind: 'msg'; id: string; message: Message; prevMessage: Message | null };
+  type ListItem = DateSepItem | MsgItem;
+
+  const listItems = useMemo<ListItem[]>(() => {
+    const items: ListItem[] = [];
+    let lastDateKey: string | null = null;
+    let prevMsg: Message | null = null;
+    for (const m of messages) {
+      const key = getDateKey(m.createdAt);
+      if (key !== lastDateKey) {
+        items.push({
+          kind: 'date',
+          id: `date-${key}`,
+          label: getDateSeparatorLabel(m.createdAt),
+        });
+        lastDateKey = key;
+        // A separator visually breaks the sender-streak grouping; reset
+        // prev so the next message renders its sender header again.
+        prevMsg = null;
+      }
+      items.push({ kind: 'msg', id: m.id, message: m, prevMessage: prevMsg });
+      prevMsg = m;
+    }
+    return items;
+  }, [messages]);
+
+  const renderListItem = ({ item }: { item: ListItem }) => {
+    if (item.kind === 'date') {
+      return (
+        <View style={styles.dateSeparatorWrapper}>
+          <View style={styles.dateSeparatorBubble}>
+            <Text style={styles.dateSeparatorText}>{item.label}</Text>
+          </View>
+        </View>
+      );
+    }
+    const msg = item.message;
+    const prev = item.prevMessage;
+    const isMe = msg.senderId === user?.id;
     const showSenderInfo =
       isGroupChat &&
       !isMe &&
-      item.type !== 'SYSTEM' &&
-      (!prev || prev.senderId !== item.senderId || prev.type === 'SYSTEM');
+      msg.type !== 'SYSTEM' &&
+      (!prev || prev.senderId !== msg.senderId || prev.type === 'SYSTEM');
     const senderDisplayName =
       isGroupChat && !isMe
-        ? resolveSenderDisplayName(item, contactsById, memberUserById)
+        ? resolveSenderDisplayName(msg, contactsById, memberUserById)
         : undefined;
-    // Only the sender needs a read indicator, and only groups need the
-    // per-receipt calculation (private chats keep using message.status).
     const groupReadState =
-      isGroupChat && isMe && item.type !== 'SYSTEM' && user?.id
-        ? computeGroupReadState(item, eligibleMembers, user.id)
+      isGroupChat && isMe && msg.type !== 'SYSTEM' && user?.id
+        ? computeGroupReadState(msg, eligibleMembers, user.id)
         : undefined;
     return (
       <MessageBubble
-        message={item}
+        message={msg}
         isMe={isMe}
         isGroup={isGroupChat}
         showSenderInfo={showSenderInfo}
         senderDisplayName={senderDisplayName}
-        senderAvatar={item.sender?.avatar}
+        senderAvatar={msg.sender?.avatar}
         groupReadState={groupReadState}
         onImagePress={isSelectionMode ? undefined : setPreviewImageUrl}
         onVideoPress={isSelectionMode ? undefined : setPreviewVideoUrl}
-        isSelected={selectedMessages.has(item.id)}
+        isSelected={selectedMessages.has(msg.id)}
         isSelectionMode={isSelectionMode}
-        onSelect={() => handleSelectMessage(item.id)}
-        onLongPress={() => handleLongPress(item.id)}
+        onSelect={() => handleSelectMessage(msg.id)}
+        onLongPress={() => handleLongPress(msg.id)}
         onReply={handleReply}
       />
     );
   };
+
+  // ─── Scroll handlers ──────────────────────────────────────────────────────
+  const NEAR_BOTTOM_PX = 120;
+  const handleScroll = useCallback((e: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distanceFromBottom =
+      contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    const atBottom = distanceFromBottom <= NEAR_BOTTOM_PX;
+    isAtBottomRef.current = atBottom;
+    setShowScrollToBottom((prev) => {
+      const next = !atBottom;
+      if (prev !== next) return next;
+      return prev;
+    });
+    if (atBottom && unreadFromBottom > 0) {
+      setUnreadFromBottom(0);
+    }
+  }, [unreadFromBottom]);
+
+  const handleScrollToBottomPress = useCallback(() => {
+    flatListRef.current?.scrollToEnd({ animated: true });
+    setUnreadFromBottom(0);
+  }, []);
+
+  const handleContentSizeChange = useCallback(() => {
+    if (listItems.length === 0) return;
+    if (!hasDoneInitialScrollRef.current) {
+      // First time content is laid out — land directly at the latest message
+      // without any visible scroll motion, so the chat opens already pinned
+      // to the bottom (WhatsApp-style).
+      flatListRef.current?.scrollToEnd({ animated: false });
+      hasDoneInitialScrollRef.current = true;
+      // Mark caught-up so the next incoming message keeps following the tail.
+      isAtBottomRef.current = true;
+      return;
+    }
+    // For subsequent layout changes (new messages, edits) only follow the
+    // tail if the user is currently parked near the bottom — otherwise we'd
+    // yank them out of older messages they're reading.
+    if (isAtBottomRef.current) {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [listItems.length]);
 
   if (loading) {
     return (
@@ -2260,6 +2430,7 @@ export default function ChatDetailScreen() {
             name: chat?.name,
             avatar: chat?.avatar,
           }}
+          isAdmin={isAdminChat}
           isTyping={isTyping}
           onBack={handleBack}
           onCall={handleCall}
@@ -2280,21 +2451,37 @@ export default function ChatDetailScreen() {
         {/* {!isSelectionMode && <EncryptionBanner />} */}
         <FlatList
           ref={flatListRef}
-          data={messages}
+          data={listItems}
           keyExtractor={(item) => item.id}
-          renderItem={renderMessage}
+          renderItem={renderListItem}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.messagesContent}
           style={styles.messagesListInner}
           onEndReached={loadMoreMessages}
           ListHeaderComponent={!isSelectionMode ? <EncryptionBanner /> : null}
           onEndReachedThreshold={0.5}
-          onContentSizeChange={() => {
-            if (messages.length > 0 && page === 1) {
-              flatListRef.current?.scrollToEnd({ animated: false });
-            }
-          }}
+          onScroll={handleScroll}
+          scrollEventThrottle={32}
+          onContentSizeChange={handleContentSizeChange}
         />
+
+        {showScrollToBottom && (
+          <Pressable
+            onPress={handleScrollToBottomPress}
+            style={styles.scrollToBottomFab}
+            hitSlop={8}
+            accessibilityLabel="Scroll to latest messages"
+          >
+            <Ionicons name="chevron-down" size={22} color={colors.text} />
+            {unreadFromBottom > 0 && (
+              <View style={[styles.scrollToBottomBadge, { backgroundColor: colors.accent || colors.primary }]}>
+                <Text style={styles.scrollToBottomBadgeText}>
+                  {unreadFromBottom > 99 ? '99+' : unreadFromBottom}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        )}
 
       {iBlockedThem && chat?.type === 'PRIVATE' ? (
         <Pressable
@@ -2666,7 +2853,7 @@ export default function ChatDetailScreen() {
                 {chat?.isPinned ? 'Unpin chat' : 'Pin chat'}
               </Text>
             </Pressable>
-            {chat?.type === 'PRIVATE' && (
+            {chat?.type === 'PRIVATE' && !isAdminChat && (
               <Pressable style={styles.chatMenuItem} onPress={handleMenuBlock}>
                 <Ionicons name={iBlockedThem ? 'ban' : 'ban-outline'} size={20} color={iBlockedThem ? colors.primary : '#e74c3c'} style={styles.chatMenuIcon} />
                 <Text style={[styles.chatMenuItemText, { color: iBlockedThem ? colors.primary : '#e74c3c' }]}>
@@ -2716,6 +2903,11 @@ const styles = StyleSheet.create({
   headerUsername: {
     fontSize: 17,
     fontWeight: '600',
+    flexShrink: 1,
+  },
+  headerUsernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   headerStatus: {
     fontSize: 12,
@@ -2742,6 +2934,60 @@ const styles = StyleSheet.create({
   },
   loadingMore: {
     paddingVertical: 10,
+  },
+  dateSeparatorWrapper: {
+    alignItems: 'center',
+    marginVertical: 8,
+    paddingHorizontal: 24,
+  },
+  dateSeparatorBubble: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(225, 245, 254, 0.92)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  dateSeparatorText: {
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: '#54656f',
+    letterSpacing: 0.2,
+  },
+  scrollToBottomFab: {
+    position: 'absolute',
+    right: 14,
+    bottom: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+  },
+  scrollToBottomBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scrollToBottomBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   systemMessageWrapper: {
     alignItems: 'center',

@@ -681,7 +681,11 @@ export default function ChatsScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll} contentContainerStyle={styles.filtersRow} keyboardShouldPersistTaps="handled">
             {FILTERS?.map((filter) => (
               <Pressable key={filter} onPress={() => setActiveFilter(filter)} style={[styles.filterChip, { backgroundColor: activeFilter === filter ? '#139047' : colors.inputBackground }]}>
-                <Text style={[styles.filterChipText, { color: activeFilter === filter ? '#ffffff' : colors.text }]}>
+                <Text
+                  numberOfLines={1}
+                  allowFontScaling={false}
+                  style={[styles.filterChipText, { color: activeFilter === filter ? '#ffffff' : colors.text }]}
+                >
                   {filter}
                 </Text>
               </Pressable>
@@ -941,20 +945,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
     gap: 8,
+    minHeight: 56,
   },
   filtersScroll: {
     flexGrow: 0,
+    flexShrink: 0,
+    height: 56,
   },
   filterChip: {
     paddingHorizontal: 16,
-    paddingVertical: 6,
+    height: 32,
     borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   filterChipText: {
     fontSize: 13,
     fontWeight: '500',
+    includeFontPadding: false,
   },
   filterAddButton: {
     width: 32,

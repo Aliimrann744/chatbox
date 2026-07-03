@@ -10,6 +10,8 @@ import { useAuth } from '@/contexts/auth-context';
 import { useCall } from '@/contexts/call-context';
 import { chatApi, contactApi, Chat, Message, SharedMedia, User } from '@/services/api';
 import { cache, CacheKeys } from '@/services/cache';
+import { VerifiedTick } from '@/components/ui/verified-tick';
+import { isAdminEmail } from '@/utils/admin';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MEDIA_THUMB_SIZE = (SCREEN_WIDTH - 48) / 4;
@@ -46,12 +48,20 @@ export default function UserInfoScreen() {
 
   // Derive user info from chat
   const otherMember = chat?.members?.find(m => m.user.id !== currentUser?.id);
-  const otherUser = otherMember ? (otherMember.user as typeof otherMember.user & { about?: string; phone?: string; countryCode?: string; email?: string }) : undefined;
+  const otherUser = otherMember ? (otherMember.user as typeof otherMember.user & { about?: string; phone?: string; countryCode?: string; email?: string; isAdmin?: boolean }) : undefined;
   const userName = otherUser?.name || chat?.name || 'User';
   const userAvatar = otherUser?.avatar || chat?.avatar;
   const userPhone = otherUser?.phone
     ? `${otherUser.countryCode || ''}${otherUser.phone}`.trim()
     : '';
+
+  // Admin detection: server stamps isAdmin on the sanitized member, but we
+  // also fall back to an email match for resilience if the API ever omits it.
+  const isAdminUser =
+    chat?.type === 'PRIVATE' &&
+    (otherUser?.isAdmin === true ||
+      (chat as any)?.isAdmin === true ||
+      isAdminEmail(otherUser?.email));
   console.log("otherUser", otherUser?.phone);
   console.log("chat0", chat?.members[0]?.user);
   console.log("chat1", chat?.members[1]?.user);
@@ -314,7 +324,10 @@ export default function UserInfoScreen() {
               </View>
             )}
           </Pressable>
-          <Text style={[styles.userName, { color: colors.text }]}>{userName}</Text>
+          <View style={styles.userNameRow}>
+            <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>{userName}</Text>
+            {isAdminUser && <VerifiedTick size={16} style={{ marginLeft: 6 }} />}
+          </View>
           {userPhone ? (
             <Text style={[styles.userPhone, { color: colors.textSecondary }]}>{userPhone}</Text>
           ) : null}
@@ -412,15 +425,17 @@ export default function UserInfoScreen() {
 
         {/* Danger zone */}
         <View style={[styles.menuSection, { backgroundColor: colors.cardBackground }]}>
-          {/* Block */}
-          <Pressable style={styles.menuItem} onPress={handleBlockUser}>
-            <Ionicons name="ban-outline" size={22} color="#FF3B30" style={styles.menuIcon} />
-            <View style={styles.menuItemContent}>
-              <Text style={[styles.menuItemTitle, { color: '#FF3B30' }]}>
-                {isBlocked ? `Unblock ${userName}` : `Block ${userName}`}
-              </Text>
-            </View>
-          </Pressable>
+          {/* Block — hidden when the contact is the verified admin account */}
+          {!isAdminUser && (
+            <Pressable style={styles.menuItem} onPress={handleBlockUser}>
+              <Ionicons name="ban-outline" size={22} color="#FF3B30" style={styles.menuIcon} />
+              <View style={styles.menuItemContent}>
+                <Text style={[styles.menuItemTitle, { color: '#FF3B30' }]}>
+                  {isBlocked ? `Unblock ${userName}` : `Block ${userName}`}
+                </Text>
+              </View>
+            </Pressable>
+          )}
 
           {/* Clear chat */}
           <Pressable style={styles.menuItem} onPress={handleClearChat}>
@@ -581,10 +596,16 @@ const styles = StyleSheet.create({
     fontSize: 42,
     fontWeight: '600',
   },
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingHorizontal: 16,
+  },
   userName: {
     fontSize: 22,
     fontWeight: '600',
-    marginTop: 12,
+    flexShrink: 1,
   },
   userPhone: {
     fontSize: 15,

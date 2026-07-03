@@ -854,6 +854,7 @@ export interface User {
   isOnline?: boolean;
   lastSeen?: string;
   isVerified?: boolean;
+  isAdmin?: boolean;
   createdAt?: string;
 }
 
@@ -870,6 +871,7 @@ export interface Chat {
   isArchived: boolean;
   isFavorite: boolean;
   isMarkedUnread: boolean;
+  isAdmin?: boolean;
   mediaVisibility?: boolean;
   isOnline?: boolean;
   lastSeen?: string;
@@ -892,6 +894,9 @@ export interface ChatMember {
     lastSeen?: string;
     phone?: string;
     countryCode?: string;
+    email?: string;
+    isAdmin?: boolean;
+    isVerified?: boolean;
   };
 }
 
@@ -1138,7 +1143,14 @@ export interface ContactStatusGroup {
 
 // Status API
 export const statusApi = {
-  async createStatus(data: { type: string; mediaUrl: string; thumbnail?: string; caption?: string }) {
+  async createStatus(data: {
+    type: string;
+    mediaUrl: string;
+    thumbnail?: string;
+    caption?: string;
+    trimStartMs?: number;
+    trimEndMs?: number;
+  }) {
     return request<Status>('/status', {
       method: 'POST',
       body: JSON.stringify(data),

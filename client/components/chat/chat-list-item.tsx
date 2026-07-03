@@ -5,10 +5,12 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { VerifiedTick } from '@/components/ui/verified-tick';
 import { Chat } from '@/services/api';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/auth-context';
+import { isAdminEmail } from '@/utils/admin';
 
 interface ChatListItemProps {
   chat: Chat;
@@ -167,6 +169,15 @@ export function ChatListItem({
 
   const hasUnread = (chat.unreadCount > 0) || chat.isMarkedUnread;
 
+  const isAdminChat =
+    chat.type === 'PRIVATE' &&
+    (chat.isAdmin === true ||
+      chat.members?.some(
+        (m) =>
+          m.user.id !== user?.id &&
+          ((m.user as any).isAdmin === true || isAdminEmail((m.user as any).email)),
+      ));
+
   return (
     <Pressable
       onPress={handlePress}
@@ -205,16 +216,19 @@ export function ChatListItem({
 
       <View style={styles.content}>
         <View style={styles.topRow}>
-          <Text
-            style={[
-              styles.name,
-              { color: isDeletedAccount(chat) ? colors.textSecondary : colors.text },
-              isDeletedAccount(chat) && { fontStyle: 'italic' },
-            ]}
-            numberOfLines={1}
-          >
-            {displayName}
-          </Text>
+          <View style={styles.nameRow}>
+            <Text
+              style={[
+                styles.name,
+                { color: isDeletedAccount(chat) ? colors.textSecondary : colors.text },
+                isDeletedAccount(chat) && { fontStyle: 'italic' },
+              ]}
+              numberOfLines={1}
+            >
+              {displayName}
+            </Text>
+            {isAdminChat && <VerifiedTick size={14} style={styles.verifiedTick} />}
+          </View>
           <Text
             style={[
               styles.time,
@@ -319,11 +333,19 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff',
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
   name: {
     fontSize: 17,
     fontWeight: '600',
-    flex: 1,
-    marginRight: 8,
+    flexShrink: 1,
+  },
+  verifiedTick: {
+    marginLeft: 4,
   },
   time: {
     fontSize: 12,

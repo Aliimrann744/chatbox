@@ -25,7 +25,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { statusApi, uploadApi } from '@/services/api';
 import { pickMultipleMedia, PickedMedia } from '@/utils/media-picker';
-import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -59,6 +59,17 @@ export default function StatusCreateScreen() {
   const [currentPath, setCurrentPath] = useState('');
   const [drawColor, setDrawColor] = useState('#FF3B30');
   const [hasEdits, setHasEdits] = useState(false);
+
+  // Crop state
+  const [cropMode, setCropMode] = useState(false);
+  const [cropRect, setCropRect] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const [cropApplying, setCropApplying] = useState(false);
+
+  // Video trim state
+  const [trimMode, setTrimMode] = useState(false);
+  const [trimStartMs, setTrimStartMs] = useState(0);
+  const [trimEndMs, setTrimEndMs] = useState(0);
+  const [videoDurationMs, setVideoDurationMs] = useState(0);
 
   // Keyboard state
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -124,39 +135,322 @@ export default function StatusCreateScreen() {
     }),
   ).current;
 
-  const handleCrop = async () => {
-    if (!media || media.type === 'video') return;
+  // ─── Crop: displayed-image bounds (image is rendered with resizeMode="contain") ─
+  const MEDIA_W = SCREEN_WIDTH;
+  const MEDIA_H = SCREEN_HEIGHT * 0.72;
+  const MIN_CROP = 80;
 
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.8,
-        aspect: undefined,
-      });
+  const displayedBoundsRef = useRef({ x: 0, y: 0, width: MEDIA_W, height: MEDIA_H });
+  const cropRectRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const cropStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        const fileName = asset.uri.split('/').pop() || 'cropped.jpg';
-        setMediaList((prev) => {
-          const updated = [...prev];
-          updated[currentIndex] = {
-            uri: asset.uri,
-            type: 'image',
-            mimeType: asset.mimeType || 'image/jpeg',
-            name: fileName,
-            size: asset.fileSize,
-            width: asset.width,
-            height: asset.height,
-          };
-          return updated;
-        });
-        setDrawPaths([]);
-        setHasEdits(true);
-      }
-    } catch (error) {
-      console.error('Crop error:', error);
+  useEffect(() => {
+    cropRectRef.current = cropRect;
+  }, [cropRect]);
+
+  useEffect(() => {
+    if (!media || media.type === 'video' || !media.width || !media.height) return;
+    const iw = media.width;
+    const ih = media.height;
+    const imageRatio = iw / ih;
+    const containerRatio = MEDIA_W / MEDIA_H;
+    let dw: number;
+    let dh: number;
+    if (imageRatio > containerRatio) {
+      dw = MEDIA_W;
+      dh = MEDIA_W / imageRatio;
+    } else {
+      dh = MEDIA_H;
+      dw = MEDIA_H * imageRatio;
     }
+    const dx = (MEDIA_W - dw) / 2;
+    const dy = (MEDIA_H - dh) / 2;
+    displayedBoundsRef.current = { x: dx, y: dy, width: dw, height: dh };
+  }, [media, MEDIA_W, MEDIA_H]);
+
+  const enterCropMode = () => {
+    if (!media || media.type === 'video') return;
+    const b = displayedBoundsRef.current;
+    const initial = { x: b.x, y: b.y, width: b.width, height: b.height };
+    cropRectRef.current = initial;
+    setCropRect(initial);
+    setCropMode(true);
+  };
+
+  const cancelCrop = () => {
+    setCropMode(false);
+  };
+
+  const applyCrop = async () => {
+    if (!media || media.type === 'video' || !media.width || !media.height) {
+      setCropMode(false);
+      return;
+    }
+    const b = displayedBoundsRef.current;
+    const c = cropRectRef.current;
+
+    const scaleX = media.width / b.width;
+    const scaleY = media.height / b.height;
+
+    let originX = Math.round((c.x - b.x) * scaleX);
+    let originY = Math.round((c.y - b.y) * scaleY);
+    let width = Math.round(c.width * scaleX);
+    let height = Math.round(c.height * scaleY);
+
+    originX = Math.max(0, Math.min(originX, media.width - 1));
+    originY = Math.max(0, Math.min(originY, media.height - 1));
+    width = Math.max(1, Math.min(width, media.width - originX));
+    height = Math.max(1, Math.min(height, media.height - originY));
+
+    if (width >= media.width - 1 && height >= media.height - 1 && originX <= 1 && originY <= 1) {
+      setCropMode(false);
+      return;
+    }
+
+    setCropApplying(true);
+    try {
+      const result = await ImageManipulator.manipulateAsync(
+        media.uri,
+        [{ crop: { originX, originY, width, height } }],
+        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      const fileName = result.uri.split('/').pop() || 'cropped.jpg';
+      setMediaList((prev) => {
+        const updated = [...prev];
+        updated[currentIndex] = {
+          ...prev[currentIndex],
+          uri: result.uri,
+          type: 'image',
+          mimeType: 'image/jpeg',
+          name: fileName,
+          width: result.width,
+          height: result.height,
+        };
+        return updated;
+      });
+      setDrawPaths([]);
+      setHasEdits(true);
+    } catch (err) {
+      console.error('Crop failed:', err);
+      Alert.alert('Error', 'Failed to crop image');
+    } finally {
+      setCropApplying(false);
+      setCropMode(false);
+    }
+  };
+
+  // Crop handle pan responders — each reads from refs to stay current.
+  const makeCornerPan = (corner: 'tl' | 'tr' | 'bl' | 'br') =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        cropStartRef.current = { ...cropRectRef.current };
+      },
+      onPanResponderMove: (_e, g) => {
+        const s = cropStartRef.current;
+        const b = displayedBoundsRef.current;
+        const left = s.x;
+        const top = s.y;
+        const right = s.x + s.width;
+        const bottom = s.y + s.height;
+        let nLeft = left, nTop = top, nRight = right, nBottom = bottom;
+        if (corner === 'tl') {
+          nLeft = Math.max(b.x, Math.min(left + g.dx, right - MIN_CROP));
+          nTop = Math.max(b.y, Math.min(top + g.dy, bottom - MIN_CROP));
+        } else if (corner === 'tr') {
+          nRight = Math.max(left + MIN_CROP, Math.min(right + g.dx, b.x + b.width));
+          nTop = Math.max(b.y, Math.min(top + g.dy, bottom - MIN_CROP));
+        } else if (corner === 'bl') {
+          nLeft = Math.max(b.x, Math.min(left + g.dx, right - MIN_CROP));
+          nBottom = Math.max(top + MIN_CROP, Math.min(bottom + g.dy, b.y + b.height));
+        } else {
+          nRight = Math.max(left + MIN_CROP, Math.min(right + g.dx, b.x + b.width));
+          nBottom = Math.max(top + MIN_CROP, Math.min(bottom + g.dy, b.y + b.height));
+        }
+        const next = { x: nLeft, y: nTop, width: nRight - nLeft, height: nBottom - nTop };
+        cropRectRef.current = next;
+        setCropRect(next);
+      },
+    });
+
+  const cropMovePan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        cropStartRef.current = { ...cropRectRef.current };
+      },
+      onPanResponderMove: (_e, g) => {
+        const s = cropStartRef.current;
+        const b = displayedBoundsRef.current;
+        let nx = s.x + g.dx;
+        let ny = s.y + g.dy;
+        nx = Math.max(b.x, Math.min(nx, b.x + b.width - s.width));
+        ny = Math.max(b.y, Math.min(ny, b.y + b.height - s.height));
+        const next = { x: nx, y: ny, width: s.width, height: s.height };
+        cropRectRef.current = next;
+        setCropRect(next);
+      },
+    }),
+  ).current;
+
+  const cropTLPan = useRef(makeCornerPan('tl')).current;
+  const cropTRPan = useRef(makeCornerPan('tr')).current;
+  const cropBLPan = useRef(makeCornerPan('bl')).current;
+  const cropBRPan = useRef(makeCornerPan('br')).current;
+
+  // ─── Video Trim ─────────────────────────────────────────────────────────────
+  const MAX_TRIM_MS = 60_000;
+  const MIN_TRIM_MS = 1_000;
+  const TRIM_TRACK_WIDTH = SCREEN_WIDTH - 32;
+
+  const videoRef = useRef<Video>(null);
+  const trimStartRef = useRef(0);
+  const trimEndRef = useRef(0);
+  const trimStartSnapshotRef = useRef(0);
+  const trimEndSnapshotRef = useRef(0);
+  const videoDurationRef = useRef(0);
+
+  useEffect(() => { trimStartRef.current = trimStartMs; }, [trimStartMs]);
+  useEffect(() => { trimEndRef.current = trimEndMs; }, [trimEndMs]);
+  useEffect(() => { videoDurationRef.current = videoDurationMs; }, [videoDurationMs]);
+
+  // When the current media changes, prepare trim state
+  useEffect(() => {
+    if (!media || media.type !== 'video') {
+      setTrimMode(false);
+      setVideoDurationMs(0);
+      setTrimStartMs(0);
+      setTrimEndMs(0);
+      return;
+    }
+    const knownDuration = media.duration ?? 0;
+    // Reset duration so onLoad will resync for a different video
+    setVideoDurationMs(knownDuration);
+    if (typeof media.trimStartMs === 'number' && typeof media.trimEndMs === 'number') {
+      setTrimStartMs(media.trimStartMs);
+      setTrimEndMs(media.trimEndMs);
+      setTrimMode(false);
+    } else if (knownDuration > MAX_TRIM_MS) {
+      setTrimStartMs(0);
+      setTrimEndMs(MAX_TRIM_MS);
+      setTrimMode(true);
+    } else {
+      setTrimStartMs(0);
+      setTrimEndMs(knownDuration);
+      setTrimMode(false);
+    }
+  }, [media, currentIndex]);
+
+  const handleVideoLoad = useCallback((status: any) => {
+    const d = status?.durationMillis;
+    if (typeof d !== 'number' || d <= 0) return;
+    if (videoDurationRef.current > 0) return;
+    setVideoDurationMs(d);
+    if (media && typeof media.trimEndMs !== 'number') {
+      if (d > MAX_TRIM_MS) {
+        setTrimStartMs(0);
+        setTrimEndMs(MAX_TRIM_MS);
+        setTrimMode(true);
+      } else {
+        setTrimStartMs(0);
+        setTrimEndMs(d);
+      }
+    }
+  }, [media]);
+
+  const handleVideoPlaybackStatus = useCallback((status: any) => {
+    if (!status?.isLoaded || !trimMode) return;
+    if (typeof status.positionMillis === 'number' && status.positionMillis >= trimEndRef.current) {
+      videoRef.current?.setPositionAsync(trimStartRef.current).catch(() => {});
+    }
+  }, [trimMode]);
+
+  const trimLeftPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        trimStartSnapshotRef.current = trimStartRef.current;
+      },
+      onPanResponderMove: (_e, g) => {
+        const duration = videoDurationRef.current;
+        if (duration <= 0) return;
+        const dxMs = (g.dx / TRIM_TRACK_WIDTH) * duration;
+        let next = trimStartSnapshotRef.current + dxMs;
+        next = Math.max(0, next);
+        next = Math.min(next, trimEndRef.current - MIN_TRIM_MS);
+        next = Math.max(next, trimEndRef.current - MAX_TRIM_MS);
+        trimStartRef.current = next;
+        setTrimStartMs(next);
+      },
+      onPanResponderRelease: () => {
+        videoRef.current?.setPositionAsync(trimStartRef.current).catch(() => {});
+      },
+    }),
+  ).current;
+
+  const trimRightPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        trimEndSnapshotRef.current = trimEndRef.current;
+      },
+      onPanResponderMove: (_e, g) => {
+        const duration = videoDurationRef.current;
+        if (duration <= 0) return;
+        const dxMs = (g.dx / TRIM_TRACK_WIDTH) * duration;
+        let next = trimEndSnapshotRef.current + dxMs;
+        next = Math.min(duration, next);
+        next = Math.max(next, trimStartRef.current + MIN_TRIM_MS);
+        next = Math.min(next, trimStartRef.current + MAX_TRIM_MS);
+        trimEndRef.current = next;
+        setTrimEndMs(next);
+      },
+      onPanResponderRelease: () => {
+        videoRef.current?.setPositionAsync(trimStartRef.current).catch(() => {});
+      },
+    }),
+  ).current;
+
+  const applyTrim = () => {
+    if (!media || media.type !== 'video') return;
+    setMediaList((prev) => {
+      const updated = [...prev];
+      updated[currentIndex] = {
+        ...prev[currentIndex],
+        trimStartMs: Math.round(trimStartRef.current),
+        trimEndMs: Math.round(trimEndRef.current),
+        duration: Math.round(trimEndRef.current - trimStartRef.current),
+      };
+      return updated;
+    });
+    setTrimMode(false);
+    setHasEdits(true);
+  };
+
+  const cancelTrim = () => {
+    if (videoDurationRef.current > MAX_TRIM_MS && typeof media?.trimEndMs !== 'number') {
+      Alert.alert(
+        'Trim required',
+        'This video is longer than 60 seconds. Select a 60-second portion to share, or pick a different video.',
+        [
+          { text: 'Pick another', onPress: handleReselect },
+          { text: 'Continue trimming', style: 'cancel' },
+        ],
+      );
+      return;
+    }
+    setTrimMode(false);
+  };
+
+  const formatTrimTime = (ms: number) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
   const handleReselect = async () => {
@@ -201,6 +495,22 @@ export default function StatusCreateScreen() {
 
   const handleSend = async () => {
     if (!mediaList.length || uploading) return;
+
+    const needsTrimIdx = mediaList.findIndex(
+      (m) =>
+        m.type === 'video' &&
+        (m.duration ?? 0) > MAX_TRIM_MS &&
+        typeof m.trimEndMs !== 'number',
+    );
+    if (needsTrimIdx >= 0) {
+      setCurrentIndex(needsTrimIdx);
+      Alert.alert(
+        'Trim required',
+        'One or more videos are longer than 60 seconds. Please trim them before sending.',
+      );
+      return;
+    }
+
     setUploading(true);
 
     try {
@@ -212,10 +522,19 @@ export default function StatusCreateScreen() {
           'status',
         );
 
+        const hasTrim =
+          item.type === 'video' &&
+          typeof item.trimStartMs === 'number' &&
+          typeof item.trimEndMs === 'number';
+
         await statusApi.createStatus({
           type: item.type === 'video' ? 'VIDEO' : 'IMAGE',
           mediaUrl: uploaded.url,
           caption: i === 0 ? (caption || undefined) : undefined,
+          ...(hasTrim && {
+            trimStartMs: item.trimStartMs,
+            trimEndMs: item.trimEndMs,
+          }),
         });
       }
 
@@ -258,81 +577,124 @@ export default function StatusCreateScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {/* ─── Top Header ─── */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={handleClose} style={styles.headerIconBtn}>
-          <Ionicons name="close" size={28} color="#fff" />
-        </Pressable>
-        <View style={{ flex: 1 }} />
-        {media.type === 'image' && (
-          <>
-            <Pressable onPress={handleCrop} style={styles.headerIconBtn}>
-              <Ionicons name="crop" size={24} color="#fff" />
-            </Pressable>
-            <Pressable
-              onPress={toggleDraw}
-              style={[styles.headerIconBtn, isDrawing && styles.headerIconActive]}
-            >
-              <Ionicons name="brush" size={24} color="#fff" />
-            </Pressable>
-          </>
-        )}
-      </View>
+      {!cropMode && !trimMode && (
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <Pressable onPress={handleClose} style={styles.headerIconBtn}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </Pressable>
+          <View style={{ flex: 1 }} />
+          {media.type === 'image' && (
+            <>
+              <Pressable onPress={enterCropMode} style={styles.headerIconBtn}>
+                <Ionicons name="crop" size={24} color="#fff" />
+              </Pressable>
+              <Pressable
+                onPress={toggleDraw}
+                style={[styles.headerIconBtn, isDrawing && styles.headerIconActive]}
+              >
+                <Ionicons name="brush" size={24} color="#fff" />
+              </Pressable>
+            </>
+          )}
+        </View>
+      )}
 
       {/* ─── Media Preview ─── */}
       <View style={styles.mediaArea} {...(isDrawing ? panResponder.panHandlers : {})}>
-        {media.type === 'video' ? (
-          <Video
-            source={{ uri: media.uri }}
-            style={styles.mediaFull}
-            resizeMode={ResizeMode.CONTAIN}
-            shouldPlay={false}
-            isLooping={false}
-          />
-        ) : (
-          <Image source={{ uri: media.uri }} style={styles.mediaFull} resizeMode="contain" />
-        )}
+        <View style={styles.mediaContent}>
+          {media.type === 'video' ? (
+            <Video
+              ref={videoRef}
+              source={{ uri: media.uri }}
+              style={styles.mediaFull}
+              resizeMode={ResizeMode.CONTAIN}
+              shouldPlay={trimMode}
+              isLooping={false}
+              onLoad={handleVideoLoad}
+              onPlaybackStatusUpdate={handleVideoPlaybackStatus}
+              progressUpdateIntervalMillis={200}
+            />
+          ) : (
+            <Image source={{ uri: media.uri }} style={styles.mediaFull} resizeMode="contain" />
+          )}
 
-        {/* Drawing overlay */}
-        {media.type === 'image' && (drawPaths.length > 0 || currentPath) && (
-          <Svg style={StyleSheet.absoluteFill}>
-            {drawPaths.map((p, i) => (
-              <Path
-                key={i}
-                d={p.path}
-                stroke={p.color}
-                strokeWidth={p.strokeWidth}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            ))}
-            {currentPath ? (
-              <Path
-                d={currentPath}
-                stroke={drawColor}
-                strokeWidth={4}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            ) : null}
-          </Svg>
-        )}
+          {/* Drawing overlay — inside mediaContent so strokes are clipped to the image box */}
+          {media.type === 'image' && (drawPaths.length > 0 || currentPath) && (
+            <Svg style={StyleSheet.absoluteFill}>
+              {drawPaths.map((p, i) => (
+                <Path
+                  key={i}
+                  d={p.path}
+                  stroke={p.color}
+                  strokeWidth={p.strokeWidth}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ))}
+              {currentPath ? (
+                <Path
+                  d={currentPath}
+                  stroke={drawColor}
+                  strokeWidth={4}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ) : null}
+            </Svg>
+          )}
+
+          {/* ─── Crop Overlay ─── */}
+          {cropMode && media.type === 'image' && cropRect.width > 0 && (
+            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+              {/* dim regions outside crop */}
+              <View style={[styles.cropDim, { left: 0, top: 0, right: 0, height: cropRect.y }]} pointerEvents="none" />
+              <View style={[styles.cropDim, { left: 0, top: cropRect.y + cropRect.height, right: 0, bottom: 0 }]} pointerEvents="none" />
+              <View style={[styles.cropDim, { left: 0, top: cropRect.y, width: cropRect.x, height: cropRect.height }]} pointerEvents="none" />
+              <View style={[styles.cropDim, { left: cropRect.x + cropRect.width, top: cropRect.y, right: 0, height: cropRect.height }]} pointerEvents="none" />
+
+              {/* crop frame */}
+              <View
+                style={[
+                  styles.cropFrame,
+                  { left: cropRect.x, top: cropRect.y, width: cropRect.width, height: cropRect.height },
+                ]}
+                pointerEvents="box-none"
+              >
+                {/* draggable interior */}
+                <View {...cropMovePan.panHandlers} style={StyleSheet.absoluteFill} />
+
+                {/* grid lines */}
+                <View style={[styles.cropGridLineH, { top: '33.33%' }]} pointerEvents="none" />
+                <View style={[styles.cropGridLineH, { top: '66.66%' }]} pointerEvents="none" />
+                <View style={[styles.cropGridLineV, { left: '33.33%' }]} pointerEvents="none" />
+                <View style={[styles.cropGridLineV, { left: '66.66%' }]} pointerEvents="none" />
+
+                {/* corner handles */}
+                <View {...cropTLPan.panHandlers} style={[styles.cropHandle, styles.cropHandleTL]} />
+                <View {...cropTRPan.panHandlers} style={[styles.cropHandle, styles.cropHandleTR]} />
+                <View {...cropBLPan.panHandlers} style={[styles.cropHandle, styles.cropHandleBL]} />
+                <View {...cropBRPan.panHandlers} style={[styles.cropHandle, styles.cropHandleBR]} />
+              </View>
+            </View>
+          )}
+        </View>
 
         {/* Multi-media counter */}
-        {mediaList.length > 1 && (
+        {mediaList.length > 1 && !cropMode && !trimMode && (
           <View style={styles.mediaCounter}>
             <Text style={styles.mediaCounterText}>{currentIndex + 1} / {mediaList.length}</Text>
           </View>
         )}
 
         {/* Multi-media navigation */}
-        {mediaList.length > 1 && currentIndex > 0 && (
+        {mediaList.length > 1 && currentIndex > 0 && !cropMode && !trimMode && (
           <Pressable onPress={() => setCurrentIndex(i => i - 1)} style={[styles.mediaNavBtn, styles.mediaNavBtnLeft]}>
             <Ionicons name="chevron-back" size={28} color="#fff" />
           </Pressable>
         )}
-        {mediaList.length > 1 && currentIndex < mediaList.length - 1 && (
+        {mediaList.length > 1 && currentIndex < mediaList.length - 1 && !cropMode && !trimMode && (
           <Pressable onPress={() => setCurrentIndex(i => i + 1)} style={[styles.mediaNavBtn, styles.mediaNavBtnRight]}>
             <Ionicons name="chevron-forward" size={28} color="#fff" />
           </Pressable>
@@ -340,7 +702,7 @@ export default function StatusCreateScreen() {
       </View>
 
       {/* ─── Draw Color Picker ─── */}
-      {isDrawing && (
+      {isDrawing && !cropMode && !trimMode && (
         <View style={styles.colorPickerBar}>
           <Pressable onPress={undoLastDraw} style={styles.undoBtn}>
             <Ionicons name="arrow-undo" size={22} color="#fff" />
@@ -361,8 +723,68 @@ export default function StatusCreateScreen() {
         </View>
       )}
 
+      {/* ─── Crop Footer ─── */}
+      {cropMode && (
+        <View style={[styles.cropFooter, { paddingBottom: insets.bottom + 12 }]}>
+          <Pressable onPress={cancelCrop} disabled={cropApplying} style={styles.cropFooterBtn}>
+            <Text style={styles.cropFooterCancel}>Cancel</Text>
+          </Pressable>
+          <Text style={styles.cropFooterTitle}>Crop</Text>
+          <Pressable onPress={applyCrop} disabled={cropApplying} style={styles.cropFooterBtn}>
+            {cropApplying ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.cropFooterDone}>Done</Text>
+            )}
+          </Pressable>
+        </View>
+      )}
+
+      {/* ─── Video Trim Footer ─── */}
+      {trimMode && media.type === 'video' && videoDurationMs > 0 && (
+        <View style={[styles.trimContainer, { paddingBottom: insets.bottom + 8 }]}>
+          <View style={styles.trimInfoRow}>
+            <Text style={styles.trimInfoText}>{formatTrimTime(trimStartMs)}</Text>
+            <Text style={styles.trimInfoText}>
+              {formatTrimTime(trimEndMs - trimStartMs)} selected
+            </Text>
+            <Text style={styles.trimInfoText}>{formatTrimTime(trimEndMs)}</Text>
+          </View>
+
+          <View style={[styles.trimTrack, { width: TRIM_TRACK_WIDTH }]}>
+            <View
+              style={[
+                styles.trimWindow,
+                {
+                  left: (trimStartMs / videoDurationMs) * TRIM_TRACK_WIDTH,
+                  width: ((trimEndMs - trimStartMs) / videoDurationMs) * TRIM_TRACK_WIDTH,
+                },
+              ]}
+              pointerEvents="box-none"
+            >
+              <View {...trimLeftPan.panHandlers} style={styles.trimHandleLeft}>
+                <View style={styles.trimHandleBar} />
+              </View>
+              <View {...trimRightPan.panHandlers} style={styles.trimHandleRight}>
+                <View style={styles.trimHandleBar} />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.trimFooter}>
+            <Pressable onPress={cancelTrim} style={styles.cropFooterBtn}>
+              <Text style={styles.cropFooterCancel}>Cancel</Text>
+            </Pressable>
+            <Text style={styles.cropFooterTitle}>Trim</Text>
+            <Pressable onPress={applyTrim} style={styles.cropFooterBtn}>
+              <Text style={styles.cropFooterDone}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       {/* ─── Bottom Caption Bar ─── */}
-      {!isDrawing && (
+      {!isDrawing && !cropMode && !trimMode && (
         <View style={[styles.bottomBar, { paddingBottom: bottomPadding }]}>
           <View style={styles.captionRow}>
             <Pressable onPress={handleReselect} style={styles.captionIconBtn}>
@@ -439,6 +861,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  mediaContent: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT * 0.72,
+    position: 'relative',
   },
   mediaFull: {
     width: SCREEN_WIDTH,
@@ -557,5 +984,153 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     marginTop: 12,
+  },
+
+  // Crop
+  cropDim: {
+    position: 'absolute',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  cropFrame: {
+    position: 'absolute',
+    borderWidth: 1.5,
+    borderColor: '#fff',
+  },
+  cropGridLineH: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  cropGridLineV: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  cropHandle: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    borderColor: '#fff',
+    backgroundColor: 'rgba(0,0,0,0.001)',
+  },
+  cropHandleTL: {
+    left: -14,
+    top: -14,
+    borderLeftWidth: 3,
+    borderTopWidth: 3,
+  },
+  cropHandleTR: {
+    right: -14,
+    top: -14,
+    borderRightWidth: 3,
+    borderTopWidth: 3,
+  },
+  cropHandleBL: {
+    left: -14,
+    bottom: -14,
+    borderLeftWidth: 3,
+    borderBottomWidth: 3,
+  },
+  cropHandleBR: {
+    right: -14,
+    bottom: -14,
+    borderRightWidth: 3,
+    borderBottomWidth: 3,
+  },
+  cropFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  cropFooterBtn: {
+    minWidth: 60,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cropFooterTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  cropFooterCancel: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  cropFooterDone: {
+    color: '#34C759',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  // Video trim
+  trimContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+  },
+  trimInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  trimInfoText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  trimTrack: {
+    height: 56,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    overflow: 'visible',
+  },
+  trimWindow: {
+    position: 'absolute',
+    top: -2,
+    bottom: -2,
+    borderWidth: 3,
+    borderColor: '#FFD60A',
+    backgroundColor: 'rgba(255,214,10,0.12)',
+    borderRadius: 6,
+  },
+  trimHandleLeft: {
+    position: 'absolute',
+    left: -14,
+    top: -8,
+    bottom: -8,
+    width: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  trimHandleRight: {
+    position: 'absolute',
+    right: -14,
+    top: -8,
+    bottom: -8,
+    width: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  trimHandleBar: {
+    width: 4,
+    height: '70%',
+    backgroundColor: '#FFD60A',
+    borderRadius: 2,
+  },
+  trimFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    backgroundColor: 'rgba(0,0,0,0.85)',
   },
 });

@@ -11,6 +11,8 @@ export interface PickedMedia {
   duration?: number;
   width?: number;
   height?: number;
+  trimStartMs?: number;
+  trimEndMs?: number;
 }
 
 // Request camera permissions
@@ -187,7 +189,6 @@ export async function pickMultipleMedia(): Promise<PickedMedia[]> {
     mediaTypes: ImagePicker.MediaTypeOptions.All,
     allowsMultipleSelection: true,
     quality: 0.8,
-    videoMaxDuration: 30,
     selectionLimit: 10,
   });
 
