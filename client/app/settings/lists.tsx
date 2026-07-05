@@ -7,6 +7,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { chatApi, contactApi, Chat, Contact } from '@/services/api';
+import { resolvePrivateContactName } from '@/utils/contact-identity';
 import { getInitials } from '@/utils/helpers';
 import { SettingsScreen } from '@/components/settings/settings-ui';
 
@@ -95,7 +96,7 @@ export default function ListsScreen() {
           renderItem={({ item }) => {
             if (tab === 'contacts') {
               const c = item as Contact;
-              const name = c.nickname || c.name;
+              const name = resolvePrivateContactName(c);
               return (
                 <View style={styles.row}>
                   <Avatar uri={c.avatar || ''} size={44} showOnlineStatus={false} />

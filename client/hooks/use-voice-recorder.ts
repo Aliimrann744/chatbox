@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Audio } from 'expo-av';
-import { Alert, Platform } from 'react-native';
+import { Alert } from 'react-native';
+import { ensureMicrophonePermission } from '@/utils/permissions';
 
 export interface RecordingState {
   isRecording: boolean;
@@ -41,27 +42,9 @@ export function useVoiceRecorder(): VoiceRecorderResult {
     };
   }, []);
 
-  const requestPermission = async (): Promise<boolean> => {
-    try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Microphone permission is required to record voice messages.',
-          [{ text: 'OK' }]
-        );
-        return false;
-      }
-      return true;
-    } catch (error) {
-      console.error('Error requesting audio permission:', error);
-      return false;
-    }
-  };
-
   const startRecording = useCallback(async () => {
     try {
-      const hasPermission = await requestPermission();
+      const hasPermission = await ensureMicrophonePermission('Microphone access is needed to record voice messages.');
       if (!hasPermission) return;
 
       // Configure audio mode

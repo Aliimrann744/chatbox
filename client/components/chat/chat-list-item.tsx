@@ -7,6 +7,8 @@ import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { VerifiedTick } from '@/components/ui/verified-tick';
 import { Chat } from '@/services/api';
+import { useContacts } from '@/contexts/contacts-context';
+import { resolvePrivateDisplayName } from '@/utils/contact-identity';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/auth-context';
@@ -38,9 +40,6 @@ function formatTime(dateString: string): string {
   }
 }
 
-const isDeletedAccount = (chat: Chat) =>
-  chat.type === 'PRIVATE' && (!chat.name || chat.name === 'Deleted Account');
-
 export function ChatListItem({
   chat,
   isSelected = false,
@@ -52,8 +51,15 @@ export function ChatListItem({
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { user } = useAuth();
+  const { contactsByUserId } = useContacts();
 
-  const displayName = chat.name || 'Deleted Account';
+  const otherMember = chat.type === 'PRIVATE'
+    ? chat.members?.find((member) => member.user.id !== user?.id)
+    : undefined;
+  const displayName = chat.type === 'PRIVATE'
+    ? resolvePrivateDisplayName(otherMember?.user as any, otherMember?.user.id ? contactsByUserId[otherMember.user.id] : null)
+    : chat.name || 'Group';
+  const deletedAccount = chat.type === 'PRIVATE' && !otherMember;
 
   const handlePress = useCallback(() => {
     if (isSelectionMode) {
@@ -72,15 +78,14 @@ export function ChatListItem({
       onSelect?.(chat.id);
       return;
     }
-    if (onAvatarPress && chat.type === 'PRIVATE' && chat.members?.length >= 2) {
-      const otherMember = chat.members.find(m => m.user.name === chat.name) || chat.members[1];
+    if (onAvatarPress && chat.type === 'PRIVATE' && otherMember) {
       onAvatarPress({
         id: otherMember.user.id,
-        name: chat.name || otherMember.user.name || 'User',
+        name: displayName,
         avatar: chat.avatar || otherMember.user.avatar,
       });
     }
-  }, [isSelectionMode, chat, onSelect, onAvatarPress]);
+  }, [isSelectionMode, chat, onSelect, onAvatarPress, otherMember, displayName]);
 
   const isLastMessageMine = !!chat.lastMessage && chat.lastMessage.senderId === user?.id;
 
@@ -198,11 +203,11 @@ export function ChatListItem({
       <Pressable onPress={handleAvatarPress}>
         <View>
           {chat?.avatar ? (
-            <Avatar uri={chat.avatar} size={52} showOnlineStatus={chat.type === 'PRIVATE' && !isDeletedAccount(chat)} isOnline={chat.isOnline} />
+            <Avatar uri={chat.avatar} size={52} showOnlineStatus={chat.type === 'PRIVATE' && !deletedAccount} isOnline={chat.isOnline} />
           ) : (
-            <View style={[styles.initialsAvatar, isDeletedAccount(chat) && { backgroundColor: '#808080' }]}>
+            <View style={[styles.initialsAvatar, deletedAccount && { backgroundColor: '#808080' }]}>
               <Text style={styles.initialsText}>
-                {isDeletedAccount(chat) ? '?' : getInitials(chat?.name)}
+                {deletedAccount ? '?' : getInitials(displayName)}
               </Text>
             </View>
           )}
@@ -220,8 +225,8 @@ export function ChatListItem({
             <Text
               style={[
                 styles.name,
-                { color: isDeletedAccount(chat) ? colors.textSecondary : colors.text },
-                isDeletedAccount(chat) && { fontStyle: 'italic' },
+                { color: deletedAccount ? colors.textSecondary : colors.text },
+                deletedAccount && { fontStyle: 'italic' },
               ]}
               numberOfLines={1}
             >

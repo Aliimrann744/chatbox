@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import * as ExpoContacts from 'expo-contacts';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   FlatList,
@@ -17,6 +16,8 @@ import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { contactApi, chatApi, Contact } from '@/services/api';
+import { useContacts } from '@/contexts/contacts-context';
+import { resolvePrivateDisplayName } from '@/utils/contact-identity';
 import { getInitials } from '@/utils/helpers';
 
 interface ActionItemProps {
@@ -50,6 +51,13 @@ function ContactItem({
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
+  const displayName = resolvePrivateDisplayName({
+    id: contact.contactId,
+    name: contact.name,
+    phone: contact.phone,
+    countryCode: contact.countryCode,
+    isAdmin: contact.isAdmin,
+  }, contact);
   return (
     <Pressable
       onPress={onPress}
@@ -64,12 +72,12 @@ function ContactItem({
       ) : (
         <View style={{ width: 42, height: 42, borderRadius: 25, backgroundColor: "#E5E7EB", alignItems: "center", justifyContent: "center" }}>
           <Text style={{ fontSize: 14, fontWeight: "600", color: "#374151" }}>
-            {getInitials(contact.nickname || contact.name) || "User"}
+            {getInitials(displayName) || "User"}
           </Text>
         </View>
       )}
       <View style={styles.contactInfo}>
-        <Text style={[styles.contactName, { color: colors.text }]}>{contact.nickname || contact.name}</Text>
+        <Text style={[styles.contactName, { color: colors.text }]}>{displayName}</Text>
         <Text style={[styles.contactStatus, { color: colors.textSecondary }]}>
           {contact.about || contact.phone}
         </Text>
@@ -85,39 +93,12 @@ export default function NewChatScreen() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const { syncDeviceContacts } = useContacts();
 
   // Auto-sync device contacts then fetch contacts list
   const syncAndFetch = useCallback(async () => {
     try {
-      const { status } = await ExpoContacts.requestPermissionsAsync();
-      if (status === 'granted') {
-        const { data } = await ExpoContacts.getContactsAsync({
-          fields: [ExpoContacts.Fields.PhoneNumbers, ExpoContacts.Fields.Name],
-        });
-
-        const deviceContacts: { phone: string; name: string }[] = [];
-        data.forEach((contact) => {
-          const contactName = contact.name || '';
-          if (contact.phoneNumbers) {
-            contact.phoneNumbers.forEach((phone) => {
-              if (phone.number) {
-                const cleaned = phone.number.replace(/[\s\-\(\)]/g, '');
-                deviceContacts.push({ phone: cleaned, name: contactName });
-              }
-            });
-          }
-        });
-
-        if (deviceContacts.length > 0) {
-          const syncedContacts = await contactApi.syncContacts(deviceContacts);
-          setContacts(syncedContacts);
-          return;
-        }
-      }
-
-      // Fallback: just fetch existing contacts
-      const data = await contactApi.getContacts();
-      setContacts(data);
+      setContacts(await syncDeviceContacts(true));
     } catch (error) {
       console.error('Error syncing contacts:', error);
       try {
@@ -129,7 +110,7 @@ export default function NewChatScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [syncDeviceContacts]);
 
   // Sync on mount
   useEffect(() => {
@@ -139,7 +120,7 @@ export default function NewChatScreen() {
   const filteredContacts = contacts.filter((contact) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
-    const displayName = (contact.nickname || contact.name || '').toLowerCase();
+    const displayName = resolvePrivateDisplayName({ id: contact.contactId, phone: contact.phone, countryCode: contact.countryCode, name: contact.name, isAdmin: contact.isAdmin }, contact).toLowerCase();
     return displayName.includes(q) || contact.phone.includes(q);
   });
 

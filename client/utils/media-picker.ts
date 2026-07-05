@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { Alert, Platform } from 'react-native';
+import { ensureCameraPermission } from '@/utils/permissions';
 
 export interface PickedMedia {
   uri: string;
@@ -15,39 +15,8 @@ export interface PickedMedia {
   trimEndMs?: number;
 }
 
-// Request camera permissions
-async function requestCameraPermission(): Promise<boolean> {
-  const { status } = await ImagePicker.requestCameraPermissionsAsync();
-  if (status !== 'granted') {
-    Alert.alert(
-      'Permission Required',
-      'Camera permission is required to take photos and videos.',
-      [{ text: 'OK' }]
-    );
-    return false;
-  }
-  return true;
-}
-
-// Request media library permissions
-async function requestMediaLibraryPermission(): Promise<boolean> {
-  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (status !== 'granted') {
-    Alert.alert(
-      'Permission Required',
-      'Media library permission is required to select photos and videos.',
-      [{ text: 'OK' }]
-    );
-    return false;
-  }
-  return true;
-}
-
 // Pick image from gallery
 export async function pickImage(): Promise<PickedMedia | null> {
-  const hasPermission = await requestMediaLibraryPermission();
-  if (!hasPermission) return null;
-
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
     allowsEditing: false,
@@ -72,9 +41,6 @@ export async function pickImage(): Promise<PickedMedia | null> {
 
 // Pick video from gallery
 export async function pickVideo(): Promise<PickedMedia | null> {
-  const hasPermission = await requestMediaLibraryPermission();
-  if (!hasPermission) return null;
-
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Videos,
     allowsEditing: true,
@@ -101,7 +67,7 @@ export async function pickVideo(): Promise<PickedMedia | null> {
 
 // Take photo with camera
 export async function takePhoto(): Promise<PickedMedia | null> {
-  const hasPermission = await requestCameraPermission();
+  const hasPermission = await ensureCameraPermission();
   if (!hasPermission) return null;
 
   const result = await ImagePicker.launchCameraAsync({
@@ -128,7 +94,7 @@ export async function takePhoto(): Promise<PickedMedia | null> {
 
 // Record video with camera
 export async function recordVideo(): Promise<PickedMedia | null> {
-  const hasPermission = await requestCameraPermission();
+  const hasPermission = await ensureCameraPermission();
   if (!hasPermission) return null;
 
   const result = await ImagePicker.launchCameraAsync({
@@ -182,9 +148,6 @@ export async function pickDocument(): Promise<PickedMedia | null> {
 
 // Pick multiple media (images and videos) from gallery
 export async function pickMultipleMedia(): Promise<PickedMedia[]> {
-  const hasPermission = await requestMediaLibraryPermission();
-  if (!hasPermission) return [];
-
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.All,
     allowsMultipleSelection: true,

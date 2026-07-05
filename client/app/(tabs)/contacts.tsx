@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import * as Contacts from 'expo-contacts';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Alert, Pressable, RefreshControl, StyleSheet, Text, TextInput, View, ActivityIndicator, SectionList } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -8,6 +7,8 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { contactApi, chatApi, Contact } from '@/services/api';
+import { useContacts } from '@/contexts/contacts-context';
+import { resolvePrivateDisplayName } from '@/utils/contact-identity';
 import { cache, CacheKeys } from '@/services/cache';
 
 interface ContactSection {
@@ -18,6 +19,7 @@ interface ContactSection {
 export default function ContactsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { syncDeviceContacts } = useContacts();
 
   const [initialCache] = useState(() => cache.get<Contact[]>(CacheKeys.CONTACTS));
   const [contacts, setContacts] = useState<Contact[]>(initialCache || []);
@@ -33,43 +35,7 @@ export default function ContactsScreen() {
   // Auto-sync device contacts with server
   const autoSync = useCallback(async () => {
     try {
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status !== 'granted') {
-        // Permission denied - fall back to fetching existing contacts
-        const data = await contactApi.getContacts();
-        updateContacts(data);
-        return;
-      }
-
-      // Get device contacts with names
-      const { data } = await Contacts.getContactsAsync({
-        fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
-      });
-
-      // Build {phone, name}[] from device contacts
-      const deviceContacts: { phone: string; name: string }[] = [];
-      data.forEach((contact) => {
-        const contactName = contact.name || '';
-        if (contact.phoneNumbers) {
-          contact.phoneNumbers.forEach((phone) => {
-            if (phone.number) {
-              const cleaned = phone.number.replace(/[\s\-\(\)]/g, '');
-              deviceContacts.push({ phone: cleaned, name: contactName });
-            }
-          });
-        }
-      });
-
-      if (deviceContacts.length === 0) {
-        // No phone contacts - fetch existing contacts from server
-        const data = await contactApi.getContacts();
-        updateContacts(data);
-        return;
-      }
-
-      // Sync with server - returns Contact[] with auto-added contacts
-      const syncedContacts = await contactApi.syncContacts(deviceContacts);
-      updateContacts(syncedContacts);
+      updateContacts(await syncDeviceContacts(true));
     } catch (error) {
       console.error('Error syncing contacts:', error);
       // Fall back to fetching existing contacts
@@ -83,7 +49,7 @@ export default function ContactsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [updateContacts]);
+  }, [updateContacts, syncDeviceContacts]);
 
   // Auto-sync on mount
   useEffect(() => {
@@ -120,7 +86,7 @@ export default function ContactsScreen() {
   const filteredContacts = contacts.filter((contact) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
-    const displayName = (contact.nickname || contact.name || '').toLowerCase();
+    const displayName = resolvePrivateDisplayName({ id: contact.contactId, name: contact.name, phone: contact.phone, countryCode: contact.countryCode, isAdmin: contact.isAdmin }, contact).toLowerCase();
     const phone = contact.phone || '';
     return displayName.includes(q) || phone.includes(q);
   });
@@ -130,7 +96,7 @@ export default function ContactsScreen() {
   const grouped: { [key: string]: Contact[] } = {};
 
   filteredContacts.forEach((contact) => {
-    const displayName = contact.nickname || contact.name || '?';
+    const displayName = resolvePrivateDisplayName({ id: contact.contactId, name: contact.name, phone: contact.phone, countryCode: contact.countryCode, isAdmin: contact.isAdmin }, contact);
     const firstLetter = displayName.charAt(0).toUpperCase();
     if (!grouped[firstLetter]) {
       grouped[firstLetter] = [];
@@ -150,7 +116,7 @@ export default function ContactsScreen() {
   }
 
   const renderContactItem = ({ item }: { item: Contact }) => {
-    const displayName = item.nickname || item.name;
+    const displayName = resolvePrivateDisplayName({ id: item.contactId, name: item.name, phone: item.phone, countryCode: item.countryCode, isAdmin: item.isAdmin }, item);
     return (
       <Pressable
         onPress={() => handleStartChat(item.contactId)}

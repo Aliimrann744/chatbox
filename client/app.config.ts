@@ -29,6 +29,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       NSMicrophoneUsageDescription: 'Whatchat needs microphone access for voice messages and calls',
       NSCameraUsageDescription: 'Whatchat needs camera access for taking photos and video calls',
       NSPhotoLibraryUsageDescription: 'Whatchat needs photo library access to share photos and videos',
+      NSContactsUsageDescription: 'Whatchat uses your contacts to show the names you saved and help you start chats',
       ITSAppUsesNonExemptEncryption: false,
       UIBackgroundModes: ['voip', 'remote-notification', 'fetch'],
     },
@@ -46,10 +47,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     permissions: [
       'RECORD_AUDIO',
       'CAMERA',
-      'READ_EXTERNAL_STORAGE',
-      'READ_MEDIA_IMAGES',
-      'READ_MEDIA_VIDEO',
-      'READ_MEDIA_AUDIO',
       'FOREGROUND_SERVICE',
       'FOREGROUND_SERVICE_PHONE_CALL',
       'USE_FULL_SCREEN_INTENT',
@@ -101,6 +98,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     'expo-secure-store',
     'expo-localization',
+    ['expo-contacts', { contactsPermission: 'Whatchat uses your contacts to show saved names and help you start chats.' }],
+    ['expo-image-picker', {
+      photosPermission: 'Whatchat accesses selected photos and videos so you can share them.',
+      cameraPermission: 'Whatchat uses the camera to take photos and make video calls.',
+      microphonePermission: 'Whatchat uses the microphone for voice messages and calls.',
+    }],
     ["@react-native-google-signin/google-signin", { iosUrlScheme: "com.googleusercontent.apps.dummy" }],
     [
       'react-native-fbsdk-next',

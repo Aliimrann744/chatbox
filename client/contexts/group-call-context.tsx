@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, PermissionsAndroid, Platform } from 'react-native';
+import { Alert } from 'react-native';
 import {
   acquireLocalStream,
   addIceCandidate,
@@ -12,6 +12,7 @@ import {
 } from '@/utils/webrtc';
 import socketService from '@/services/socket';
 import { useAuth } from '@/contexts/auth-context';
+import { ensureCameraPermission as requestCameraAccess, ensureMicrophonePermission } from '@/utils/permissions';
 
 export type GroupCallType = 'VOICE' | 'VIDEO';
 export type GroupCallStatus = 'idle' | 'calling' | 'ringing' | 'connecting' | 'connected';
@@ -71,27 +72,11 @@ const initialState: GroupCallState = {
 const GroupCallContext = createContext<GroupCallContextType | undefined>(undefined);
 
 const ensureAudioPermission = async (): Promise<boolean> => {
-  if (Platform.OS !== 'android') return true;
-  try {
-    const ok = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
-    if (ok) return true;
-    const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
-    return res === PermissionsAndroid.RESULTS.GRANTED;
-  } catch {
-    return false;
-  }
+  return ensureMicrophonePermission('Microphone access is needed for group calls.');
 };
 
 const ensureCameraPermission = async (): Promise<boolean> => {
-  if (Platform.OS !== 'android') return true;
-  try {
-    const ok = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
-    if (ok) return true;
-    const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
-    return res === PermissionsAndroid.RESULTS.GRANTED;
-  } catch {
-    return false;
-  }
+  return requestCameraAccess('Camera access is needed for group video calls.');
 };
 
 export function GroupCallProvider({ children }: { children: React.ReactNode }) {

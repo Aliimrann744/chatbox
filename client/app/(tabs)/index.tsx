@@ -31,6 +31,7 @@ import { chatApi, contactApi, Chat, Contact, uploadApi } from '@/services/api';
 import socketService from '@/services/socket';
 import { cache, CacheKeys } from '@/services/cache';
 import { setImageEditorCallback } from '@/app/image-editor';
+import { ensureCameraPermission } from '@/utils/permissions';
 
 type FilterType = 'All' | 'Unread' | 'Favorites' | 'Groups';
 const FILTERS: FilterType[] = ['All', 'Unread', 'Favorites', 'Groups'];
@@ -135,10 +136,17 @@ export default function ChatsScreen() {
         prevChats.map((chat) => {
           if (chat.type === 'PRIVATE') {
             const otherMember = chat.members?.find(
-              (m) => m.user.id !== data.userId,
+              (m) => m.user.id !== user?.id,
             );
             if (otherMember?.user.id === data.userId) {
-              return { ...chat, isOnline: data.isOnline, lastSeen: data.lastSeen };
+              return {
+                ...chat,
+                isOnline: data.isOnline,
+                lastSeen: data.lastSeen,
+                members: chat.members.map((member) => member.user.id === data.userId
+                  ? { ...member, user: { ...member.user, isOnline: data.isOnline, lastSeen: data.lastSeen } }
+                  : member),
+              };
             }
           }
           return chat;
@@ -179,7 +187,7 @@ export default function ChatsScreen() {
       unsubscribeDeletedForEveryone();
       unsubscribeDeletedForMe();
     };
-  }, [fetchChats]);
+  }, [fetchChats, user?.id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -464,11 +472,7 @@ export default function ChatsScreen() {
 
   const handleCameraPress = async () => {
     try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Camera permission required', 'Please enable camera access in your device settings to take pictures.');
-        return;
-      }
+      if (!(await ensureCameraPermission('Camera access is needed to take pictures.'))) return;
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.85,

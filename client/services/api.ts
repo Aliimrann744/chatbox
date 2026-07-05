@@ -306,8 +306,10 @@ export const chatApi = {
     return request<Chat>(`/chats/${chatId}`);
   },
 
-  async getMessages(chatId: string, page = 1, limit = 50) {
-    return request<MessagesResponse>(`/chats/${chatId}/messages?page=${page}&limit=${limit}`);
+  async getMessages(chatId: string, page = 1, limit = 50, cursor?: string) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    return request<MessagesResponse>(`/chats/${chatId}/messages?${params}`);
   },
 
   async sendMessage(chatId: string, data: SendMessageData) {
@@ -849,6 +851,7 @@ export interface User {
   name: string;
   email?: string;
   phone?: string;
+  countryCode?: string;
   avatar?: string;
   about?: string;
   isOnline?: boolean;
@@ -976,6 +979,7 @@ export interface SharedMediaResponse {
     total: number;
     totalPages: number;
     hasMore: boolean;
+    nextCursor?: string | null;
   };
 }
 
@@ -987,6 +991,7 @@ export interface MessagesResponse {
     total: number;
     totalPages: number;
     hasMore: boolean;
+    nextCursor?: string | null;
   };
 }
 
@@ -996,6 +1001,8 @@ export interface Contact {
   nickname?: string;
   name: string;
   phone: string;
+  countryCode?: string;
+  isAdmin?: boolean;
   avatar?: string;
   about?: string;
   isOnline?: boolean;
@@ -1039,6 +1046,9 @@ export interface Call {
     id: string;
     name: string;
     avatar?: string;
+    phone?: string;
+    countryCode?: string;
+    isAdmin?: boolean;
   };
   caller: {
     id: string;

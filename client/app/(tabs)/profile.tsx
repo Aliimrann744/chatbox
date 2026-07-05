@@ -1,7 +1,7 @@
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, InteractionManager, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
@@ -9,7 +9,7 @@ import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { authApi } from '@/services/api';
-import { setAvatarEditorCallback } from '@/app/avatar-editor';
+import { ensureCameraPermission } from '@/utils/permissions';
 
 interface ProfileItemProps {
   icon: IconSymbolName;
@@ -52,6 +52,7 @@ export default function ProfileScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [avatarSheetVisible, setAvatarSheetVisible] = useState(false);
+  const recoveredPickerUriRef = useRef<string | null>(null);
 
   const displayUser = user || {
     name: 'Guest User',
@@ -74,61 +75,54 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const uploadAvatarFromUri = async (uri: string) => {
-    setIsUploadingAvatar(true);
-    try {
-      const ext = (uri.split('.').pop() || 'jpg').toLowerCase().split('?')[0];
-      const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-      const safeExt = ['png', 'webp'].includes(ext) ? ext : 'jpg';
-      await authApi.updateProfile({
-        avatar: { uri, type, name: `avatar.${safeExt}` },
-      });
-      await refreshUser();
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update avatar');
-    } finally {
-      setIsUploadingAvatar(false);
-    }
-  };
-
   // Hand the picked/captured image off to the avatar editor screen. Upload
   // happens only when the user taps "send" in the editor, so opening the
   // camera/gallery no longer auto-uploads on the native crop "Done" action.
-  const openAvatarEditor = (uri: string) => {
-    setAvatarEditorCallback((finalUri) => {
-      uploadAvatarFromUri(finalUri);
+  const openAvatarEditor = (asset: ImagePicker.ImagePickerAsset) => {
+    router.push({
+      pathname: '/avatar-editor',
+      params: { uri: asset.uri, width: String(asset.width || ''), height: String(asset.height || '') },
     });
-    router.push({ pathname: '/avatar-editor', params: { uri } });
   };
 
-  const handleOpenCamera = async () => {
+  const afterSheetCloses = (action: () => void) => {
     setAvatarSheetVisible(false);
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission required', 'Camera permission is needed to take a photo.');
-      return;
-    }
-    // Don't invoke the OS crop editor — the custom avatar editor screen
-    // handles cropping inline via pan+pinch, all on one page.
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      quality: 0.9,
-    });
-    if (result.canceled || !result.assets[0]) return;
-    openAvatarEditor(result.assets[0].uri);
+    setTimeout(() => InteractionManager.runAfterInteractions(action), 180);
   };
 
-  const handleOpenGallery = async () => {
-    setAvatarSheetVisible(false);
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      quality: 0.9,
+  const handleOpenCamera = () => {
+    afterSheetCloses(async () => {
+      try {
+        if (!(await ensureCameraPermission('Camera access is needed to take a profile photo.'))) return;
+        // The custom editor handles cropping after the camera closes.
+        const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.9 });
+        if (!result.canceled && result.assets[0]) openAvatarEditor(result.assets[0]);
+      } catch (error: any) {
+        Alert.alert('Camera error', error?.message || 'Could not open the camera.');
+      }
     });
-    if (result.canceled || !result.assets[0]) return;
-    openAvatarEditor(result.assets[0].uri);
   };
+
+  const handleOpenGallery = () => {
+    afterSheetCloses(async () => {
+      try {
+        const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.9 });
+        if (!result.canceled && result.assets[0]) openAvatarEditor(result.assets[0]);
+      } catch (error: any) {
+        Alert.alert('Gallery error', error?.message || 'Could not open the photo library.');
+      }
+    });
+  };
+
+  useFocusEffect(useCallback(() => {
+    ImagePicker.getPendingResultAsync().then((result) => {
+      const asset = result && 'assets' in result ? result.assets?.[0] : null;
+      if (asset && recoveredPickerUriRef.current !== asset.uri) {
+        recoveredPickerUriRef.current = asset.uri;
+        openAvatarEditor(asset);
+      }
+    }).catch(() => {});
+  }, []));
 
   const handleDeleteAvatar = () => {
     Alert.alert(
@@ -187,7 +181,12 @@ export default function ProfileScreen() {
       showsVerticalScrollIndicator={false}>
       {/* Profile Header */}
       <View style={[styles.header, { backgroundColor: colors.background }]}>
-        <View style={styles.avatarContainer}>
+        <Pressable
+          style={styles.avatarContainer}
+          onPress={() => setAvatarSheetVisible(true)}
+          disabled={isUploadingAvatar}
+          accessibilityRole="button"
+          accessibilityLabel="Edit profile picture">
           {displayUser.avatar ? (
             <Avatar uri={displayUser.avatar} size={100} />
           ) : (
@@ -200,7 +199,7 @@ export default function ProfileScreen() {
               <ActivityIndicator size="small" color="#ffffff" />
             </View>
           )}
-        </View>
+        </Pressable>
 
         <Pressable
           onPress={() => setAvatarSheetVisible(true)}

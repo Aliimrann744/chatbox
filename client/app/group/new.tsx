@@ -8,6 +8,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { contactApi, Contact } from '@/services/api';
 import { getInitials } from '@/utils/helpers';
+import { resolveGroupContactName } from '@/utils/contact-identity';
 
 export default function NewGroupMembersScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -38,7 +39,7 @@ export default function NewGroupMembersScreen() {
     if (!searchQuery.trim()) return contacts;
     const q = searchQuery.toLowerCase();
     return contacts.filter((c) => {
-      const name = (c.nickname || c.name || '').toLowerCase();
+      const name = resolveGroupContactName(c).toLowerCase();
       return name.includes(q) || c.phone.includes(q);
     });
   }, [contacts, searchQuery]);
@@ -52,7 +53,7 @@ export default function NewGroupMembersScreen() {
     if (selectedIds?.length === 0) return;
     const payload = selectedContacts?.map((c) => ({
       id: c.contactId,
-      name: c.nickname || c.name,
+      name: resolveGroupContactName(c),
       phone: c.phone,
       avatar: c.avatar,
     }));
@@ -77,14 +78,14 @@ export default function NewGroupMembersScreen() {
               <Pressable key={c.contactId} onPress={() => toggleSelect(c.contactId)} style={styles.chip}>
                 {c.avatar ? (<Avatar uri={c.avatar} size={52} />) : (
                   <View style={[styles.chipInitials, { backgroundColor: colors.primary }]}>
-                    <Text style={styles.chipInitialsText}>{getInitials(c.nickname || c.name) || '?'}</Text>
+                    <Text style={styles.chipInitialsText}>{getInitials(resolveGroupContactName(c)) || '?'}</Text>
                   </View>
                 )}
                 <View style={styles.removeBadge}>
                   <IconSymbol name="xmark" size={12} color="#ffffff" />
                 </View>
                 <Text numberOfLines={1} style={[styles.chipName, { color: colors.text }]}>
-                  {c.nickname || c.name}
+                  {resolveGroupContactName(c)}
                 </Text>
               </Pressable>
             ))}
@@ -125,7 +126,7 @@ export default function NewGroupMembersScreen() {
                 {item.avatar ? (<Avatar uri={item.avatar} size={44} />) : (
                   <View style={[styles.rowInitials, { backgroundColor: '#E5E7EB' }]}>
                     <Text style={styles.rowInitialsText}>
-                      {getInitials(item.nickname || item.name) || '?'}
+                      {getInitials(resolveGroupContactName(item)) || '?'}
                     </Text>
                   </View>
                 )}
@@ -137,7 +138,7 @@ export default function NewGroupMembersScreen() {
               </View>
               <View style={styles.rowInfo}>
                 <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
-                  {item.nickname || item.name}
+                  {resolveGroupContactName(item)}
                 </Text>
                 <Text style={[styles.rowSub, { color: colors.textSecondary }]} numberOfLines={1}>
                   {item.about || item.phone}

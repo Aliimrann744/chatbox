@@ -17,6 +17,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { contactApi, Contact } from '@/services/api';
 import { getInitials } from '@/utils/helpers';
+import { resolvePrivateContactName } from '@/utils/contact-identity';
 
 interface ContactPickerModalProps {
   visible: boolean;
@@ -81,7 +82,7 @@ export function ContactPickerModal({
     if (!searchQuery) return contacts;
     const q = searchQuery.toLowerCase();
     return contacts.filter((c) => {
-      const name = (c.nickname || c.name || '').toLowerCase();
+      const name = resolvePrivateContactName(c).toLowerCase();
       return name.includes(q) || (c.phone || '').includes(q);
     });
   }, [contacts, searchQuery]);
@@ -131,13 +132,13 @@ export function ContactPickerModal({
         ) : (
           <View style={[styles.avatarFallback, { backgroundColor: colors.backgroundSecondary }]}>
             <Text style={[styles.avatarInitial, { color: colors.text }]}>
-              {getInitials(item.nickname || item.name) || 'U'}
+              {getInitials(resolvePrivateContactName(item)) || 'U'}
             </Text>
           </View>
         )}
         <View style={styles.contactInfo}>
           <Text style={[styles.contactName, { color: colors.text }]} numberOfLines={1}>
-            {item.nickname || item.name}
+            {resolvePrivateContactName(item)}
           </Text>
           {!!item.about && (
             <Text style={[styles.contactAbout, { color: colors.textSecondary }]} numberOfLines={1}>
@@ -232,7 +233,7 @@ export function ContactPickerModal({
             ]}>
             <View style={styles.selectedPreview}>
               <Text style={[styles.selectedPreviewText, { color: colors.text }]} numberOfLines={1}>
-                {selectedContacts.map((c) => c.nickname || c.name).join(', ')}
+                {selectedContacts.map(resolvePrivateContactName).join(', ')}
               </Text>
             </View>
             <Pressable

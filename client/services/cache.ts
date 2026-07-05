@@ -62,6 +62,7 @@ export const CacheKeys = {
   CONTACT_STATUSES: 'cache:contact-statuses',
   USER_PROFILE: 'cache:user-profile',
   messages: (chatId: string) => `cache:messages:${chatId}`,
+  messageCursor: (chatId: string) => `cache:messages:${chatId}:cursor`,
   chatDetail: (chatId: string) => `cache:chat:${chatId}`,
   sharedMedia: (chatId: string) => `cache:media:${chatId}`,
 };

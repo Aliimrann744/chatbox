@@ -177,12 +177,14 @@ export class ChatController {
     @Param('id') chatId: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
   ) {
     return this.chatService.getChatMessages(
       chatId,
       user.id,
       page ? parseInt(page) : 1,
       limit ? parseInt(limit) : 50,
+      cursor,
     );
   }
 

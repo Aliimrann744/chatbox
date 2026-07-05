@@ -1,10 +1,7 @@
-import {
-  Injectable,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CallType, CallStatus } from '@prisma/client';
+import { sanitizeUserForOthers } from '../common/admin-user.util';
 
 @Injectable()
 export class CallService {
@@ -44,6 +41,9 @@ export class CallService {
             id: true,
             name: true,
             avatar: true,
+            phone: true,
+            countryCode: true,
+            email: true,
           },
         },
         receiver: {
@@ -51,12 +51,19 @@ export class CallService {
             id: true,
             name: true,
             avatar: true,
+            phone: true,
+            countryCode: true,
+            email: true,
           },
         },
       },
     });
 
-    return call;
+    return {
+      ...call,
+      caller: sanitizeUserForOthers(call.caller),
+      receiver: sanitizeUserForOthers(call.receiver),
+    };
   }
 
   async acceptCall(callId: string) {
@@ -72,6 +79,8 @@ export class CallService {
             id: true,
             name: true,
             avatar: true,
+            phone: true,
+            countryCode: true,
           },
         },
         receiver: {
@@ -79,6 +88,8 @@ export class CallService {
             id: true,
             name: true,
             avatar: true,
+            phone: true,
+            countryCode: true,
           },
         },
       },
@@ -184,6 +195,9 @@ export class CallService {
               id: true,
               name: true,
               avatar: true,
+              phone: true,
+              countryCode: true,
+              email: true,
             },
           },
           receiver: {
@@ -191,6 +205,9 @@ export class CallService {
               id: true,
               name: true,
               avatar: true,
+              phone: true,
+              countryCode: true,
+              email: true,
             },
           },
         },
@@ -206,11 +223,17 @@ export class CallService {
     ]);
 
     // Add direction info
-    const callsWithDirection = calls.map((call) => ({
-      ...call,
-      direction: call.callerId === userId ? 'outgoing' : 'incoming',
-      otherUser: call.callerId === userId ? call.receiver : call.caller,
-    }));
+    const callsWithDirection = calls.map((call) => {
+      const caller = sanitizeUserForOthers(call.caller)!;
+      const receiver = sanitizeUserForOthers(call.receiver)!;
+      return {
+        ...call,
+        caller,
+        receiver,
+        direction: call.callerId === userId ? 'outgoing' : 'incoming',
+        otherUser: call.callerId === userId ? receiver : caller,
+      };
+    });
 
     return {
       calls: callsWithDirection,

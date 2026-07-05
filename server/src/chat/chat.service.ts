@@ -475,6 +475,7 @@ export class ChatService {
     userId: string,
     page: number = 1,
     limit: number = 50,
+    cursor?: string,
   ) {
     // Verify user is a member
     const membership = await this.prisma.chatMember.findUnique({
@@ -490,20 +491,42 @@ export class ChatService {
       throw new ForbiddenException('You are not a member of this chat');
     }
 
-    const skip = (page - 1) * limit;
+    page = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
+    limit = Number.isFinite(limit) ? Math.min(100, Math.max(1, Math.floor(limit))) : 50;
+    const skip = cursor ? 0 : (page - 1) * limit;
+    let cursorPoint: { createdAt: Date; id: string } | null = null;
+    if (cursor) {
+      try {
+        const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+        cursorPoint = { createdAt: new Date(decoded.createdAt), id: String(decoded.id) };
+        if (Number.isNaN(cursorPoint.createdAt.getTime()) || !cursorPoint.id) {
+          throw new Error('invalid cursor');
+        }
+      } catch {
+        throw new BadRequestException('Invalid message cursor');
+      }
+    }
+
+    const visibleWhere: any = {
+      chatId,
+      deletedAt: null,
+      NOT: { deletedForUsers: { some: { userId } } },
+    };
+    const messageWhere: any = cursorPoint
+      ? {
+          ...visibleWhere,
+          AND: [{
+            OR: [
+              { createdAt: { lt: cursorPoint.createdAt } },
+              { createdAt: cursorPoint.createdAt, id: { lt: cursorPoint.id } },
+            ],
+          }],
+        }
+      : visibleWhere;
 
     const [messages, total] = await Promise.all([
       this.prisma.message.findMany({
-        where: {
-          chatId,
-          deletedAt: null,
-          // Exclude messages the current user has "deleted for me"
-          NOT: {
-            deletedForUsers: {
-              some: { userId },
-            },
-          },
-        },
+        where: messageWhere,
         include: {
           sender: {
             select: {
@@ -532,31 +555,31 @@ export class ChatService {
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip,
-        take: limit,
+        take: cursor ? limit + 1 : limit,
       }),
       this.prisma.message.count({
-        where: {
-          chatId,
-          deletedAt: null,
-          NOT: {
-            deletedForUsers: {
-              some: { userId },
-            },
-          },
-        },
+        where: visibleWhere,
       }),
     ]);
 
+    const hasMore = cursor ? messages.length > limit : skip + messages.length < total;
+    const pageMessages = cursor ? messages.slice(0, limit) : messages;
+    const oldest = pageMessages[pageMessages.length - 1];
+    const nextCursor = hasMore && oldest
+      ? Buffer.from(JSON.stringify({ createdAt: oldest.createdAt.toISOString(), id: oldest.id })).toString('base64url')
+      : null;
+
     return {
-      messages: messages.reverse(), // Return in chronological order
+      messages: pageMessages.reverse(), // Return in chronological order
       pagination: {
         page,
         limit,
         total,
         totalPages: Math.ceil(total / limit),
-        hasMore: skip + messages.length < total,
+        hasMore,
+        nextCursor,
       },
     };
   }
@@ -769,6 +792,41 @@ export class ChatService {
         lastSeen: isOnline ? undefined : new Date(),
       },
     });
+  }
+
+  async getPresenceRecipientIds(userId: string): Promise<string[]> {
+    const [contacts, chats] = await Promise.all([
+      this.prisma.contact.findMany({ where: { userId }, select: { contactId: true } }),
+      this.prisma.chat.findMany({
+        where: { type: ChatType.PRIVATE, members: { some: { userId, leftAt: null } } },
+        select: { members: { where: { userId: { not: userId }, leftAt: null }, select: { userId: true } } },
+      }),
+    ]);
+    const ids = new Set(contacts.map((contact) => contact.contactId));
+    for (const chat of chats) for (const member of chat.members) ids.add(member.userId);
+    return [...ids];
+  }
+
+  async getPresenceForViewer(viewerId: string, targetId: string) {
+    if (await this.isBlocked(viewerId, targetId)) return null;
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetId },
+      select: { id: true, isOnline: true, lastSeen: true, lastSeenPrivacy: true },
+    });
+    if (!target) return null;
+
+    let visible = target.lastSeenPrivacy === 'EVERYONE';
+    if (target.lastSeenPrivacy === 'CONTACTS') {
+      visible = !!(await this.prisma.contact.findUnique({
+        where: { userId_contactId: { userId: targetId, contactId: viewerId } },
+        select: { id: true },
+      }));
+    }
+    return {
+      userId: target.id,
+      isOnline: visible ? target.isOnline : false,
+      lastSeen: visible ? target.lastSeen : null,
+    };
   }
 
   async getUserContacts(userId: string) {

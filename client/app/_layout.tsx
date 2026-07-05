@@ -12,6 +12,7 @@ import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { CallProvider } from '@/contexts/call-context';
 import { GroupCallProvider } from '@/contexts/group-call-context';
 import { NotificationProvider } from '@/contexts/notification-context';
+import { ContactsProvider } from '@/contexts/contacts-context';
 import { IncomingCallListener } from '@/components/call/incoming-call-listener';
 import { ActiveCallBanner } from '@/components/call/active-call-banner';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -255,13 +256,15 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AuthProvider>
-          <NotificationProvider>
-            <CallProvider>
-              <GroupCallProvider>
-                <RootLayoutNav />
-              </GroupCallProvider>
-            </CallProvider>
-          </NotificationProvider>
+          <ContactsProvider>
+            <NotificationProvider>
+              <CallProvider>
+                <GroupCallProvider>
+                  <RootLayoutNav />
+                </GroupCallProvider>
+              </CallProvider>
+            </NotificationProvider>
+          </ContactsProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

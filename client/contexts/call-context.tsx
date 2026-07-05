@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Alert, PermissionsAndroid, Platform } from 'react-native';
+import { Alert } from 'react-native';
 import {
   createPeerConnection,
   createOffer,
@@ -10,7 +10,6 @@ import {
   InCallManager,
 } from '@/utils/webrtc';
 import socketService from '@/services/socket';
-import { useAuth } from '@/contexts/auth-context';
 import {
   setupCallKeep,
   setCallKeepCallbacks,
@@ -18,6 +17,9 @@ import {
   endCallKeepCall,
   reportConnectedCall,
 } from '@/services/callkeep';
+import { ensureCameraPermission as requestCameraAccess, ensureMicrophonePermission } from '@/utils/permissions';
+import { useContacts } from '@/contexts/contacts-context';
+import { resolvePrivateDisplayName } from '@/utils/contact-identity';
 
 export type CallType = 'VOICE' | 'VIDEO';
 export type CallStatus = 'idle' | 'calling' | 'ringing' | 'connecting' | 'connected' | 'ended';
@@ -79,27 +81,8 @@ const initialCallState: CallState = {
 
 const CallContext = createContext<CallContextType | undefined>(undefined);
 
-// Request camera permission on demand (right before video call)
-const ensureCameraPermission = async (): Promise<boolean> => {
-  if (Platform.OS === 'android') {
-    try {
-      const alreadyGranted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA,);
-      if (alreadyGranted) return true;
-      const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA,);
-      if (result === PermissionsAndroid.RESULTS.GRANTED) return true;
-      Alert.alert('Camera Permission Required', 'Camera permission is needed for video calls. Please enable it in your device settings.');
-      return false;
-    } catch (err) {
-      console.warn('Camera permission check error:', err);
-      return false;
-    }
-  }
-  // iOS: handled by Info.plist NSCameraUsageDescription — system prompts automatically
-  return true;
-};
-
 export function CallProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { contactsByUserId } = useContacts();
   const [callState, setCallState] = useState<CallState>(initialCallState);
   const [localStream, setLocalStream] = useState<any | null>(null);
   const [remoteStream, setRemoteStream] = useState<any | null>(null);
@@ -116,32 +99,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Request all essential permissions on mount (audio, camera, media library)
   useEffect(() => {
-    if (Platform.OS === 'android') {
-      PermissionsAndroid.requestMultiple([
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        PermissionsAndroid.PERMISSIONS.CAMERA,
-        ...(Platform.Version >= 33
-          ? [
-              PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-              PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
-            ]
-          : [PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE]),
-      ]).then((results) => {
-        console.log('Permissions:', results);
-      }).catch((err) => {
-        console.warn('Permission request error:', err);
-      });
-    } else {
-      // iOS: request camera and media library via expo APIs
-      import('expo-image-picker').then(({ requestCameraPermissionsAsync, requestMediaLibraryPermissionsAsync }) => {
-        requestCameraPermissionsAsync().catch(() => {});
-        requestMediaLibraryPermissionsAsync().catch(() => {});
-      });
-      import('expo-av').then(({ Audio }) => {
-        Audio.requestPermissionsAsync().catch(() => {});
-      });
-    }
-
     // Initialize CallKeep for native call UI
     setupCallKeep();
 
@@ -171,7 +128,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Setup peer connection with media
   const setupPeerConnection = useCallback(async (callType: CallType) => {
     if (callType === 'VIDEO') {
-      const hasCameraPermission = await ensureCameraPermission();
+      const hasCameraPermission = await requestCameraAccess('Camera access is needed for video calls.');
       if (!hasCameraPermission) {
         throw new Error('Camera permission is required for video calls');
       }
@@ -285,6 +242,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Socket event listeners — registered ONCE, use refs for fresh state
   useEffect(() => {
     const unsubscribeIncomingCall = socketService.on('incoming_call', (data: any) => {
+      const callerName = resolvePrivateDisplayName(data.caller, contactsByUserId[data.caller.id]);
       if (callStateRef.current.status !== 'idle') {
         socketService.declineCall(data.callId);
         return;
@@ -297,7 +255,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         direction: 'incoming',
         participant: {
           id: data.caller.id,
-          name: data.caller.name,
+          name: callerName,
           avatar: data.caller.avatar,
         },
         startTime: null,
@@ -312,7 +270,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       // Show native incoming call UI via CallKeep
       displayIncomingCall(
         data.callId,
-        data.caller.name,
+        callerName,
         data.type === 'VIDEO',
       );
 
@@ -475,7 +433,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       unsubscribePeerDisconnected();
       unsubscribePeerReconnected();
     };
-  }, [resetCallState, setupPeerConnection, drainPendingCandidates]);
+  }, [resetCallState, setupPeerConnection, drainPendingCandidates, contactsByUserId]);
 
   // Keep the socket service aware of whether a call is currently active. When
   // active, the chat socket may still disconnect on backgrounding but the
@@ -515,6 +473,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const initiateCall = useCallback(
     async (receiverId: string, receiverName: string, receiverAvatar: string | undefined, type: CallType) => {
       try {
+        if (!(await ensureMicrophonePermission('Microphone access is needed to make calls.'))) return;
+        if (type === 'VIDEO' && !(await requestCameraAccess('Camera access is needed for video calls.'))) return;
         setCallState({
           callId: null,
           type,
@@ -572,6 +532,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (!currentCallId) return;
 
     try {
+      if (!(await ensureMicrophonePermission('Microphone access is needed to answer calls.'))) return;
+      if (callStateRef.current.type === 'VIDEO' && !(await requestCameraAccess('Camera access is needed for video calls.'))) return;
       if (callTimeoutRef.current) {
         clearTimeout(callTimeoutRef.current);
         callTimeoutRef.current = null;
@@ -615,6 +577,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     console.log('acceptCallFromNotification:', callData);
 
     try {
+      if (!(await ensureMicrophonePermission('Microphone access is needed to answer calls.'))) return;
+      if (callData.callType === 'VIDEO' && !(await requestCameraAccess('Camera access is needed for video calls.'))) return;
+      const savedContact = contactsByUserId[callData.callerId];
+      const callerName = resolvePrivateDisplayName({
+        id: callData.callerId,
+        name: callData.callerName,
+        phone: savedContact?.phone,
+        countryCode: savedContact?.countryCode,
+        isAdmin: savedContact?.isAdmin,
+      }, savedContact);
       // Set call state from notification data
       setCallState({
         callId: callData.callId,
@@ -623,7 +595,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         direction: 'incoming',
         participant: {
           id: callData.callerId,
-          name: callData.callerName,
+          name: callerName,
           avatar: callData.callerAvatar,
         },
         startTime: null,
@@ -682,7 +654,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Call Ended', 'The call is no longer available.');
       resetCallState();
     }
-  }, [resetCallState, setupPeerConnection]);
+  }, [resetCallState, contactsByUserId]);
 
   // Decline incoming call
   const declineCall = useCallback(async () => {

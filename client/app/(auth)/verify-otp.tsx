@@ -259,7 +259,7 @@ export default function VerifyOtpScreen() {
 
           {/* "Didn't receive code?" link */}
           <Pressable onPress={openDrawer} style={styles.didntReceiveButton}>
-            <Text style={styles.didntReceiveText}>Didn't receive code?</Text>
+            <Text style={styles.didntReceiveText}>Didn&apos;t receive code?</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>

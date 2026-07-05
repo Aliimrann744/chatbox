@@ -14,14 +14,13 @@ import { useAuth } from '@/contexts/auth-context';
 import { contactApi, groupApi, uploadApi, Contact, GroupChat, GroupMember } from '@/services/api';
 import { getInitials } from '@/utils/helpers';
 import { setAvatarEditorCallback } from '@/app/avatar-editor';
+import { resolveGroupDisplayName } from '@/utils/contact-identity';
+import { ensureCameraPermission } from '@/utils/permissions';
 
 function resolveMemberDisplayName(member: GroupMember, contactsById: Record<string, Contact>, myId?: string): string {
   if (member.userId === myId) return 'You';
   const contact = contactsById[member.userId];
-  if (contact) return contact.nickname || contact.name;
-  const u = member.user;
-  if (u.phone && u.countryCode) return `${u.countryCode}${u.phone}`;
-  return u.name || 'Unknown';
+  return resolveGroupDisplayName(member.user as any, contact);
 }
 
 export default function GroupInfoScreen() {
@@ -115,16 +114,12 @@ export default function GroupInfoScreen() {
     setAvatarEditorCallback((finalUri) => {
       uploadGroupAvatarFromUri(finalUri);
     });
-    router.push({ pathname: '/avatar-editor', params: { uri } });
+    router.push({ pathname: '/avatar-editor', params: { uri, target: 'group' } });
   };
 
   const handleOpenCamera = async () => {
     setAvatarSheetVisible(false);
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission required', 'Camera permission is needed to take a photo.');
-      return;
-    }
+    if (!(await ensureCameraPermission('Camera access is needed to take a group photo.'))) return;
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: false,

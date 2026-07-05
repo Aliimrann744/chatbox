@@ -25,8 +25,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  // Store connected users: Map<userId, socketId>
-  private connectedUsers = new Map<string, string>();
+  // A user may have several live app sessions (multiple devices or a socket
+  // reconnect overlapping the old disconnect callback). Presence changes only
+  // when the first socket connects or the final socket disconnects.
+  private connectedUsers = new Map<string, Set<string>>();
 
   constructor(
     private jwtService: JwtService,
@@ -56,18 +58,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const userId = payload.sub;
 
-      // Store connection
-      this.connectedUsers.set(userId, client.id);
+      const sockets = this.connectedUsers.get(userId) ?? new Set<string>();
+      const wasOffline = sockets.size === 0;
+      sockets.add(client.id);
+      this.connectedUsers.set(userId, sockets);
       client.data.userId = userId;
 
       // Join user's personal room
       client.join(`user_${userId}`);
 
-      // Update online status in database
-      await this.chatService.setUserOnline(userId, true);
-
-      // Notify contacts that user is online
-      await this.broadcastOnlineStatus(userId, true);
+      if (wasOffline) {
+        await this.chatService.setUserOnline(userId, true);
+        await this.broadcastOnlineStatus(userId);
+      }
       console.log(`User ${userId} connected with socket ${client.id}`);
       client.emit('connected', { userId, socketId: client.id });
 
@@ -75,7 +78,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       try {
         const delivered = await this.chatService.deliverPendingMessages(userId);
         for (const msg of delivered) {
-          const senderSocketId = this.connectedUsers.get(msg.senderId);
+          const senderSocketId = this.getSocketId(msg.senderId);
           if (senderSocketId) {
             this.server.to(senderSocketId).emit('message_status', {
               messageId: msg.messageId,
@@ -99,11 +102,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = client.data.userId;
 
     if (userId) {
+      const sockets = this.connectedUsers.get(userId);
+      sockets?.delete(client.id);
+      if (sockets && sockets.size > 0) return;
       this.connectedUsers.delete(userId);
 
       try {
         await this.chatService.setUserOnline(userId, false);
-        await this.broadcastOnlineStatus(userId, false);
+        await this.broadcastOnlineStatus(userId);
       } catch (error) {
         console.log(`Cleanup failed for user ${userId}:`, error.message);
       }
@@ -155,7 +161,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // offline, fall back to FCM push.
       for (const member of members) {
         if (member.userId === senderId) continue;
-        const recipientSocketId = this.connectedUsers.get(member.userId);
+        const recipientSocketId = this.getSocketId(member.userId);
         if (recipientSocketId) {
           this.server.to(`user_${member.userId}`).emit('new_message', message);
         } else {
@@ -198,7 +204,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
 
       // Notify sender
-      const senderSocketId = this.connectedUsers.get(message.senderId);
+      const senderSocketId = this.getSocketId(message.senderId);
       if (senderSocketId) {
         this.server.to(senderSocketId).emit('message_status', {
           messageId: data.messageId,
@@ -227,7 +233,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const senderIds: any = [...new Set(readMessages.map((m: { id: string; senderId: string }) => m.senderId))];
 
       for (const senderId of senderIds) {
-        const senderSocketId = this.connectedUsers.get(senderId);
+        const senderSocketId = this.getSocketId(senderId);
         if (senderSocketId) {
           const senderMessages = readMessages.filter((m) => m.senderId === senderId).map((m) => m.id);
 
@@ -257,7 +263,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     for (const member of members) {
       if (member.userId !== userId) {
-        const socketId = this.connectedUsers.get(member.userId);
+        const socketId = this.getSocketId(member.userId);
         if (socketId) {
           this.server.to(socketId).emit('user_typing', {
             chatId: data.chatId,
@@ -280,7 +286,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     for (const member of members) {
       if (member.userId !== userId) {
-        const socketId = this.connectedUsers.get(member.userId);
+        const socketId = this.getSocketId(member.userId);
         if (socketId) {
           this.server.to(socketId).emit('user_typing', {
             chatId: data.chatId,
@@ -294,23 +300,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // ==================== ONLINE STATUS ====================
 
-  private async broadcastOnlineStatus(userId: string, isOnline: boolean) {
-    // Get user's contacts
-    const contacts = await this.chatService.getUserContacts(userId);
-
-    for (const contact of contacts) {
-      // Don't broadcast online status to blocked users (either direction)
-      const blocked = await this.chatService.isBlocked(userId, contact.contactId);
-      if (blocked) continue;
-
-      const socketId = this.connectedUsers.get(contact.contactId);
-      if (socketId) {
-        this.server.to(socketId).emit('online_status', {
-          userId,
-          isOnline,
-          lastSeen: isOnline ? null : new Date(),
-        });
-      }
+  private async broadcastOnlineStatus(userId: string) {
+    const recipientIds = await this.chatService.getPresenceRecipientIds(userId);
+    for (const recipientId of recipientIds) {
+      if (!this.connectedUsers.has(recipientId)) continue;
+      const presence = await this.chatService.getPresenceForViewer(recipientId, userId);
+      if (presence) this.server.to(`user_${recipientId}`).emit('online_status', presence);
     }
   }
 
@@ -319,10 +314,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { userIds: string[] },
   ) {
-    const onlineStatuses = data.userIds.map((userId) => ({
-      userId,
-      isOnline: this.connectedUsers.has(userId),
-    }));
+    const viewerId = client.data.userId;
+    const onlineStatuses = (await Promise.all(
+      data.userIds.map((userId) => this.chatService.getPresenceForViewer(viewerId, userId)),
+    )).filter(Boolean);
 
     return { statuses: onlineStatuses };
   }
@@ -362,7 +357,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
         // Notify all chat members about the "deleted for everyone" placeholder
         for (const memberUserId of result.memberUserIds) {
-          const socketId = this.connectedUsers.get(memberUserId);
+          const socketId = this.getSocketId(memberUserId);
           if (socketId) {
             this.server.to(socketId).emit('message_deleted_for_everyone', {
               messageId: result.messageId,
@@ -399,7 +394,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           try {
             const result = await this.chatService.deleteMessageForEveryone(userId, messageId);
             for (const memberUserId of result.memberUserIds) {
-              const socketId = this.connectedUsers.get(memberUserId);
+              const socketId = this.getSocketId(memberUserId);
               if (socketId) {
                 this.server.to(socketId).emit('message_deleted_for_everyone', {
                   messageId: result.messageId,
@@ -443,7 +438,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       for (const [senderId, chatMap] of bySenderChat) {
-        const senderSocketId = this.connectedUsers.get(senderId);
+        const senderSocketId = this.getSocketId(senderId);
         if (!senderSocketId) continue;
         for (const [chatId, messageIds] of chatMap) {
           this.server.to(senderSocketId).emit('messages_read', {
@@ -469,7 +464,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const result = await this.chatService.editMessage(userId, data.messageId, data.content);
       for (const memberUserId of result.memberUserIds) {
-        const socketId = this.connectedUsers.get(memberUserId);
+        const socketId = this.getSocketId(memberUserId);
         if (socketId) {
           this.server.to(socketId).emit('message_edited', {
             messageId: result.messageId,
@@ -509,7 +504,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Get socket ID for a user (useful for other services)
   getSocketId(userId: string): string | undefined {
-    return this.connectedUsers.get(userId);
+    return this.connectedUsers.get(userId)?.values().next().value;
   }
 
   // Check if user is online
@@ -519,9 +514,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Send event to specific user
   sendToUser(userId: string, event: string, data: any) {
-    const socketId = this.connectedUsers.get(userId);
-    if (socketId) {
-      this.server.to(socketId).emit(event, data);
-    }
+    if (this.connectedUsers.has(userId)) this.server.to(`user_${userId}`).emit(event, data);
   }
 }

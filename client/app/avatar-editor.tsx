@@ -10,7 +10,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -20,6 +19,8 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { authApi } from '@/services/api';
+import { useAuth } from '@/contexts/auth-context';
 
 const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
@@ -29,12 +30,11 @@ const CROP_SIZE = Math.min(SCREEN_W - 24, SCREEN_H - 300);
 const MIN_SCALE = 1;
 const MAX_SCALE = 4;
 
-// One-shot callback — caller registers this before navigating here and it's
-// consumed on successful send.
-let _onAvatarEditorDone: ((uri: string) => void) | null = null;
-
-export function setAvatarEditorCallback(cb: (uri: string) => void) {
-  _onAvatarEditorDone = cb;
+// Legacy group-avatar handoff. Profile photos no longer use this callback;
+// they upload directly from this screen so Android activity recreation is safe.
+let groupAvatarCallback: ((uri: string) => void) | null = null;
+export function setAvatarEditorCallback(callback: (uri: string) => void) {
+  groupAvatarCallback = callback;
 }
 
 const getImageSize = (uri: string): Promise<{ width: number; height: number }> =>
@@ -43,12 +43,18 @@ const getImageSize = (uri: string): Promise<{ width: number; height: number }> =
   });
 
 export default function AvatarEditorScreen() {
-  const params = useLocalSearchParams<{ uri: string }>();
+  const params = useLocalSearchParams<{ uri: string; width?: string; height?: string; target?: 'group' }>();
   const insets = useSafeAreaInsets();
+  const { refreshUser } = useAuth();
 
   const [imageUri, setImageUri] = useState(params.uri);
   const [processing, setProcessing] = useState(false);
-  const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
+  const initialWidth = Number(params.width);
+  const initialHeight = Number(params.height);
+  const [natural, setNatural] = useState<{ width: number; height: number } | null>(
+    initialWidth > 0 && initialHeight > 0 ? { width: initialWidth, height: initialHeight } : null,
+  );
+  const [loadError, setLoadError] = useState(false);
 
   // Reactive image display dimensions (as shared values so worklets can read them)
   const dispW = useSharedValue(CROP_SIZE);
@@ -85,23 +91,27 @@ export default function AvatarEditorScreen() {
   // window, and reset the pan/zoom.
   useEffect(() => {
     let cancelled = false;
-    getImageSize(imageUri)
-      .then((size) => {
-        if (cancelled) return;
-        setNatural(size);
-        const cover = Math.max(
-          CROP_SIZE / size.width,
-          CROP_SIZE / size.height,
-        );
-        dispW.value = size.width * cover;
-        dispH.value = size.height * cover;
-        resetGestures(false);
-      })
-      .catch(() => {});
+    setLoadError(false);
+    const applySize = (size: { width: number; height: number }) => {
+      if (cancelled) return;
+      setNatural(size);
+      const cover = Math.max(CROP_SIZE / size.width, CROP_SIZE / size.height);
+      dispW.value = size.width * cover;
+      dispH.value = size.height * cover;
+      resetGestures(false);
+    };
+    if (imageUri === params.uri && initialWidth > 0 && initialHeight > 0) {
+      applySize({ width: initialWidth, height: initialHeight });
+    } else {
+      setNatural(null);
+      getImageSize(imageUri)
+        .then(applySize)
+        .catch(() => { if (!cancelled) setLoadError(true); });
+    }
     return () => {
       cancelled = true;
     };
-  }, [imageUri, dispW, dispH, resetGestures]);
+  }, [imageUri, dispW, dispH, resetGestures, params.uri, initialWidth, initialHeight]);
 
   // ─── Gestures ─────────────────────────────────────────────────────────
   const panGesture = Gesture.Pan()
@@ -159,7 +169,7 @@ export default function AvatarEditorScreen() {
 
   // ─── Actions ──────────────────────────────────────────────────────────
   const handleCancel = useCallback(() => {
-    _onAvatarEditorDone = null;
+    groupAvatarCallback = null;
     if (router.canGoBack()) router.back();
     else router.replace('/');
   }, []);
@@ -246,17 +256,25 @@ export default function AvatarEditorScreen() {
         { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG },
       );
 
-      const cb = _onAvatarEditorDone;
-      _onAvatarEditorDone = null;
-      if (cb) cb(result.uri);
+      if (params.target === 'group') {
+        if (!groupAvatarCallback) throw new Error('Group photo session expired. Please select the photo again.');
+        const callback = groupAvatarCallback;
+        groupAvatarCallback = null;
+        callback(result.uri);
+      } else {
+        await authApi.updateProfile({
+          avatar: { uri: result.uri, type: 'image/jpeg', name: 'avatar.jpg' },
+        });
+        await refreshUser();
+      }
       if (router.canGoBack()) router.back();
       else router.replace('/');
     } catch (err: any) {
       console.error('Send error:', err?.message || err);
-      Alert.alert('Error', 'Failed to process image');
+      Alert.alert('Error', err?.message || 'Failed to process image');
       setProcessing(false);
     }
-  }, [imageUri, processing, natural, scale, tx, ty]);
+  }, [imageUri, processing, natural, scale, tx, ty, refreshUser, params.target]);
 
   // ─── Render ────────────────────────────────────────────────────────────
   return (
@@ -312,6 +330,11 @@ export default function AvatarEditorScreen() {
               </View>
             </View>
           </GestureDetector>
+        ) : loadError ? (
+          <View style={styles.cropWindowPlaceholder}>
+            <Ionicons name="warning-outline" color="#fff" size={32} />
+            <Text style={styles.loadErrorText}>This image could not be opened. Please choose another photo.</Text>
+          </View>
         ) : (
           <View style={styles.cropWindowPlaceholder}>
             <ActivityIndicator color="#fff" size="large" />
@@ -418,6 +441,12 @@ const styles = StyleSheet.create({
     marginTop: 16,
     color: 'rgba(255,255,255,0.6)',
     fontSize: 12,
+  },
+  loadErrorText: {
+    color: '#fff',
+    textAlign: 'center',
+    marginTop: 12,
+    paddingHorizontal: 24,
   },
 
   // Footer

@@ -27,6 +27,9 @@ import { formatTime, generateTempId, getDateKey, getDateSeparatorLabel, getIniti
 import { cache, CacheKeys } from '@/services/cache';
 import { useNotificationContext } from '@/contexts/notification-context';
 import { setImageEditorCallback } from '@/app/image-editor';
+import { useContacts } from '@/contexts/contacts-context';
+import { resolveGroupDisplayName, resolvePrivateDisplayName } from '@/utils/contact-identity';
+import { ensureCameraPermission } from '@/utils/permissions';
 
 type SenderLookupUser = { name?: string; phone?: string; countryCode?: string };
 
@@ -76,11 +79,11 @@ function computeGroupReadState(message: Message, eligibleMembers: EligibleMember
 }
 function resolveSenderDisplayName(msg: Message,contactsById: Record<string, Contact>, memberUserById: Record<string, SenderLookupUser>): string {
   const contact = contactsById[msg.senderId];
-  if (contact) return contact.nickname || contact.name;
   const member = memberUserById[msg.senderId];
-  if (member?.phone && member?.countryCode) return `${member.countryCode}${member.phone}`;
-  if (member?.phone) return member.phone;
-  return member?.name || msg.sender?.name || 'Unknown';
+  return resolveGroupDisplayName(
+    { id: msg.senderId, name: member?.name || msg.sender?.name, phone: member?.phone, countryCode: member?.countryCode },
+    contact,
+  );
 }
 
 function getReplyPreviewText(msg: Message | { type?: string; content?: string | null; fileName?: string | null; locationName?: string | null; isDeletedForEveryone?: boolean }): string {
@@ -1049,9 +1052,11 @@ export default function ChatDetailScreen() {
   const { initiateCall } = useCall();
   const groupCall = useGroupCall();
   const { setCurrentChatId } = useNotificationContext();
+  const { contactsByUserId, syncDeviceContacts } = useContacts();
 
   const [cachedChat] = useState(() => chatId ? cache.get<Chat>(CacheKeys.chatDetail(chatId)) : null);
   const [cachedMessages] = useState(() => chatId ? cache.get<Message[]>(CacheKeys.messages(chatId)) : null);
+  const [cachedCursor] = useState(() => chatId ? cache.get<{ nextCursor?: string | null; hasMore: boolean; page: number }>(CacheKeys.messageCursor(chatId)) : null);
   const hasCachedMessages = cachedMessages && cachedMessages.length > 0;
   const [chat, setChat] = useState<Chat | null>(cachedChat);
   const [messages, setMessages] = useState<Message[]>(cachedMessages || []);
@@ -1060,8 +1065,9 @@ export default function ChatDetailScreen() {
   const [loading, setLoading] = useState(!hasCachedMessages);
   const [loadingMore, setLoadingMore] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(cachedCursor?.page || Math.max(1, Math.ceil((cachedMessages?.length || 0) / 50)));
+  const [hasMore, setHasMore] = useState(cachedCursor?.hasMore ?? false);
+  const [nextCursor, setNextCursor] = useState<string | null | undefined>(cachedCursor?.nextCursor);
   const [isUploading, setIsUploading] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
@@ -1074,10 +1080,11 @@ export default function ChatDetailScreen() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [showForwardModal, setShowForwardModal] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const [contacts, setContacts] = useState<Contact[]>([]);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [iBlockedThem, setIBlockedThem] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const loadingMoreRef = useRef(false);
+  const historyMutationRef = useRef<'initial' | 'append' | 'prepend' | null>('initial');
   // ─── Scroll tracking ──────────────────────────────────────────────────────
   // `isAtBottomRef` is updated synchronously inside onScroll so other
   // handlers (incoming-message, send-message) can decide whether to auto-
@@ -1091,11 +1098,7 @@ export default function ChatDetailScreen() {
   const otherUser = otherMember?.user;
 
   // Contacts lookup for sender-name resolution in group chats
-  const contactsById = useMemo(() => {
-    const map: Record<string, Contact> = {};
-    for (const c of contacts) map[c.contactId] = c;
-    return map;
-  }, [contacts]);
+  const contactsById = contactsByUserId;
 
   const memberUserById = useMemo(() => {
     const map: Record<string, SenderLookupUser> = {};
@@ -1129,14 +1132,10 @@ export default function ChatDetailScreen() {
     return arr;
   }, [chat?.members]);
 
-  // Load contacts once (used to display contact name vs phone number for group senders)
-  useEffect(() => {
-    let cancelled = false;
-    contactApi.getContacts()
-      .then((c) => { if (!cancelled) setContacts(c); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+  const privateDisplayName = useMemo(
+    () => resolvePrivateDisplayName(otherUser as any, otherUser?.id ? contactsById[otherUser.id] : null),
+    [otherUser, contactsById],
+  );
 
   // Check block status for private chats
   useEffect(() => {
@@ -1175,9 +1174,18 @@ export default function ChatDetailScreen() {
         isStarred: starredIds.has(msg.id),
       }));
 
-      setMessages(messagesWithStarred);
-      setHasMore(messagesData.pagination.hasMore);
-      setPage(1);
+      historyMutationRef.current = 'initial';
+      setMessages((previous) => {
+        if (previous.length === 0) return messagesWithStarred;
+        const merged = new Map(previous.map((message) => [message.id, message]));
+        for (const message of messagesWithStarred) merged.set(message.id, { ...merged.get(message.id), ...message });
+        return [...merged.values()].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      });
+      if (!cachedCursor) {
+        setHasMore(messagesData.pagination.hasMore);
+        setNextCursor(cachedMessages && cachedMessages.length > 50 ? undefined : messagesData.pagination.nextCursor);
+        setPage(Math.max(1, Math.ceil((cachedMessages?.length || messagesWithStarred.length) / 50)));
+      }
 
       // Cache chat detail (messages are auto-cached by the useEffect sync)
       cache.set(CacheKeys.chatDetail(chatId), chatData);
@@ -1190,26 +1198,33 @@ export default function ChatDetailScreen() {
     } finally {
       setLoading(false);
     }
-  }, [chatId]);
+  }, [chatId, cachedCursor, cachedMessages]);
 
   // Load more messages (pagination)
   const loadMoreMessages = useCallback(async () => {
-    if (!chatId || loadingMore || !hasMore) return;
+    if (!chatId || loadingMoreRef.current || !hasMore) return;
 
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
       const nextPage = page + 1;
-      const messagesData = await chatApi.getMessages(chatId, nextPage, 50);
+      const messagesData = await chatApi.getMessages(chatId, nextPage, 50, nextCursor || undefined);
 
-      setMessages((prev) => [...messagesData.messages, ...prev]);
+      historyMutationRef.current = 'prepend';
+      setMessages((prev) => {
+        const seen = new Set(prev.map((message) => message.id));
+        return [...messagesData.messages.filter((message) => !seen.has(message.id)), ...prev];
+      });
       setHasMore(messagesData.pagination.hasMore);
+      setNextCursor(messagesData.pagination.nextCursor);
       setPage(nextPage);
     } catch (error) {
       console.error('Error loading more messages:', error);
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [chatId, page, loadingMore, hasMore]);
+  }, [chatId, page, hasMore, nextCursor]);
 
   // Sync messages to cache whenever they change (sent, received, status updates, etc.)
   // When messages is empty (e.g. after clear chat), delete the cache entry
@@ -1222,6 +1237,22 @@ export default function ChatDetailScreen() {
       cache.delete(CacheKeys.messages(chatId));
     }
   }, [chatId, messages]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    cache.set(CacheKeys.messageCursor(chatId), { nextCursor, hasMore, page });
+  }, [chatId, nextCursor, hasMore, page]);
+
+  useEffect(() => {
+    if (!chatId || !chat) return;
+    cache.set(CacheKeys.chatDetail(chatId), chat);
+    const chatList = cache.get<Chat[]>(CacheKeys.CHATS);
+    if (chatList) {
+      cache.set(CacheKeys.CHATS, chatList.map((item) => item.id === chatId
+        ? { ...item, isOnline: chat.isOnline, lastSeen: chat.lastSeen, members: chat.members }
+        : item));
+    }
+  }, [chatId, chat]);
 
   // Initialize
   useEffect(() => {
@@ -1249,6 +1280,7 @@ export default function ChatDetailScreen() {
     useCallback(() => {
       if (chatId) {
         setCurrentChatId(chatId);
+        syncDeviceContacts(false).catch(() => {});
 
         const cached = cache.get<Message[]>(CacheKeys.messages(chatId));
         if (!cached && messages.length > 0) {
@@ -1273,7 +1305,7 @@ export default function ChatDetailScreen() {
       return () => {
         setCurrentChatId(null);
       };
-    }, [chatId, messages, fetchData, otherUser?.id, chat?.type])
+    }, [chatId, messages, fetchData, otherUser?.id, chat?.type, syncDeviceContacts, setCurrentChatId])
   );
 
   // Socket event listeners
@@ -1396,10 +1428,37 @@ export default function ChatDetailScreen() {
 
     // Online status
     const unsubscribeOnlineStatus = socketService.on('online_status', (data: any) => {
+      if (!data?.userId || data.userId !== otherUser?.id) return;
       setChat((prev) =>
-        prev ? { ...prev, isOnline: data.isOnline, lastSeen: data.lastSeen } : prev
+        prev ? {
+          ...prev,
+          isOnline: data.isOnline,
+          lastSeen: data.lastSeen,
+          members: prev.members.map((member) => member.user.id === data.userId
+            ? { ...member, user: { ...member.user, isOnline: data.isOnline, lastSeen: data.lastSeen } }
+            : member),
+        } : prev
       );
     });
+
+    const refreshPeerPresence = () => {
+      if (!otherUser?.id) return;
+      socketService.getOnlineStatus([otherUser.id]).then(({ statuses }) => {
+        const status = statuses.find((item) => item.userId === otherUser.id);
+        if (status) {
+          setChat((prev) => prev ? {
+            ...prev,
+            isOnline: status.isOnline,
+            lastSeen: status.lastSeen || undefined,
+            members: prev.members.map((member) => member.user.id === status.userId
+              ? { ...member, user: { ...member.user, isOnline: status.isOnline, lastSeen: status.lastSeen || undefined } }
+              : member),
+          } : prev);
+        }
+      }).catch(() => {});
+    };
+    const unsubscribeConnected = socketService.on('chat_connected', refreshPeerPresence);
+    refreshPeerPresence();
 
     return () => {
       unsubscribeNewMessage();
@@ -1412,8 +1471,9 @@ export default function ChatDetailScreen() {
       unsubscribeMessageDeletedForEveryone();
       unsubscribeMessageEdited();
       unsubscribeOnlineStatus();
+      unsubscribeConnected();
     };
-  }, [chatId]);
+  }, [chatId, otherUser?.id, user?.id]);
 
   const handleBack = () => {
     router.back();
@@ -1427,7 +1487,7 @@ export default function ChatDetailScreen() {
       return;
     }
     if (chat.type === 'PRIVATE' && otherUser) {
-      await initiateCall(otherUser.id, otherUser.name, otherUser.avatar, 'VOICE');
+      await initiateCall(otherUser.id, privateDisplayName, otherUser.avatar, 'VOICE');
       router.push('/call/active');
     }
   };
@@ -1440,7 +1500,7 @@ export default function ChatDetailScreen() {
       return;
     }
     if (chat.type === 'PRIVATE' && otherUser) {
-      await initiateCall(otherUser.id, otherUser.name, otherUser.avatar, 'VIDEO');
+      await initiateCall(otherUser.id, privateDisplayName, otherUser.avatar, 'VIDEO');
       router.push('/call/active');
     }
   };
@@ -1521,11 +1581,7 @@ export default function ChatDetailScreen() {
     switch (type) {
       case 'camera': {
         // Launch camera without native editor — we use our own editor screen
-        const { status } = await (await import('expo-image-picker')).requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Permission Required', 'Camera permission is required to take photos.');
-          return;
-        }
+        if (!(await ensureCameraPermission('Camera access is needed to take photos.'))) return;
         const result = await (await import('expo-image-picker')).launchCameraAsync({
           mediaTypes: (await import('expo-image-picker')).MediaTypeOptions.Images,
           allowsEditing: false,
@@ -2125,7 +2181,7 @@ export default function ChatDetailScreen() {
       // Unblock flow
       Alert.alert(
         'Unblock this contact?',
-        `Unblock ${otherUser.name}?`,
+        `Unblock ${privateDisplayName}?`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -2158,7 +2214,7 @@ export default function ChatDetailScreen() {
       // Block flow
       Alert.alert(
         'Block user?',
-        `Block ${otherUser.name}? They will no longer be able to send you messages.`,
+        `Block ${privateDisplayName}? They will no longer be able to send you messages.`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -2189,7 +2245,7 @@ export default function ChatDetailScreen() {
         ],
       );
     }
-  }, [otherUser, iBlockedThem, chatId, user]);
+  }, [otherUser, iBlockedThem, chatId, user, privateDisplayName]);
 
   const handleMenuClearChat = useCallback(() => {
     setShowChatMenu(false);
@@ -2207,6 +2263,7 @@ export default function ChatDetailScreen() {
               // Clear local state and cache IMMEDIATELY so no stale data flashes
               setMessages([]);
               cache.delete(CacheKeys.messages(chatId));
+              cache.delete(CacheKeys.messageCursor(chatId));
 
               // Then call the API
               await chatApi.clearChat(chatId);
@@ -2360,7 +2417,14 @@ export default function ChatDetailScreen() {
     if (atBottom && unreadFromBottom > 0) {
       setUnreadFromBottom(0);
     }
-  }, [unreadFromBottom]);
+    if (
+      hasDoneInitialScrollRef.current &&
+      contentSize.height > layoutMeasurement.height + NEAR_BOTTOM_PX &&
+      contentOffset.y <= NEAR_BOTTOM_PX
+    ) {
+      loadMoreMessages();
+    }
+  }, [unreadFromBottom, loadMoreMessages]);
 
   const handleScrollToBottomPress = useCallback(() => {
     flatListRef.current?.scrollToEnd({ animated: true });
@@ -2382,9 +2446,14 @@ export default function ChatDetailScreen() {
     // For subsequent layout changes (new messages, edits) only follow the
     // tail if the user is currently parked near the bottom — otherwise we'd
     // yank them out of older messages they're reading.
+    if (historyMutationRef.current === 'prepend') {
+      historyMutationRef.current = null;
+      return;
+    }
     if (isAtBottomRef.current) {
       flatListRef.current?.scrollToEnd({ animated: true });
     }
+    historyMutationRef.current = null;
   }, [listItems.length]);
 
   if (loading) {
@@ -2422,7 +2491,7 @@ export default function ChatDetailScreen() {
       ) : (
         <ChatHeader
           chat={chat?.type === 'PRIVATE' ? {
-            name: otherUser?.name || 'Deleted Account',
+            name: privateDisplayName,
             avatar: otherUser?.avatar,
             isOnline: otherUser?.isOnline,
             lastSeen: otherUser?.lastSeen,
@@ -2457,9 +2526,13 @@ export default function ChatDetailScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.messagesContent}
           style={styles.messagesListInner}
-          onEndReached={loadMoreMessages}
-          ListHeaderComponent={!isSelectionMode ? <EncryptionBanner /> : null}
-          onEndReachedThreshold={0.5}
+          ListHeaderComponent={(
+            <>
+              {loadingMore && <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 8 }} />}
+              {!isSelectionMode && <EncryptionBanner />}
+            </>
+          )}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
           onScroll={handleScroll}
           scrollEventThrottle={32}
           onContentSizeChange={handleContentSizeChange}

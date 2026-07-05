@@ -369,7 +369,7 @@ export default function LoginScreen() {
                 <Text
                   style={styles.linkText}
                   onPress={() => setShowPhoneDialog(true)}>
-                  What's my number?
+                  What&apos;s my number?
                 </Text>
               </>
             ) : (

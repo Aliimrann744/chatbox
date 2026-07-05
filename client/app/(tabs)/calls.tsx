@@ -9,11 +9,14 @@ import { useCall } from '@/contexts/call-context';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { cache, CacheKeys } from '@/services/cache';
+import { useContacts } from '@/contexts/contacts-context';
+import { resolvePrivateDisplayName } from '@/utils/contact-identity';
 
 export default function CallsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { initiateCall } = useCall();
+  const { contactsByUserId } = useContacts();
 
   const [initialCache] = useState(() => cache.get<Call[]>(CacheKeys.CALLS));
   const [calls, setCalls] = useState<Call[]>(initialCache || []);
@@ -45,9 +48,14 @@ export default function CallsScreen() {
   }, [fetchCalls]);
 
   const handleCallPress = useCallback(async (call: Call) => {
-    await initiateCall(call.otherUser.id, call.otherUser.name, call.otherUser.avatar, call.type);
+    await initiateCall(
+      call.otherUser.id,
+      resolvePrivateDisplayName(call.otherUser as any, contactsByUserId[call.otherUser.id]),
+      call.otherUser.avatar,
+      call.type,
+    );
     router.push('/call/active');
-  }, [initiateCall]);
+  }, [initiateCall, contactsByUserId]);
 
   const handleNewCall = () => {
     // TODO: Navigate to contacts to select who to call

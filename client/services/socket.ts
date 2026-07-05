@@ -430,7 +430,7 @@ class SocketService {
     });
   }
 
-  getOnlineStatus(userIds: string[]): Promise<{ statuses: { userId: string; isOnline: boolean }[] }> {
+  getOnlineStatus(userIds: string[]): Promise<{ statuses: { userId: string; isOnline: boolean; lastSeen?: string | null }[] }> {
     return new Promise((resolve) => {
       if (!this.chatSocket) {
         resolve({ statuses: [] });

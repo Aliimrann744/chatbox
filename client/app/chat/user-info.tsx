@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/auth-context';
+import { useContacts } from '@/contexts/contacts-context';
+import { resolvePrivateDisplayName } from '@/utils/contact-identity';
 import { useCall } from '@/contexts/call-context';
 import { chatApi, contactApi, Chat, Message, SharedMedia, User } from '@/services/api';
 import { cache, CacheKeys } from '@/services/cache';
@@ -29,6 +31,7 @@ export default function UserInfoScreen() {
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const { user: currentUser } = useAuth();
+  const { contactsByUserId } = useContacts();
   const { initiateCall } = useCall();
 
   const [chat, setChat] = useState<Chat | null>(null);
@@ -49,7 +52,10 @@ export default function UserInfoScreen() {
   // Derive user info from chat
   const otherMember = chat?.members?.find(m => m.user.id !== currentUser?.id);
   const otherUser = otherMember ? (otherMember.user as typeof otherMember.user & { about?: string; phone?: string; countryCode?: string; email?: string; isAdmin?: boolean }) : undefined;
-  const userName = otherUser?.name || chat?.name || 'User';
+  const userName = resolvePrivateDisplayName(
+    otherUser as any,
+    otherUser?.id ? contactsByUserId[otherUser.id] : null,
+  );
   const userAvatar = otherUser?.avatar || chat?.avatar;
   const userPhone = otherUser?.phone
     ? `${otherUser.countryCode || ''}${otherUser.phone}`.trim()

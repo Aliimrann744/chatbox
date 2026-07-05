@@ -19,7 +19,7 @@ export default function ContinueScreen() {
           <Text style={styles.linkText} onPress={() => Linking.openURL('https://whatsappbizz.online/privacy')}>
             Privacy Policies
           </Text>
-          . Tap "Agree & continue" to{'\n'}accept our{' '}
+          {'. Tap "Agree & continue" to'}{'\n'}accept our{' '}
           <Text style={styles.linkText} onPress={() => Linking.openURL('https://whatsappbizz.online/terms')}>
             Terms of Service
           </Text>

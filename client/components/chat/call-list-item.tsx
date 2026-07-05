@@ -8,6 +8,8 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
 import { getInitials } from '@/utils/helpers';
+import { useContacts } from '@/contexts/contacts-context';
+import { resolvePrivateDisplayName } from '@/utils/contact-identity';
 
 interface CallListItemProps {
   call: Call;
@@ -40,6 +42,8 @@ function formatDuration(seconds?: number): string {
 export function CallListItem({ call, onCallPress }: CallListItemProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { contactsByUserId } = useContacts();
+  const displayName = resolvePrivateDisplayName(call.otherUser as any, contactsByUserId[call.otherUser.id]);
 
   const isMissed = call.status === 'MISSED' || call.status === 'DECLINED';
   const isOutgoing = call.direction === 'outgoing';
@@ -71,7 +75,7 @@ export function CallListItem({ call, onCallPress }: CallListItemProps) {
       ) : (
         <View style={styles.avatarFallback}>
           <Text style={styles.avatarInitials}>
-            {getInitials(call.otherUser.name) || 'U'}
+            {getInitials(displayName) || 'U'}
           </Text>
         </View>
       )}
@@ -83,7 +87,7 @@ export function CallListItem({ call, onCallPress }: CallListItemProps) {
             { color: isMissed ? '#e74c3c' : colors.text },
           ]}
           numberOfLines={1}>
-          {call.otherUser.name}
+          {displayName}
         </Text>
         <View style={styles.callInfo}>
           <IconSymbol name={callIcon.name} size={14} color={callIcon.color} />
